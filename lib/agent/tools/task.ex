@@ -86,14 +86,25 @@ defmodule Beamcore.Agent.Tools.Task do
       }
     ]
 
-    process_subagent(messages, 0, name)
+    initial_state = %{
+      consecutive_errors: 0,
+      tool_call_history: [],
+      trimmed_on_bad_request: false
+    }
+
+    process_subagent(messages, 0, name, initial_state)
   end
 
-  defp process_subagent(_messages, depth, _name) when depth >= 25 do
+  defp process_subagent(_messages, depth, _name, _state) when depth >= 25 do
     "Error: Sub-agent reached tool depth limit of 25."
   end
 
-  defp process_subagent(messages, depth, name) do
+  defp process_subagent(_messages, _depth, name, %{consecutive_errors: errors})
+       when errors >= 3 do
+    "Error: Sub-agent #{name} hit #{errors} consecutive API errors. Aborting to prevent loop."
+  end
+
+  defp process_subagent(messages, depth, name, state) do
     client = OpenAI.client()
     tools = Dispatcher.tool_specs()
 
@@ -104,30 +115,61 @@ defmodule Beamcore.Agent.Tools.Task do
         new_messages = messages ++ [message]
 
         if message["tool_calls"] && message["tool_calls"] != [] do
-          tool_responses =
-            Enum.map(message["tool_calls"], fn tool_call ->
-              name = tool_call["function"]["name"]
-              args_str = tool_call["function"]["arguments"]
-
-              args =
-                case Jason.decode(args_str) do
-                  {:ok, decoded} -> decoded
-                  _ -> %{}
-                end
-
-              content = Dispatcher.execute(name, args)
-
-              %{
-                role: "tool",
-                tool_call_id: tool_call["id"],
-                name: name,
-                content: content
-              }
+          # Build a fingerprint of this tool call set for loop detection
+          call_fingerprint =
+            message["tool_calls"]
+            |> Enum.map(fn tc ->
+              {tc["function"]["name"], tc["function"]["arguments"]}
             end)
+            |> :erlang.phash2()
 
-          process_subagent(new_messages ++ tool_responses, depth + 1, name)
+          updated_history = state.tool_call_history ++ [call_fingerprint]
+
+          if stuck_in_loop?(updated_history) do
+            "Error: Sub-agent #{name} is stuck in a loop — repeating the same tool calls. Aborting."
+          else
+            tool_responses =
+              Enum.map(message["tool_calls"], fn tool_call ->
+                name = tool_call["function"]["name"]
+                args_str = tool_call["function"]["arguments"]
+
+                args =
+                  case Jason.decode(args_str) do
+                    {:ok, decoded} -> decoded
+                    _ -> %{}
+                  end
+
+                content = Dispatcher.execute(name, args)
+
+                %{
+                  role: "tool",
+                  tool_call_id: tool_call["id"],
+                  name: name,
+                  content: content
+                }
+              end)
+
+            new_state = %{state | consecutive_errors: 0, tool_call_history: updated_history}
+            process_subagent(new_messages ++ tool_responses, depth + 1, name, new_state)
+          end
         else
           message["content"] || "Sub-agent completed but produced no text response."
+        end
+
+      {:error, %OpenaiEx.Error{kind: :bad_request}} ->
+        # Likely context overflow — try aggressive trimming once
+        if not state.trimmed_on_bad_request do
+          aggressively_trimmed = aggressive_trim_messages(messages)
+
+          new_state = %{
+            state
+            | trimmed_on_bad_request: true,
+              consecutive_errors: state.consecutive_errors + 1
+          }
+
+          process_subagent(aggressively_trimmed, depth, name, new_state)
+        else
+          "Error: Sub-agent #{name} received bad_request after trimming. Cannot recover."
         end
 
       {:error, %OpenaiEx.Error{kind: :rate_limit}} ->
@@ -152,11 +194,42 @@ defmodule Beamcore.Agent.Tools.Task do
             ""
           end
 
-        "Error: API error - kind: #{error.kind} (#{error_details}#{error_body})"
+        new_state = %{state | consecutive_errors: state.consecutive_errors + 1}
+
+        if new_state.consecutive_errors >= 3 do
+          "Error: Sub-agent #{name} hit #{new_state.consecutive_errors} consecutive API errors. Last: #{error.kind} (#{error_details}#{error_body})"
+        else
+          process_subagent(messages, depth, name, new_state)
+        end
 
       {:error, reason} ->
         "Error: #{inspect(reason)}"
     end
+  end
+
+  @doc false
+  # Detects if the last N fingerprints contain a repeating cycle.
+  # Catches patterns like A-B-A-B (flip-flop) or A-A-A (same call repeated).
+  defp stuck_in_loop?(history) when length(history) < 4, do: false
+
+  defp stuck_in_loop?(history) do
+    recent = Enum.take(history, -6)
+
+    # Check for direct repetition: same fingerprint 3+ times in last 6
+    recent
+    |> Enum.frequencies()
+    |> Enum.any?(fn {_fp, count} -> count >= 3 end)
+  end
+
+  @doc false
+  # More aggressive trimming — keep system + last 20 messages
+  defp aggressive_trim_messages(messages) do
+    {system, rest} =
+      Enum.split_with(messages, fn m ->
+        (m[:role] || m["role"]) == "system"
+      end)
+
+    system ++ Enum.take(rest, -20)
   end
 
   defp trim_messages(messages) do

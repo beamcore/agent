@@ -36,7 +36,9 @@ defmodule Beamcore.Agent.Core.StatusBar do
   Starts the `StatusBar` GenServer.
   """
   def start_link(opts \\ []) do
-    GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+    {name, init_opts} = Keyword.pop(opts, :name, __MODULE__)
+    server_opts = if name, do: [name: name], else: []
+    GenServer.start_link(__MODULE__, init_opts, server_opts)
   end
 
   @doc """

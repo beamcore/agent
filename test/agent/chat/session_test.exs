@@ -54,7 +54,9 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.total_tokens == 0
     end
 
-    test "updates token usage for the old session with summary API call tokens", %{session: session} do
+    test "updates token usage for the old session with summary API call tokens", %{
+      session: session
+    } do
       # Test the update_usage function which is used in summarize_and_rollover
       session_with_usage = %{
         session
@@ -147,6 +149,87 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert result.total_prompt_tokens == session.total_prompt_tokens
       assert result.total_completion_tokens == session.total_completion_tokens
       assert result.total_tokens == session.total_tokens
+    end
+  end
+
+  describe "trim_and_clean_messages/2" do
+    test "truncates large message content to 4000 characters" do
+      large_content = String.duplicate("a", 5000)
+
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: large_content}
+      ]
+
+      trimmed = Session.trim_and_clean_messages(messages)
+      user_msg = Enum.find(trimmed, fn m -> m.role == "user" end)
+      assert String.length(user_msg.content) < 5000
+      assert user_msg.content =~ "... [content truncated for summarization] ..."
+    end
+
+    test "removes leading and orphaned tool messages" do
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "tool", tool_call_id: "1", content: "orphaned_tool"},
+        %{role: "user", content: "hello"},
+        %{role: "tool", tool_call_id: "2", content: "another_orphaned_tool"}
+      ]
+
+      trimmed = Session.trim_and_clean_messages(messages)
+
+      # system message should be kept, and orphaned tools should be removed, leaving only the user message
+      assert length(trimmed) == 2
+      assert Enum.at(trimmed, 0).role == "system"
+      assert Enum.at(trimmed, 1).role == "user"
+    end
+
+    test "keeps valid tool messages preceded by assistant" do
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "hello"},
+        %{role: "assistant", tool_calls: [%{"id" => "call_1"}]},
+        %{role: "tool", tool_call_id: "call_1", content: "tool_result"}
+      ]
+
+      trimmed = Session.trim_and_clean_messages(messages)
+      assert length(trimmed) == 4
+      assert Enum.map(trimmed, & &1.role) == ["system", "user", "assistant", "tool"]
+    end
+
+    test "merges consecutive user or assistant messages" do
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "hello 1"},
+        %{role: "user", content: "hello 2"},
+        %{role: "assistant", content: "response 1"},
+        %{role: "assistant", content: "response 2"}
+      ]
+
+      trimmed = Session.trim_and_clean_messages(messages)
+      assert length(trimmed) == 3
+      assert Enum.map(trimmed, & &1.role) == ["system", "user", "assistant"]
+      assert Enum.at(trimmed, 1).content == "hello 1\n\nhello 2"
+      assert Enum.at(trimmed, 2).content == "response 1\n\nresponse 2"
+    end
+
+    test "limits total non-system messages to target count but keeps system message" do
+      messages =
+        [
+          %{role: "system", content: "sys"}
+        ] ++
+          Enum.flat_map(1..20, fn i ->
+            [
+              %{role: "user", content: "user #{i}"},
+              %{role: "assistant", content: "assistant #{i}"}
+            ]
+          end)
+
+      # 40 non-system messages total.
+      # If we limit to 10, it should keep system message + last 10 non-system messages starting with user
+      trimmed = Session.trim_and_clean_messages(messages, 10)
+      assert length(trimmed) == 11
+      assert Enum.at(trimmed, 0).role == "system"
+      assert Enum.at(trimmed, 1).role == "user"
     end
   end
 end

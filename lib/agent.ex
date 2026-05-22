@@ -1,6 +1,16 @@
 defmodule Beamcore.Agent do
   @moduledoc """
-  Main module for Beamcore.Agent - Mistral API client.
+  Main application module for Beamcore.Agent.
+
+  This module serves as the entry point for the Beamcore.Agent application,
+  providing core functionality such as:
+  - Application lifecycle management (start/stop)
+  - Access to the OpenAI client
+  - Interactive chat session initialization
+  - API connectivity testing
+
+  It supervises child processes like the rate limiter and status bar,
+  ensuring the application's components are properly managed.
   """
 
   use Application

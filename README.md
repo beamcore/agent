@@ -112,18 +112,20 @@ Beamcore.Agent provides the following tools, which the AI can invoke automatical
 | `fs`      | Perform filesystem operations (move, copy, remove, etc.). |
 | `git`     | Perform git operations (clone, add, commit, etc.). |
 | `curl`    | Fetch content from URLs.                     |
+| `mix`     | Run safe, scoped Elixir mix commands (test, compile, format, etc.). |
 | `task`    | Execute sub-agents for focused tasks.        |
 | `tree`    | Generate a compact file tree for a directory.|
 
 ---
 
 ## 📜 Configuration
-Beamcore.Agent uses the following environment variables:
+Beamcore.Agent uses the following environment variables and configuration:
 
 | Variable            | Description                          | Required | Default Value                     |
 |---------------------|--------------------------------------|----------|-----------------------------------|
 | `MISTRAL_API_KEY`   | Your Mistral API key.                | Yes      | -                                 |
 | `MISTRAL_BASE_URL`  | Custom base URL for the Mistral API. | No       | `https://api.mistral.ai/v1`       |
+| `rate_limit_ms`     | Rate limit (in milliseconds) between API calls. | No       | `1000` (configurable in `config/config.exs`) |
 
 ### Rate Limiting
 - The default rate limit is set to **1000ms** between API calls to avoid hitting Mistral's rate limits.
@@ -164,6 +166,8 @@ Beamcore.Agent uses the following environment variables:
 - **Tool Dispatcher**: Routes tool invocations to their respective handlers (`Beamcore.Agent.Tools.Dispatcher`).
 - **Rate Limiter**: Enforces configurable rate limits for API calls (`Beamcore.Agent.Chat.RateLimiter`).
 - **OpenAI Client**: Wrapper for the Mistral API (`Beamcore.Agent.OpenAI`).
+- **System Prompt**: Generates the system prompt for the chat assistant (`Beamcore.Agent.Core.SysPrompt`).
+- **Project Detector**: Scans the working directory to detect the project nature/language support (`Beamcore.Agent.Discovery.Detector`).
 
 ### Tool System
 - Tools are modular and can be extended by adding new modules under `lib/agent/tools/`.

@@ -18,7 +18,8 @@ defmodule Beamcore.Agent.Chat.APITest do
       {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "Hello"}}]}}
     end)
 
-    assert {:ok, %{message: %{"content" => "Hello"}}} = API.execute(client, [], [])
+    assert {:ok, %{message: %{"content" => "Hello"}}} =
+             API.execute(client, [%{role: "user", content: "hello"}], [])
   end
 
   test "execute/4 captures and prints debug info for OpenaiEx.Error with kind :bad_request", %{
@@ -42,11 +43,12 @@ defmodule Beamcore.Agent.Chat.APITest do
       end)
 
     assert output =~ "API BAD REQUEST ERROR DEBUG INFO"
-    assert output =~ "WHAT WE RECEIVED BACK"
-    assert output =~ "Required parameter missing"
-    assert output =~ "WHAT WE'VE SENT"
-    assert output =~ "test query"
-    assert output =~ "ENTIRE STACKTRACE"
+    assert output =~ "ERROR DETAILS:"
+    assert output =~ "API Bad Request (Likely out of context size limit)"
+    assert output =~ "Parameter 'prompt' is required"
+    assert output =~ "REQUEST DIAGNOSTICS:"
+    assert output =~ "10 chars"
+    assert output =~ "SEQUENCE VALIDATION:"
   end
 
   test "execute/4 captures and prints debug info for OpenaiEx.Error with status_code 400", %{
@@ -70,9 +72,10 @@ defmodule Beamcore.Agent.Chat.APITest do
       end)
 
     assert output =~ "API BAD REQUEST ERROR DEBUG INFO"
-    assert output =~ "WHAT WE RECEIVED BACK"
+    assert output =~ "ERROR DETAILS:"
+    assert output =~ "API Bad Request (Likely out of context size limit)"
     assert output =~ "Custom bad request details"
-    assert output =~ "another query"
+    assert output =~ "13 chars"
   end
 
   test "execute/4 captures and prints debug info for binary bad_request error", %{client: client} do
@@ -87,9 +90,9 @@ defmodule Beamcore.Agent.Chat.APITest do
       end)
 
     assert output =~ "API BAD REQUEST ERROR DEBUG INFO"
-    assert output =~ "WHAT WE RECEIVED BACK"
+    assert output =~ "ERROR DETAILS:"
     assert output =~ "bad_request (status_code: 400)"
-    assert output =~ "third query"
+    assert output =~ "11 chars"
   end
 
   test "execute/4 does not print debug info for other errors", %{client: client} do
@@ -110,5 +113,17 @@ defmodule Beamcore.Agent.Chat.APITest do
       end)
 
     refute output =~ "API BAD REQUEST ERROR DEBUG INFO"
+  end
+
+  test "execute/5 supports custom model in opts", %{client: client} do
+    Process.put(:mock_completions_create, fn _client, params ->
+      assert params.model == "mistral-small-2603"
+      {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "Hello"}}]}}
+    end)
+
+    assert {:ok, %{message: %{"content" => "Hello"}}} =
+             API.execute(client, [%{role: "user", content: "hello"}], [], :main,
+               model: "mistral-small-2603"
+             )
   end
 end
