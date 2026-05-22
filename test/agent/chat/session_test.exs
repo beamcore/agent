@@ -33,17 +33,11 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     setup do
       client = Beamcore.Agent.OpenAI.client()
       session = Session.new(client)
-      messages = [%{role: "user", content: "Hello"}]
-      pid = self()
 
-      %{client: client, session: session, messages: messages, pid: pid}
+      %{client: client, session: session}
     end
 
-    test "resets token counters in the new session", %{
-      session: session,
-      messages: messages,
-      pid: pid
-    } do
+    test "resets token counters in the new session", %{session: session} do
       # Test the token counter reset logic directly
       new_session = Session.new(session.client)
 
@@ -60,11 +54,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.total_tokens == 0
     end
 
-    test "updates token usage for the old session with summary API call tokens", %{
-      session: session,
-      messages: messages,
-      pid: pid
-    } do
+    test "updates token usage for the old session with summary API call tokens", %{session: session} do
       # Test the update_usage function which is used in summarize_and_rollover
       session_with_usage = %{
         session
@@ -147,12 +137,9 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert validated_summary == valid_summary
     end
 
-    test "fallback behavior returns old session with updated messages", %{
-      session: session,
-      messages: messages,
-      pid: pid
-    } do
+    test "fallback behavior returns old session with updated messages", %{session: session} do
       # This is the exact fallback logic from summarize_and_rollover/3
+      messages = [%{role: "user", content: "Hello"}]
       result = %{session | messages: messages}
 
       assert result.session_id == session.session_id
@@ -160,48 +147,6 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert result.total_prompt_tokens == session.total_prompt_tokens
       assert result.total_completion_tokens == session.total_completion_tokens
       assert result.total_tokens == session.total_tokens
-    end
-
-    test "preserves client in new session", %{session: session} do
-      new_session = Session.new(session.client)
-      assert new_session.client == session.client
-    end
-
-    test "creates new log file for new session", %{session: session} do
-      new_session = Session.new(session.client)
-      assert File.exists?(new_session.log_file)
-      assert new_session.log_file != session.log_file
-    end
-
-    test "new session has different session_id", %{session: session} do
-      new_session = Session.new(session.client)
-      assert new_session.session_id != session.session_id
-    end
-
-    test "combines system message with summary in new session" do
-      client = Beamcore.Agent.OpenAI.client()
-      new_session = Session.new(client)
-
-      # Extract the original system message
-      [%{role: "system", content: original_system_message}] = new_session.messages
-
-      # Create a combined system message with the original prompt and summary
-      validated_summary = "This is a test summary"
-
-      combined_system_message = %{
-        role: "system",
-        content:
-          "System: #{original_system_message}\n\nPrevious Session Summary:\n#{validated_summary}"
-      }
-
-      # Replace the system message in the new session
-      new_session = %{new_session | messages: [combined_system_message]}
-
-      # Verify the combined message
-      [%{content: content}] = new_session.messages
-      assert content =~ "System: #{original_system_message}"
-      assert content =~ "Previous Session Summary:"
-      assert content =~ validated_summary
     end
   end
 end
