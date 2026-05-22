@@ -8,7 +8,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   alias Beamcore.Agent.Tools.Dispatcher
 
   @max_tool_depth 25
-  @max_messages 40
 
   @doc """
   Start the chat loop with the given session and status bar PID.
@@ -63,9 +62,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp process_messages(session, messages, pid, depth) do
     tools = Dispatcher.conductor_tool_specs()
 
-    trimmed_messages = trim_messages(messages)
-
-    case API.execute(session.client, trimmed_messages, tools, :main) do
+    case API.execute(session.client, messages, tools, :main) do
       {:ok, %{message: message, raw_response: raw_response}} ->
         Session.log(session, raw_response)
         Pretty.print_assistant(message["content"], :main)
@@ -145,19 +142,6 @@ defmodule Beamcore.Agent.Chat.Loop do
       {:error, reason} ->
         Pretty.print_error("#{inspect(reason)}")
         session
-    end
-  end
-
-  defp trim_messages(messages) do
-    if length(messages) <= @max_messages do
-      messages
-    else
-      {system, rest} =
-        Enum.split_with(messages, fn m ->
-          (m[:role] || m["role"]) == "system"
-        end)
-
-      system ++ Enum.take(rest, -(@max_messages - length(system)))
     end
   end
 end
