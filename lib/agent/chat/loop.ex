@@ -78,7 +78,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         StatusBar.update(pid, session)
 
-        if session.total_tokens >= 190_000 do
+        if session.total_tokens >= 150_000 do
           Session.summarize_and_rollover(session, messages ++ [message], pid)
         else
           # Fix tool_calls for subsequent API requests

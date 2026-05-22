@@ -117,9 +117,12 @@ defmodule Beamcore.Agent.Chat.Session do
         "We are approaching the context limit. Please summarize the progress we've made so far, key decisions, the current state of the codebase, and what needs to be done next. This summary will be used to seed our next session so we can continue seamlessly."
     }
 
-    temp_messages = messages ++ [summary_prompt]
+    trimmed_messages = trim_and_clean_messages(messages, 30)
+    temp_messages = trimmed_messages ++ [summary_prompt]
 
-    case Beamcore.Agent.Chat.API.execute(session.client, temp_messages, [], :main) do
+    case Beamcore.Agent.Chat.API.execute(session.client, temp_messages, [], :main,
+           model: "mistral-small-2603"
+         ) do
       {:ok, %{message: %{"content" => summary}}} ->
         # Validate the summary content
         default_summary =
@@ -174,4 +177,128 @@ defmodule Beamcore.Agent.Chat.Session do
         %{session | messages: messages}
     end
   end
+
+  @doc """
+  Trims and cleans a message list before it is sent to the summarizer.
+  Ensures it is under the token/character threshold and conforms to message alternation requirements.
+  """
+  def trim_and_clean_messages(messages, limit \\ 30) do
+    # 1. Separate system messages and others
+    {system_messages, other_messages} =
+      Enum.split_with(messages, fn m ->
+        (m[:role] || m["role"]) == "system"
+      end)
+
+    # 2. Truncate content of all messages to 4000 chars to avoid huge payloads
+    truncated_messages = Enum.map(other_messages, &truncate_message_content/1)
+
+    # 3. Take the last `limit` messages
+    trimmed_messages = Enum.take(truncated_messages, -limit)
+
+    # 4. Clean up orphaned tools
+    cleaned_messages = clean_orphaned_tools(trimmed_messages)
+
+    # 5. Ensure it starts with a user message
+    user_starting_messages = ensure_starts_with_user(cleaned_messages)
+
+    # 6. Merge consecutive same-role messages
+    final_messages = merge_consecutive_roles(user_starting_messages)
+
+    # 7. Ensure non-empty user message fallback
+    final_messages =
+      case final_messages do
+        [] -> [%{role: "user", content: "Continuing the conversation."}]
+        other -> other
+      end
+
+    # 8. Combine back with system messages
+    system_messages ++ final_messages
+  end
+
+  defp truncate_message_content(message) do
+    content = message[:content] || message["content"]
+
+    cond do
+      is_binary(content) and String.length(content) > 4000 ->
+        truncated =
+          String.slice(content, 0, 4000) <> "\n... [content truncated for summarization] ..."
+
+        if Map.has_key?(message, :content) do
+          Map.put(message, :content, truncated)
+        else
+          Map.put(message, "content", truncated)
+        end
+
+      true ->
+        message
+    end
+  end
+
+  defp clean_orphaned_tools(messages) do
+    messages =
+      Enum.drop_while(messages, fn msg ->
+        (msg[:role] || msg["role"]) == "tool"
+      end)
+
+    clean_orphaned_tools_helper(messages, [])
+  end
+
+  defp clean_orphaned_tools_helper([], acc), do: Enum.reverse(acc)
+
+  defp clean_orphaned_tools_helper([msg | rest], acc) do
+    role = msg[:role] || msg["role"]
+
+    if role == "tool" do
+      prev = List.first(acc)
+      prev_role = if prev, do: prev[:role] || prev["role"]
+
+      if prev_role == "assistant" or prev_role == "tool" do
+        clean_orphaned_tools_helper(rest, [msg | acc])
+      else
+        clean_orphaned_tools_helper(rest, acc)
+      end
+    else
+      clean_orphaned_tools_helper(rest, [msg | acc])
+    end
+  end
+
+  defp ensure_starts_with_user(messages) do
+    Enum.drop_while(messages, fn msg ->
+      (msg[:role] || msg["role"]) != "user"
+    end)
+  end
+
+  defp merge_consecutive_roles(messages) do
+    Enum.reduce(messages, [], fn msg, acc ->
+      case acc do
+        [] ->
+          [msg]
+
+        [prev | rest] ->
+          prev_role = prev[:role] || prev["role"]
+          curr_role = msg[:role] || msg["role"]
+
+          if prev_role == current_or_prev_role_match?(curr_role) and
+               prev_role in ["user", "assistant"] do
+            prev_content = prev[:content] || prev["content"] || ""
+            curr_content = msg[:content] || msg["content"] || ""
+            merged_content = prev_content <> "\n\n" <> curr_content
+
+            merged_msg =
+              if Map.has_key?(prev, :content) do
+                Map.put(prev, :content, merged_content)
+              else
+                Map.put(prev, "content", merged_content)
+              end
+
+            [merged_msg | rest]
+          else
+            [msg | acc]
+          end
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp current_or_prev_role_match?(curr_role), do: curr_role
 end
