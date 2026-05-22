@@ -1,0 +1,5 @@
+This is line 1
+This is line 2 with a special keyword: ELIXIR_IS_AWESOME
+Line 3 has nothing special
+Line 4 also has ELIXIR_IS_AWESOME
+Line 5
