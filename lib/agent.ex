@@ -10,7 +10,8 @@ defmodule Beamcore.Agent do
   """
   def start(_type, _args) do
     children = [
-      Beamcore.Agent.Chat.RateLimiter
+      Beamcore.Agent.Chat.RateLimiter,
+      Beamcore.Agent.Core.StatusBar
     ]
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]

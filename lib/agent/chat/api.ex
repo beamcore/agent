@@ -16,64 +16,73 @@ defmodule Beamcore.Agent.Chat.API do
   Execute an API call with retry logic.
   """
   def execute(client, messages, tools, context \\ :main) do
-    tools = tools || []
+    # Input validation
+    if !is_list(messages) || length(messages) == 0 do
+      {:error, "Messages must be a non-empty list."}
+    else
+      if tools && !is_list(tools) do
+        {:error, "Tools must be a list."}
+      else
+        tools = tools || []
 
-    # Custom retry config for bad_request errors: 3 retries, 5s delay
-    retry_config = %Config{
-      max_retries: 3,
-      initial_backoff: 5000,
-      max_backoff: 5000,
-      backoff_multiplier: 1,
-      retryable_errors: [
-        :bad_request,
-        :rate_limit,
-        :api_timeout_error,
-        :api_connection_error,
-        :internal_server_error
-      ]
-    }
+        # Custom retry config for bad_request errors: 3 retries, 5s delay
+        retry_config = %Config{
+          max_retries: 3,
+          initial_backoff: 5000,
+          max_backoff: 5000,
+          backoff_multiplier: 1,
+          retryable_errors: [
+            :bad_request,
+            :rate_limit,
+            :api_timeout_error,
+            :api_connection_error,
+            :internal_server_error
+          ]
+        }
 
-    Beamcore.Agent.Chat.RateLimiter.wait()
+        Beamcore.Agent.Chat.RateLimiter.wait()
 
-    Beamcore.Agent.Retry.execute(
-      fn ->
-        try do
-          response =
-            @completions_module.create(
-              client,
-              %{
-                model: @default_model,
-                messages: messages,
-                tools: tools
-              }
-            )
+        Beamcore.Agent.Retry.execute(
+          fn ->
+            try do
+              response =
+                @completions_module.create(
+                  client,
+                  %{
+                    model: @default_model,
+                    messages: messages,
+                    tools: tools
+                  }
+                )
 
-          case response do
-            {:error, %OpenaiEx.Error{kind: :bad_request} = error} ->
-              print_debug_info(messages, tools, @default_model, error)
-              format_response(response, context)
+              case response do
+                {:error, %OpenaiEx.Error{kind: :bad_request} = error} ->
+                  print_debug_info(messages, tools, @default_model, error)
+                  format_response(response, context)
 
-            {:error, %OpenaiEx.Error{status_code: 400} = error} ->
-              print_debug_info(messages, tools, @default_model, error)
-              format_response(response, context)
+                {:error, %OpenaiEx.Error{status_code: 400} = error} ->
+                  print_debug_info(messages, tools, @default_model, error)
+                  format_response(response, context)
 
-            {:error, reason} when is_binary(reason) ->
-              if String.contains?(reason, "status_code: 400") do
-                print_debug_info(messages, tools, @default_model, reason)
+                {:error, reason} when is_binary(reason) ->
+                  if String.contains?(reason, "status_code: 400") do
+                    print_debug_info(messages, tools, @default_model, reason)
+                  end
+
+                  format_response(response, context)
+
+                _ ->
+                  format_response(response, context)
               end
-
-              format_response(response, context)
-
-            _ ->
-              format_response(response, context)
-          end
-        rescue
-          e ->
-            {:error, e}
-        end
-      end,
-      retry_config
-    )
+            rescue
+              e ->
+                {:error, e}
+            end
+          end,
+          retry_config
+        )
+      end
+    end
   end
 
   defp format_response(
