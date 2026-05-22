@@ -20,6 +20,7 @@ defmodule Beamcore.Agent.Tools.Tree do
     ".elixir_ls",
     ".DS_Store"
   ]
+  alias Beamcore.Agent.Tools.PathSafety
 
   def name, do: "tree"
 
@@ -52,14 +53,17 @@ defmodule Beamcore.Agent.Tools.Tree do
   end
 
   def execute(params) do
-    path = Map.get(params, "path", ".") |> Path.expand()
     depth = Map.get(params, "depth", 2)
     show_all = Map.get(params, "all", false)
 
-    if File.dir?(path) do
-      do_tree(path, depth, "", show_all) |> truncate()
+    with {:ok, path} <- PathSafety.resolve(Map.get(params, "path", ".")) do
+      if File.dir?(path) do
+        do_tree(path, depth, "", show_all) |> truncate()
+      else
+        "Error: '#{path}' is not a directory."
+      end
     else
-      "Error: '#{path}' is not a directory."
+      {:error, reason} -> PathSafety.error(reason)
     end
   end
 

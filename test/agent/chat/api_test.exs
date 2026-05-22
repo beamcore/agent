@@ -4,7 +4,13 @@ defmodule Beamcore.Agent.Chat.APITest do
   alias Beamcore.Agent.Chat.API
 
   setup do
+    Beamcore.Agent.TestEnv.setup_env(%{
+      "MISTRAL_API_KEY" => "test-api-key",
+      "MISTRAL_BASE_URL" => nil
+    })
+
     client = Beamcore.Agent.OpenAI.client()
+
     # Reset mock after each test
     on_exit(fn ->
       Process.delete(:mock_completions_create)

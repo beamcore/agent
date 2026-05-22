@@ -3,6 +3,8 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   Dynamically resolves and executes tools.
   """
 
+  alias Beamcore.Agent.Chat.ToolPolicy
+
   @tools [
     Beamcore.Agent.Tools.Grep,
     Beamcore.Agent.Tools.Read,
@@ -21,16 +23,18 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   @doc """
   Execute a tool by name with the given arguments.
   """
-  def execute(name, args) do
+  def execute(name, args, policy \\ ToolPolicy.default()) do
     case find_tool(name) do
       nil ->
         "Function not implemented"
 
       tool ->
-        try do
-          tool.execute(args)
-        rescue
-          e -> "Error executing tool #{name}: #{inspect(e)}"
+        case ToolPolicy.allow_tool_call(policy, name, args) do
+          :ok ->
+            execute_tool(tool, name, args)
+
+          {:error, message} ->
+            "Error: #{message}"
         end
     end
   end
@@ -38,22 +42,27 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   @doc """
   Get the list of tool specs for API calls.
   """
-  def tool_specs() do
-    Enum.map(@tools, fn tool -> tool.spec() end)
-  end
+  def tool_specs(policy \\ ToolPolicy.default()) do
+    allowed_names = ToolPolicy.allowed_tool_names(policy)
 
-  @conductor_tools [
-    Beamcore.Agent.Tools.Task,
-    Beamcore.Agent.Tools.Git,
-    Beamcore.Agent.Tools.Tree,
-    Beamcore.Agent.Tools.Read
-  ]
+    @tools
+    |> Enum.filter(fn tool -> tool.name() in allowed_names end)
+    |> Enum.map(fn tool -> tool.spec() end)
+  end
 
   @doc """
   Get the list of conductor tool specs for main loop API calls.
   """
-  def conductor_tool_specs() do
-    Enum.map(@conductor_tools, fn tool -> tool.spec() end)
+  def conductor_tool_specs(policy \\ ToolPolicy.default()) do
+    tool_specs(policy)
+  end
+
+  defp execute_tool(tool, name, args) do
+    try do
+      tool.execute(args)
+    rescue
+      e -> "Error executing tool #{name}: #{inspect(e)}"
+    end
   end
 
   defp find_tool(name) do

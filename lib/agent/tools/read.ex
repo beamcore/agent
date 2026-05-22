@@ -1,13 +1,14 @@
 defmodule Beamcore.Agent.Tools.Read do
   @moduledoc """
-  Tool to read files or directories from the local filesystem.
+  Tool to read workspace files or directories.
   """
 
   @default_limit 50
   @max_line_length 200
+  alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Read a file or list contents of a directory on the local filesystem.
+  Read a workspace file or list contents of a workspace directory.
   Returns line-numbered contents up to a configurable limit from the given start offset.
   Essential for reviewing source files, inspecting structure, and viewing directories.
   """
@@ -23,10 +24,7 @@ defmodule Beamcore.Agent.Tools.Read do
         parameters: %{
           type: "object",
           properties: %{
-            filePath: %{
-              type: "string",
-              description: "The absolute path to the file or directory to read"
-            },
+            filePath: %{type: "string", description: "The workspace-relative path to read"},
             offset: %{
               type: "integer",
               description: "The line number to start reading from (1-indexed)"
@@ -43,28 +41,36 @@ defmodule Beamcore.Agent.Tools.Read do
   end
 
   def execute(params) do
-    file_path = Map.fetch!(params, "filePath")
+    file_path = fetch_path!(params)
     offset = Map.get(params, "offset", 1)
     limit = Map.get(params, "limit", @default_limit)
 
-    expanded_path = Path.expand(file_path)
+    case PathSafety.resolve(file_path) do
+      {:ok, expanded_path} ->
+        case File.stat(expanded_path) do
+          {:ok, %File.Stat{type: :directory}} ->
+            read_directory(expanded_path, offset, limit)
 
-    case File.stat(expanded_path) do
-      {:ok, %File.Stat{type: :directory}} ->
-        read_directory(expanded_path, offset, limit)
+          {:ok, %File.Stat{type: :regular}} ->
+            read_file(expanded_path, offset, limit)
 
-      {:ok, %File.Stat{type: :regular}} ->
-        read_file(expanded_path, offset, limit)
+          {:ok, _} ->
+            "Error: Path is not a regular file or directory: #{expanded_path}"
 
-      {:ok, _} ->
-        "Error: Path is not a regular file or directory: #{expanded_path}"
+          {:error, :enoent} ->
+            suggest_files(expanded_path)
 
-      {:error, :enoent} ->
-        suggest_files(expanded_path)
+          {:error, reason} ->
+            "Error reading path #{expanded_path}: #{reason}"
+        end
 
       {:error, reason} ->
-        "Error reading path #{expanded_path}: #{reason}"
+        PathSafety.error(reason)
     end
+  end
+
+  defp fetch_path!(params) do
+    Map.get(params, "filePath") || Map.get(params, "path") || raise(KeyError, key: "filePath")
   end
 
   defp read_directory(path, offset, limit) do

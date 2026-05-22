@@ -2,6 +2,13 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   use ExUnit.Case
   alias Beamcore.Agent.Chat.Session
 
+  setup do
+    Beamcore.Agent.TestEnv.setup_env(%{
+      "MISTRAL_API_KEY" => "test-api-key",
+      "MISTRAL_BASE_URL" => nil
+    })
+  end
+
   test "generate_name/0 returns a funny name" do
     name = Session.generate_name()
     assert String.match?(name, ~r/^[a-z]+-[a-z]+-[a-z]+$/)

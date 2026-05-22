@@ -27,4 +27,43 @@ defmodule Beamcore.Agent.Tools.WriteTest do
     assert result =~ "Successfully wrote to"
     assert File.read!(path) == "hello nested"
   end
+
+  test "write rejects absolute paths" do
+    result = Write.execute(%{"filePath" => "/tmp/agent_write_outside.txt", "content" => "nope"})
+
+    assert result =~ "absolute paths are not allowed"
+  end
+
+  test "write rejects path traversal" do
+    result = Write.execute(%{"filePath" => "../agent_write_outside.txt", "content" => "nope"})
+
+    assert result =~ "path traversal is not allowed"
+  end
+
+  test "write rejects symlink escapes" do
+    workspace_link = Path.join(@test_dir, "outside_link")
+
+    outside_dir =
+      Path.join(System.tmp_dir!(), "agent_write_outside_#{System.unique_integer([:positive])}")
+
+    File.mkdir_p!(outside_dir)
+
+    try do
+      case File.ln_s(outside_dir, workspace_link) do
+        :ok ->
+          result =
+            Write.execute(%{
+              "filePath" => Path.join(workspace_link, "outside.txt"),
+              "content" => "nope"
+            })
+
+          assert result =~ "path outside workspace"
+
+        {:error, :enotsup} ->
+          :ok
+      end
+    after
+      File.rm_rf!(outside_dir)
+    end
+  end
 end

@@ -1,9 +1,17 @@
 defmodule Beamcore.Agent.Tools.GlobTest do
   use ExUnit.Case
 
+  @test_dir "test/tmp_glob_test"
+
+  setup do
+    File.rm_rf!(@test_dir)
+    File.mkdir_p!(@test_dir)
+    on_exit(fn -> File.rm_rf!(@test_dir) end)
+    :ok
+  end
+
   test "returns files matching glob" do
-    # create a temp dir with some files
-    dir = System.tmp_dir!() |> Path.join("agent_glob_test_#{System.unique_integer([:positive])}")
+    dir = Path.join(@test_dir, "files")
     File.mkdir_p!(dir)
     File.write!(Path.join(dir, "test1.ex"), "defmodule Test1 do end")
     File.write!(Path.join(dir, "test2.exs"), "defmodule Test2 do end")
@@ -13,23 +21,16 @@ defmodule Beamcore.Agent.Tools.GlobTest do
 
     assert String.contains?(output, "test1.ex")
     refute String.contains?(output, "test2.exs")
-
-    File.rm_rf!(dir)
   end
 
   test "returns no files found message when glob matches nothing" do
-    dir =
-      System.tmp_dir!()
-      |> Path.join("agent_glob_test_empty_#{System.unique_integer([:positive])}")
-
+    dir = Path.join(@test_dir, "empty")
     File.mkdir_p!(dir)
 
     params = %{"pattern" => "**/*.txt", "path" => dir}
     output = Beamcore.Agent.Tools.Glob.execute(params)
 
     assert String.starts_with?(output, "No files found matching pattern:")
-
-    File.rm_rf!(dir)
   end
 
   test "uses current working directory by default" do
@@ -42,10 +43,7 @@ defmodule Beamcore.Agent.Tools.GlobTest do
   end
 
   test "glob respects .gitignore" do
-    dir =
-      System.tmp_dir!()
-      |> Path.join("agent_glob_gitignore_test_#{System.unique_integer([:positive])}")
-
+    dir = Path.join(@test_dir, "gitignore")
     File.mkdir_p!(dir)
 
     System.cmd("git", ["init"], cd: dir)
@@ -64,7 +62,17 @@ defmodule Beamcore.Agent.Tools.GlobTest do
     params = %{"pattern" => "*.ex", "path" => dir, "all" => true}
     output = Beamcore.Agent.Tools.Glob.execute(params)
     assert String.contains?(output, "ignored.ex")
+  end
 
-    File.rm_rf!(dir)
+  test "rejects absolute paths" do
+    output = Beamcore.Agent.Tools.Glob.execute(%{"pattern" => "*.ex", "path" => "/tmp"})
+
+    assert output =~ "absolute paths are not allowed"
+  end
+
+  test "rejects path traversal" do
+    output = Beamcore.Agent.Tools.Glob.execute(%{"pattern" => "*.ex", "path" => "../"})
+
+    assert output =~ "path traversal is not allowed"
   end
 end

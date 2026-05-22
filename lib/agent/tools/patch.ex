@@ -2,6 +2,8 @@ defmodule Beamcore.Agent.Tools.Patch do
   @moduledoc """
   Tool to apply a unified diff patch to a file.
   """
+  alias Beamcore.Agent.Tools.PathSafety
+
   @description """
   Apply a standard unified diff patch to target files within a specified workspace directory.
   The patch content must be a valid, well-formed unified diff structure.
@@ -36,28 +38,55 @@ defmodule Beamcore.Agent.Tools.Patch do
 
   def execute(params) do
     patch_content = Map.fetch!(params, "patch_content")
-    workdir = Map.get(params, "workdir", File.cwd!())
+    workdir = Map.get(params, "workdir", ".")
 
-    expanded_workdir = Path.expand(workdir)
+    with :ok <- validate_patch_paths(patch_content),
+         {:ok, expanded_workdir} <- PathSafety.resolve(workdir) do
+      patch_file =
+        Path.join(System.tmp_dir!(), "agent_patch_#{System.unique_integer([:positive])}.diff")
 
-    patch_file =
-      Path.join(System.tmp_dir!(), "agent_patch_#{System.unique_integer([:positive])}.diff")
+      File.write!(patch_file, patch_content)
 
-    File.write!(patch_file, patch_content)
+      try do
+        case System.cmd("patch", ["-p1", "-i", patch_file],
+               cd: expanded_workdir,
+               stderr_to_stdout: true
+             ) do
+          {output, 0} ->
+            "Patch applied successfully:\n#{output}"
 
-    try do
-      case System.cmd("patch", ["-p1", "-i", patch_file],
-             cd: expanded_workdir,
-             stderr_to_stdout: true
-           ) do
-        {output, 0} ->
-          "Patch applied successfully:\n#{output}"
-
-        {output, _} ->
-          "Error applying patch:\n#{output}"
+          {output, _} ->
+            "Error applying patch:\n#{output}"
+        end
+      after
+        File.rm(patch_file)
       end
-    after
-      File.rm(patch_file)
+    else
+      {:error, reason} -> PathSafety.error(reason)
     end
   end
+
+  defp validate_patch_paths(patch_content) do
+    patch_content
+    |> String.split("\n")
+    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
+    |> Enum.map(&patch_path/1)
+    |> Enum.reject(&(&1 in [nil, "/dev/null"]))
+    |> Enum.reduce_while(:ok, fn path, :ok ->
+      case path |> strip_patch_prefix() |> PathSafety.validate_pattern() do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp patch_path(line) do
+    line
+    |> String.split(~r/\s+/, parts: 3, trim: true)
+    |> Enum.at(1)
+  end
+
+  defp strip_patch_prefix("a/" <> path), do: path
+  defp strip_patch_prefix("b/" <> path), do: path
+  defp strip_patch_prefix(path), do: path
 end

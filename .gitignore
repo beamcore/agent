@@ -3,6 +3,9 @@
 /deps
 /doc
 /.fetch
+.env
+.env.*
+!.env.example
 erl_crash.dump
 *.ez
 *.beam

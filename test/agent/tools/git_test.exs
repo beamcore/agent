@@ -45,4 +45,16 @@ defmodule Beamcore.Agent.Tools.GitTest do
     output = Git.execute(params)
     assert output == "Error: Unsupported git operation: invalid"
   end
+
+  test "rejects absolute workdir" do
+    output = Git.execute(%{"operation" => "status", "workdir" => "/tmp"})
+
+    assert output =~ "absolute paths are not allowed"
+  end
+
+  test "rejects path traversal in path arguments" do
+    output = Git.execute(%{"operation" => "diff", "path" => "../outside.txt"})
+
+    assert output =~ "path traversal is not allowed"
+  end
 end

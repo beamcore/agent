@@ -3,6 +3,13 @@ defmodule Beamcore.Agent.Tools.TaskTest do
 
   alias Beamcore.Agent.Tools.Task
 
+  setup do
+    Beamcore.Agent.TestEnv.setup_env(%{
+      "MISTRAL_API_KEY" => "test-api-key",
+      "MISTRAL_BASE_URL" => nil
+    })
+  end
+
   @funny_names [
     "dusty_cat",
     "sneezing_walrus",

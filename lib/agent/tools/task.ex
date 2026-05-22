@@ -3,14 +3,14 @@ defmodule Beamcore.Agent.Tools.Task do
   Tool to execute a task as an agent without a chat session.
   """
 
-  alias Beamcore.Agent.Chat.API
+  alias Beamcore.Agent.Chat.{API, ToolPolicy}
   alias Beamcore.Agent.Tools.Dispatcher
   alias Beamcore.Agent.OpenAI
 
   @description """
-  Execute a sub-task using an autonomous agent separate from the active chat session.
-  Uses a prompt instruction and handles complex or multi-step background operations.
-  Returns a summarized result of the agent's work and tools executed.
+  Execute a bounded sub-task using an autonomous agent separate from the active chat session.
+  Use only when the user explicitly asked for delegation or the task is too large for direct work.
+  Nested task delegation is disabled to prevent token explosions.
   """
 
   @funny_names [
@@ -73,11 +73,11 @@ defmodule Beamcore.Agent.Tools.Task do
       %{
         role: "system",
         content: """
-        You are an autonomous sub-agent, a tiny agent that follows the conductor.
-        Your name is #{name}.
-        Follow the instructions provided in the conductor's prompt precisely.
-        Use the available tools to assist in completing the task.
-        Return the final result or output of the task.
+        You are a bounded Beamcore.Agent sub-agent named #{name}.
+        Execute only the explicit task from the conductor.
+        Do not delegate to other sub-agents.
+        Do not modify files when the prompt is read-only or forbids changes.
+        Keep tool usage minimal and return a concise final result.
         """
       },
       %{
@@ -92,21 +92,22 @@ defmodule Beamcore.Agent.Tools.Task do
       trimmed_on_bad_request: false
     }
 
-    process_subagent(messages, 0, name, initial_state)
+    policy = ToolPolicy.subagent(prompt)
+    process_subagent(messages, 0, name, initial_state, policy)
   end
 
-  defp process_subagent(_messages, depth, _name, _state) when depth >= 25 do
-    "Error: Sub-agent reached tool depth limit of 25."
+  defp process_subagent(_messages, depth, _name, _state, _policy) when depth >= 8 do
+    "Error: Sub-agent reached tool depth limit of 8."
   end
 
-  defp process_subagent(_messages, _depth, name, %{consecutive_errors: errors})
+  defp process_subagent(_messages, _depth, name, %{consecutive_errors: errors}, _policy)
        when errors >= 3 do
     "Error: Sub-agent #{name} hit #{errors} consecutive API errors. Aborting to prevent loop."
   end
 
-  defp process_subagent(messages, depth, name, state) do
+  defp process_subagent(messages, depth, name, state, policy) do
     client = OpenAI.client()
-    tools = Dispatcher.tool_specs()
+    tools = Dispatcher.tool_specs(policy)
 
     trimmed = trim_messages(messages)
 
@@ -139,7 +140,7 @@ defmodule Beamcore.Agent.Tools.Task do
                     _ -> %{}
                   end
 
-                content = Dispatcher.execute(name, args)
+                content = Dispatcher.execute(name, args, policy)
 
                 %{
                   role: "tool",
@@ -150,7 +151,7 @@ defmodule Beamcore.Agent.Tools.Task do
               end)
 
             new_state = %{state | consecutive_errors: 0, tool_call_history: updated_history}
-            process_subagent(new_messages ++ tool_responses, depth + 1, name, new_state)
+            process_subagent(new_messages ++ tool_responses, depth + 1, name, new_state, policy)
           end
         else
           message["content"] || "Sub-agent completed but produced no text response."
@@ -167,7 +168,7 @@ defmodule Beamcore.Agent.Tools.Task do
               consecutive_errors: state.consecutive_errors + 1
           }
 
-          process_subagent(aggressively_trimmed, depth, name, new_state)
+          process_subagent(aggressively_trimmed, depth, name, new_state, policy)
         else
           "Error: Sub-agent #{name} received bad_request after trimming. Cannot recover."
         end
@@ -199,7 +200,7 @@ defmodule Beamcore.Agent.Tools.Task do
         if new_state.consecutive_errors >= 3 do
           "Error: Sub-agent #{name} hit #{new_state.consecutive_errors} consecutive API errors. Last: #{error.kind} (#{error_details}#{error_body})"
         else
-          process_subagent(messages, depth, name, new_state)
+          process_subagent(messages, depth, name, new_state, policy)
         end
 
       {:error, reason} ->
@@ -222,18 +223,18 @@ defmodule Beamcore.Agent.Tools.Task do
   end
 
   @doc false
-  # More aggressive trimming — keep system + last 20 messages
+  # More aggressive trimming — keep system + last 10 messages
   defp aggressive_trim_messages(messages) do
     {system, rest} =
       Enum.split_with(messages, fn m ->
         (m[:role] || m["role"]) == "system"
       end)
 
-    system ++ Enum.take(rest, -20)
+    system ++ Enum.take(rest, -10)
   end
 
   defp trim_messages(messages) do
-    if length(messages) <= 40 do
+    if length(messages) <= 16 do
       messages
     else
       {system, rest} =
@@ -241,7 +242,7 @@ defmodule Beamcore.Agent.Tools.Task do
           (m[:role] || m["role"]) == "system"
         end)
 
-      system ++ Enum.take(rest, -(40 - length(system)))
+      system ++ Enum.take(rest, -(16 - length(system)))
     end
   end
 

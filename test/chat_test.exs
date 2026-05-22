@@ -1,6 +1,13 @@
 defmodule ChatTest do
   use ExUnit.Case
 
+  setup do
+    Beamcore.Agent.TestEnv.setup_env(%{
+      "MISTRAL_API_KEY" => "test-api-key",
+      "MISTRAL_BASE_URL" => nil
+    })
+  end
+
   test "chat session structure" do
     # Test that we can create a chat session with proper structure
     client = Beamcore.Agent.OpenAI.client()

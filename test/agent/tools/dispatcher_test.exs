@@ -1,6 +1,7 @@
 defmodule Beamcore.Agent.Tools.DispatcherTest do
   use ExUnit.Case
 
+  alias Beamcore.Agent.Chat.ToolPolicy
   alias Beamcore.Agent.Tools.Dispatcher
 
   test "execute returns error for unknown tool" do
@@ -8,23 +9,34 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert result == "Function not implemented"
   end
 
-  test "tool_specs returns a list of specifications" do
+  test "tool_specs returns direct tool specifications without task by default" do
     specs = Dispatcher.tool_specs()
-    assert is_list(specs)
-    assert length(specs) > 0
+    names = Enum.map(specs, fn spec -> spec.function.name end)
 
-    # Check that a known tool like read is in the specs
-    assert Enum.any?(specs, fn spec ->
-             spec.function.name == "read"
-           end)
+    assert "read" in names
+    assert "mix" in names
+    refute "task" in names
   end
 
-  test "conductor_tool_specs returns only the expected conductor tools" do
-    specs = Dispatcher.conductor_tool_specs()
-    assert is_list(specs)
-    assert length(specs) == 4
+  test "tool_specs includes task only when policy allows explicit delegation" do
+    policy = ToolPolicy.from_user_message("Use task delegation for this large audit.")
+    names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
-    names = Enum.map(specs, fn spec -> spec.function.name end) |> Enum.sort()
-    assert names == ["git", "read", "task", "tree"]
+    assert "task" in names
+  end
+
+  test "conductor_tool_specs applies read-only policy" do
+    policy = ToolPolicy.from_user_message("Read-only smoke test. Do not modify files.")
+    names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
+
+    assert Enum.sort(names) == Enum.sort(~w(read grep glob tree git mix))
+  end
+
+  test "execute blocks mutating tools in read-only mode" do
+    policy = ToolPolicy.from_user_message("Do not modify files.")
+
+    result = Dispatcher.execute("write", %{"filePath" => "tmp.txt", "content" => "bad"}, policy)
+
+    assert result =~ "read-only policy"
   end
 end

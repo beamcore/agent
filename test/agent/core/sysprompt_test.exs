@@ -1,20 +1,82 @@
 defmodule Beamcore.Agent.Core.SysPromptTest do
   use ExUnit.Case
 
-  test "generate/0 includes command execution restriction in guidelines" do
+  test "generate/0 includes command execution restriction" do
     prompt = Beamcore.Agent.Core.SysPrompt.generate()
 
-    assert String.contains?(prompt, "Command Execution Restriction")
-
-    assert String.contains?(
-             prompt,
-             "Direct shell, bash, sh, or any other command execution is **not allowed**"
-           )
-
-    assert String.contains?(prompt, "You must use only the tools provided above")
+    assert prompt =~ "Command Execution Restriction"
+    assert prompt =~ "Direct shell, bash, sh, or any other command execution is **not allowed**"
+    assert prompt =~ "You must use only the tools provided above"
   end
 
-  test "generate/0 includes all default tools" do
+  test "generate/0 includes senior self-development objectives" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate()
+
+    assert prompt =~ "Elixir-first coding agent"
+    assert prompt =~ "Improve this codebase safely and incrementally"
+    assert prompt =~ "Produce excellent production-quality code"
+    assert prompt =~ "smallest meaningful change"
+    assert prompt =~ "ExUnit tests"
+  end
+
+  test "generate/0 includes code quality principles" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate()
+
+    principles = [
+      "SOLID",
+      "KISS",
+      "DRY",
+      "YAGNI",
+      "Fail fast",
+      "backward-compatible",
+      "reviewable"
+    ]
+
+    Enum.each(principles, fn principle ->
+      assert prompt =~ principle,
+             "Expected principle '#{principle}' to be present in the prompt"
+    end)
+  end
+
+  test "generate/0 includes safety boundaries" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate()
+
+    safety_rules = [
+      "workspace boundaries",
+      "workspace-relative",
+      "Absolute paths",
+      "path traversal",
+      "symlink escapes",
+      "Do not expose, print, commit, or invent secrets",
+      ".env",
+      ".env.example",
+      "read-only"
+    ]
+
+    Enum.each(safety_rules, fn rule ->
+      assert prompt =~ rule,
+             "Expected safety rule '#{rule}' to be present in the prompt"
+    end)
+  end
+
+  test "generate/0 includes token and tool discipline" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate()
+
+    expectations = [
+      "Do not read whole files",
+      "offset/limit",
+      "Do not inspect the whole project tree",
+      "Do not call task for simple analysis",
+      "Keep tool outputs compact"
+    ]
+
+    Enum.each(expectations, fn expectation ->
+      assert prompt =~ expectation,
+             "Expected token discipline rule '#{expectation}' to be present in the prompt"
+    end)
+  end
+
+  test "generate/0 includes all important tools" do
     prompt = Beamcore.Agent.Core.SysPrompt.generate()
 
     tools = [
@@ -27,45 +89,35 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
       "glob",
       "fs",
       "git",
+      "mix",
       "curl"
     ]
 
     Enum.each(tools, fn tool ->
-      assert String.contains?(prompt, tool),
+      assert prompt =~ tool,
              "Expected tool '#{tool}' to be present in the prompt"
     end)
   end
 
-  test "generate/0 includes all default guidelines" do
-    prompt = Beamcore.Agent.Core.SysPrompt.generate()
+  test "generate/1 includes Elixir project details" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate(:elixir)
 
-    guidelines = [
-      "Follow project conventions and write clean, readable code",
-      "Avoid destructive actions",
-      "Explain reasoning for complex decisions or changes",
-      "Prioritize optimal and efficient solutions",
-      "Work autonomously within a user request scope"
-    ]
-
-    Enum.each(guidelines, fn guideline ->
-      assert String.contains?(prompt, guideline),
-             "Expected guideline '#{guideline}' to be present in the prompt"
-    end)
+    assert prompt =~ "This is an Elixir project using Mix"
+    assert prompt =~ "Source code lives under lib/"
+    assert prompt =~ "Tests live under test/ and use ExUnit"
+    assert prompt =~ "Dependencies are declared in mix.exs"
+    assert prompt =~ "Configuration lives under config/"
   end
 
-  test "generate/1 includes project nature details" do
-    elixir_prompt = Beamcore.Agent.Core.SysPrompt.generate(:elixir)
-    assert String.contains?(elixir_prompt, "### Project Nature:")
-    assert String.contains?(elixir_prompt, "This is an Elixir project")
+  test "generate/1 includes Erlang project details" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate(:erlang)
 
-    erlang_prompt = Beamcore.Agent.Core.SysPrompt.generate(:erlang)
-    assert String.contains?(erlang_prompt, "This is an Erlang project.")
+    assert prompt =~ "This is an Erlang project"
+  end
 
-    unknown_prompt = Beamcore.Agent.Core.SysPrompt.generate(:unknown)
+  test "generate/1 includes unknown project details" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate(:unknown)
 
-    assert String.contains?(
-             unknown_prompt,
-             "The project nature/language is unknown or not specifically detected."
-           )
+    assert prompt =~ "Project nature is not fully detected"
   end
 end

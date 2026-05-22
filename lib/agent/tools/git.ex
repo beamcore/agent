@@ -2,11 +2,13 @@ defmodule Beamcore.Agent.Tools.Git do
   @moduledoc """
   Tool to perform git operations.
   """
+  alias Beamcore.Agent.Tools.PathSafety
 
   @description """
   Execute common git operations: clone, add, status, restore, log, diff, and commit.
   For log queries, it returns the two latest commits to keep context compact.
   Use this whenever you need to interact with the repository's git version control.
+  Workdirs and path arguments must stay inside the current workspace.
   """
 
   def name, do: "git"
@@ -55,23 +57,41 @@ defmodule Beamcore.Agent.Tools.Git do
 
   def execute(params) do
     operation = Map.fetch!(params, "operation")
-    workdir = Map.get(params, "workdir", File.cwd!()) |> Path.expand()
+    workdir = Map.get(params, "workdir", ".")
 
+    with {:ok, safe_workdir} <- PathSafety.resolve(workdir) do
+      execute_operation(operation, params, safe_workdir)
+    else
+      {:error, reason} -> PathSafety.error(reason)
+    end
+  end
+
+  defp execute_operation(operation, params, workdir) do
     case operation do
       "clone" ->
         url = Map.get(params, "url")
 
         if url do
           path = Map.get(params, "path")
-          args = if path, do: ["clone", url, path], else: ["clone", url]
-          run_git(args, workdir)
+
+          with :ok <- validate_optional_path(path) do
+            args = if path, do: ["clone", url, path], else: ["clone", url]
+            run_git(args, workdir)
+          else
+            {:error, reason} -> PathSafety.error(reason)
+          end
         else
           "Error: url is required for clone operation."
         end
 
       "add" ->
         path = Map.get(params, "path") || "."
-        run_git(["add", path], workdir)
+
+        with :ok <- PathSafety.validate_pattern(path) do
+          run_git(["add", path], workdir)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "status" ->
         run_git(["status"], workdir)
@@ -80,7 +100,11 @@ defmodule Beamcore.Agent.Tools.Git do
         path = Map.get(params, "path")
 
         if path do
-          run_git(["restore", path], workdir)
+          with :ok <- PathSafety.validate_pattern(path) do
+            run_git(["restore", path], workdir)
+          else
+            {:error, reason} -> PathSafety.error(reason)
+          end
         else
           "Error: path is required for restore operation."
         end
@@ -93,8 +117,13 @@ defmodule Beamcore.Agent.Tools.Git do
         path = Map.get(params, "path")
         args = ["diff"]
         args = if staged, do: args ++ ["--staged"], else: args
-        args = if path, do: args ++ [path], else: args
-        run_git(args, workdir)
+
+        with :ok <- validate_optional_path(path) do
+          args = if path, do: args ++ [path], else: args
+          run_git(args, workdir)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "commit" ->
         message = Map.get(params, "message")
@@ -109,6 +138,9 @@ defmodule Beamcore.Agent.Tools.Git do
         "Error: Unsupported git operation: #{operation}"
     end
   end
+
+  defp validate_optional_path(nil), do: :ok
+  defp validate_optional_path(path), do: PathSafety.validate_pattern(path)
 
   defp run_git(args, workdir) do
     case System.cmd("git", args, cd: workdir, stderr_to_stdout: true) do
