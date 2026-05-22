@@ -2,8 +2,10 @@ defmodule Beamcore.Agent.Tools.Write do
   @moduledoc """
   Tool to write content to a file.
   """
+  alias Beamcore.Agent.Tools.PathSafety
+
   @description """
-  Write full file content to the specified absolute path on the local filesystem.
+  Write full file content to the specified workspace-relative path.
   Automatically creates parent directories if needed, and overwrites existing files.
   Best for creating new source code files or replacing complete contents of a file.
   """
@@ -19,10 +21,7 @@ defmodule Beamcore.Agent.Tools.Write do
         parameters: %{
           type: "object",
           properties: %{
-            filePath: %{
-              type: "string",
-              description: "The absolute path to the file to write"
-            },
+            filePath: %{type: "string", description: "The workspace-relative path to write"},
             content: %{
               type: "string",
               description: "The content to write to the file"
@@ -35,15 +34,22 @@ defmodule Beamcore.Agent.Tools.Write do
   end
 
   def execute(params) do
-    file_path = Map.fetch!(params, "filePath")
+    file_path = fetch_path!(params)
     content = Map.fetch!(params, "content")
 
-    expanded_path = Path.expand(file_path)
-    expanded_path |> Path.dirname() |> File.mkdir_p!()
+    with {:ok, expanded_path} <- PathSafety.resolve(file_path, allow_missing: true) do
+      expanded_path |> Path.dirname() |> File.mkdir_p!()
 
-    case File.write(expanded_path, content) do
-      :ok -> "Successfully wrote to #{expanded_path}"
-      {:error, reason} -> "Error writing file #{expanded_path}: #{reason}"
+      case File.write(expanded_path, content) do
+        :ok -> "Successfully wrote to #{expanded_path}"
+        {:error, reason} -> "Error writing file #{expanded_path}: #{reason}"
+      end
+    else
+      {:error, reason} -> PathSafety.error(reason)
     end
+  end
+
+  defp fetch_path!(params) do
+    Map.get(params, "filePath") || Map.get(params, "path") || raise(KeyError, key: "filePath")
   end
 end

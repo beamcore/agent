@@ -1,6 +1,13 @@
 defmodule Beamcore.AgentTest do
   use ExUnit.Case
 
+  setup do
+    Beamcore.Agent.TestEnv.setup_env(%{
+      "MISTRAL_API_KEY" => "test-api-key",
+      "MISTRAL_BASE_URL" => nil
+    })
+  end
+
   test "chat responds to ping with pong" do
     # Create a mock client that returns a predictable response
     mock_client = fn

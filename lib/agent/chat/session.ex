@@ -99,6 +99,26 @@ defmodule Beamcore.Agent.Chat.Session do
   end
 
   @doc """
+  Prepares message history for an API request without mutating the persisted log.
+
+  Tool outputs and long assistant/user messages are compacted before they are sent
+  back to the model. This keeps the active session useful while preventing a
+  single smoke test or large read from consuming tens of thousands of tokens.
+  """
+  def prepare_for_api(messages, limit \\ 24) do
+    messages
+    |> trim_and_clean_messages(limit)
+    |> Enum.map(&truncate_for_api/1)
+  end
+
+  @doc """
+  Compact the in-memory history kept after a turn.
+  """
+  def compact_history(messages, limit \\ 32) do
+    trim_and_clean_messages(messages, limit)
+  end
+
+  @doc """
   Summarizes the current session context and rolls over into a new session.
   """
   def summarize_and_rollover(session, messages, pid) do
@@ -215,6 +235,39 @@ defmodule Beamcore.Agent.Chat.Session do
     system_messages ++ final_messages
   end
 
+  defp truncate_for_api(message) do
+    role = message[:role] || message["role"]
+    content = message[:content] || message["content"]
+
+    max_chars =
+      case role do
+        "system" -> 12_000
+        "tool" -> 2_000
+        "assistant" -> 4_000
+        "user" -> 6_000
+        _ -> 3_000
+      end
+
+    if is_binary(content) and String.length(content) > max_chars do
+      put_message_content(
+        message,
+        String.slice(content, 0, max_chars) <>
+          "
+... [content truncated before API request] ..."
+      )
+    else
+      message
+    end
+  end
+
+  defp put_message_content(message, content) do
+    if Map.has_key?(message, :content) do
+      Map.put(message, :content, content)
+    else
+      Map.put(message, "content", content)
+    end
+  end
+
   defp truncate_message_content(message) do
     content = message[:content] || message["content"]
 
@@ -223,11 +276,7 @@ defmodule Beamcore.Agent.Chat.Session do
         truncated =
           String.slice(content, 0, 4000) <> "\n... [content truncated for summarization] ..."
 
-        if Map.has_key?(message, :content) do
-          Map.put(message, :content, truncated)
-        else
-          Map.put(message, "content", truncated)
-        end
+        put_message_content(message, truncated)
 
       true ->
         message

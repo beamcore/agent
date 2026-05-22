@@ -2,6 +2,14 @@ defmodule Beamcore.Agent.Tools.GrepTest do
   use ExUnit.Case
 
   alias Beamcore.Agent.Tools.Grep
+  @test_dir "test/tmp_grep_test"
+
+  setup do
+    File.rm_rf!(@test_dir)
+    File.mkdir_p!(@test_dir)
+    on_exit(fn -> File.rm_rf!(@test_dir) end)
+    :ok
+  end
 
   test "spec/0 returns the expected tool specification" do
     spec = Grep.spec()
@@ -76,10 +84,7 @@ defmodule Beamcore.Agent.Tools.GrepTest do
   end
 
   test "grep respects .gitignore" do
-    dir =
-      System.tmp_dir!()
-      |> Path.join("agent_grep_gitignore_test_#{System.unique_integer([:positive])}")
-
+    dir = Path.join(@test_dir, "gitignore")
     File.mkdir_p!(dir)
 
     System.cmd("git", ["init"], cd: dir)
@@ -104,7 +109,17 @@ defmodule Beamcore.Agent.Tools.GrepTest do
     params = %{"pattern" => "search me", "path" => dir, "all" => true}
     output = Grep.execute(params)
     assert output =~ "ignored.txt"
+  end
 
-    File.rm_rf!(dir)
+  test "rejects absolute paths" do
+    output = Grep.execute(%{"pattern" => "anything", "path" => "/tmp"})
+
+    assert output =~ "absolute paths are not allowed"
+  end
+
+  test "rejects path traversal" do
+    output = Grep.execute(%{"pattern" => "anything", "path" => "../"})
+
+    assert output =~ "path traversal is not allowed"
   end
 end

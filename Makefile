@@ -2,6 +2,12 @@
 
 .PHONY: all deps compile test format dialyzer shell clean help
 
+ifneq (,$(wildcard .env))
+include .env
+export MISTRAL_API_KEY
+export MISTRAL_BASE_URL
+endif
+
 # Default target
 all: compile
 
@@ -76,28 +82,28 @@ run: compile
 
 # API client test
 api-test: compile
-	MISTRAL_API_KEY=$(MISTRAL_API_KEY) mix run -e "Beamcore.Agent.test_api_call()"
+	mix run -e "Beamcore.Agent.test_api_call()"
 
 # Direct API client inspection
 api-inspect: compile
-	MISTRAL_API_KEY=$(MISTRAL_API_KEY) mix run -e "IO.inspect Beamcore.Agent.OpenAI.client()"
+	mix run -e "IO.inspect Beamcore.Agent.OpenAI.client()"
 
 # Test a simple completion
 completion-test: compile
-	MISTRAL_API_KEY=$(MISTRAL_API_KEY) mix run -e "client = Beamcore.Agent.OpenAI.client(); IO.puts(\"Client ready for API calls\"); IO.inspect(client)"
+	mix run -e "client = Beamcore.Agent.OpenAI.client(); IO.puts(\"Client ready for API calls\"); IO.inspect(client)"
 
 # Start interactive chat
 chat: compile
-	MISTRAL_API_KEY=$(MISTRAL_API_KEY) mix run -e "Beamcore.Agent.chat()"
+	mix run -e "Beamcore.Agent.chat()"
 
 # Environment setup
 init:
-	cp .env.example .env 2>/dev/null || true
-	@echo "Make sure to set your MISTRAL_API_KEY in .env"
+	@if [ ! -f .env ]; then cp .env.example .env; fi
+	@echo "Set MISTRAL_API_KEY in .env for real chat/API usage"
 
 # Create .env.example if it doesn't exist
 .env.example:
-	echo "export MISTRAL_API_KEY=your_api_key_here" > .env.example
+	printf "MISTRAL_API_KEY=\nMISTRAL_BASE_URL=https://api.mistral.ai/v1\n" > .env.example
 
 # Add a target to update dependencies
 update:

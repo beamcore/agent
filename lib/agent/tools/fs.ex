@@ -8,9 +8,10 @@ defmodule Beamcore.Agent.Tools.Fs do
 
   @description """
   Perform local filesystem operations: move, copy, remove, touch, mkdir, stat, and exist.
-  All paths are expanded relative to the current active working directory.
+  All paths are resolved relative to the current workspace.
   A safe programmatic alternative to using shell commands for manipulating files.
   """
+  alias Beamcore.Agent.Tools.PathSafety
 
   @doc """
   Name of the tool.
@@ -52,6 +53,11 @@ defmodule Beamcore.Agent.Tools.Fs do
               description:
                 "Whether to force the operation (overwrite for copy, ignore errors for remove)",
               default: false
+            },
+            confirm: %{
+              type: "boolean",
+              description: "Required confirmation for destructive operations such as remove",
+              default: false
             }
           },
           required: ["operation", "path"]
@@ -69,36 +75,71 @@ defmodule Beamcore.Agent.Tools.Fs do
     target = Map.get(params, "target")
     recursive = Map.get(params, "recursive", false)
     force = Map.get(params, "force", false)
-
-    expanded_path = Path.expand(path)
-    expanded_target = if target, do: Path.expand(target), else: nil
+    confirm = Map.get(params, "confirm", false)
 
     case operation do
       "move" ->
-        move_file(expanded_path, expanded_target, force)
+        with {:ok, expanded_path} <- PathSafety.resolve(path),
+             {:ok, expanded_target} <- resolve_target(target) do
+          move_file(expanded_path, expanded_target, force)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "copy" ->
-        copy_file(expanded_path, expanded_target, recursive, force)
+        with {:ok, expanded_path} <- PathSafety.resolve(path),
+             {:ok, expanded_target} <- resolve_target(target) do
+          copy_file(expanded_path, expanded_target, recursive, force)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "remove" ->
-        remove_path(expanded_path, recursive, force)
+        with :ok <- confirm_destructive(confirm),
+             {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
+          remove_path(expanded_path, recursive, force)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "touch" ->
-        touch_file(expanded_path)
+        with {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
+          touch_file(expanded_path)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "stat" ->
-        stat_path(expanded_path)
+        with {:ok, expanded_path} <- PathSafety.resolve(path) do
+          stat_path(expanded_path)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "exist" ->
-        check_exists(expanded_path)
+        with {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
+          check_exists(expanded_path)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "mkdir" ->
-        mkdir_path(expanded_path)
+        with {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
+          mkdir_path(expanded_path)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       _ ->
         "Error: Unknown operation '#{operation}'. Valid operations: move, copy, remove, touch, stat, exist, mkdir"
     end
   end
+
+  defp resolve_target(nil), do: {:error, "target is required for this operation"}
+  defp resolve_target(target), do: PathSafety.resolve(target, allow_missing: true)
+
+  defp confirm_destructive(true), do: :ok
+  defp confirm_destructive(_), do: {:error, "operation not allowed: remove requires confirm=true"}
 
   # Move operation
   defp move_file(source, target, force) do

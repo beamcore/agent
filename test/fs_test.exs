@@ -131,7 +131,8 @@ defmodule Beamcore.Agent.Tools.FsTest do
     result =
       Beamcore.Agent.Tools.Fs.execute(%{
         "operation" => "remove",
-        "path" => "test_fs_remove_12345.txt"
+        "path" => "test_fs_remove_12345.txt",
+        "confirm" => true
       })
 
     assert String.contains?(result, "Successfully removed")
@@ -143,7 +144,11 @@ defmodule Beamcore.Agent.Tools.FsTest do
 
     try do
       result =
-        Beamcore.Agent.Tools.Fs.execute(%{"operation" => "remove", "path" => "test_fs_dir_12345"})
+        Beamcore.Agent.Tools.Fs.execute(%{
+          "operation" => "remove",
+          "path" => "test_fs_dir_12345",
+          "confirm" => true
+        })
 
       assert String.contains?(result, "Cannot remove directory")
     after
@@ -159,7 +164,8 @@ defmodule Beamcore.Agent.Tools.FsTest do
       Beamcore.Agent.Tools.Fs.execute(%{
         "operation" => "remove",
         "path" => "test_fs_dir_12345",
-        "recursive" => true
+        "recursive" => true,
+        "confirm" => true
       })
 
     assert String.contains?(result, "Successfully removed")
@@ -171,7 +177,8 @@ defmodule Beamcore.Agent.Tools.FsTest do
       Beamcore.Agent.Tools.Fs.execute(%{
         "operation" => "remove",
         "path" => "non_existent_file_12345",
-        "force" => true
+        "force" => true,
+        "confirm" => true
       })
 
     assert String.contains?(result, "does not exist, but force=true")
@@ -205,6 +212,35 @@ defmodule Beamcore.Agent.Tools.FsTest do
     after
       File.rm_rf!("test_fs_mkdir_12345")
     end
+  end
+
+  test "fs tool remove operation requires explicit confirmation" do
+    File.touch!("test_fs_remove_unconfirmed_12345.txt")
+
+    try do
+      result =
+        Beamcore.Agent.Tools.Fs.execute(%{
+          "operation" => "remove",
+          "path" => "test_fs_remove_unconfirmed_12345.txt"
+        })
+
+      assert result =~ "remove requires confirm=true"
+      assert File.exists?("test_fs_remove_unconfirmed_12345.txt")
+    after
+      File.rm_rf!("test_fs_remove_unconfirmed_12345.txt")
+    end
+  end
+
+  test "fs tool rejects absolute paths" do
+    result = Beamcore.Agent.Tools.Fs.execute(%{"operation" => "exist", "path" => "/tmp"})
+
+    assert result =~ "absolute paths are not allowed"
+  end
+
+  test "fs tool rejects path traversal" do
+    result = Beamcore.Agent.Tools.Fs.execute(%{"operation" => "exist", "path" => "../"})
+
+    assert result =~ "path traversal is not allowed"
   end
 
   test "fs tool name returns fs" do

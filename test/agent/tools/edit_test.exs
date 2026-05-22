@@ -1,9 +1,17 @@
 defmodule Beamcore.Agent.Tools.EditTest do
   use ExUnit.Case
 
+  @test_dir "test/tmp_edit_test"
+
+  setup do
+    File.rm_rf!(@test_dir)
+    File.mkdir_p!(@test_dir)
+    on_exit(fn -> File.rm_rf!(@test_dir) end)
+    :ok
+  end
+
   test "replaces old string with new string" do
-    file_path =
-      System.tmp_dir!() |> Path.join("agent_edit_test_#{System.unique_integer([:positive])}.txt")
+    file_path = Path.join(@test_dir, "replace.txt")
 
     File.write!(file_path, "Hello world!")
 
@@ -17,14 +25,10 @@ defmodule Beamcore.Agent.Tools.EditTest do
              "Successfully updated #{Path.expand(file_path)}"
 
     assert File.read!(file_path) == "Hello Elixir!"
-
-    File.rm!(file_path)
   end
 
   test "fails when old_string is ambiguous" do
-    file_path =
-      System.tmp_dir!()
-      |> Path.join("agent_edit_test_amb_#{System.unique_integer([:positive])}.txt")
+    file_path = Path.join(@test_dir, "ambiguous.txt")
 
     File.write!(file_path, "apple banana apple")
 
@@ -38,14 +42,10 @@ defmodule Beamcore.Agent.Tools.EditTest do
              Beamcore.Agent.Tools.Edit.execute(params),
              "Error: old_string is ambiguous"
            )
-
-    File.rm!(file_path)
   end
 
   test "fails when old_string is not found" do
-    file_path =
-      System.tmp_dir!()
-      |> Path.join("agent_edit_test_nf_#{System.unique_integer([:positive])}.txt")
+    file_path = Path.join(@test_dir, "not_found.txt")
 
     File.write!(file_path, "apple banana orange")
 
@@ -59,13 +59,11 @@ defmodule Beamcore.Agent.Tools.EditTest do
              Beamcore.Agent.Tools.Edit.execute(params),
              "Error: old_string not found in file."
            )
-
-    File.rm!(file_path)
   end
 
   test "fails when file does not exist" do
     params = %{
-      "path" => "/path/to/nonexistent/file_#{System.unique_integer([:positive])}.txt",
+      "path" => "test/tmp_edit_test/nonexistent.txt",
       "old_string" => "foo",
       "new_string" => "bar"
     }
@@ -74,9 +72,7 @@ defmodule Beamcore.Agent.Tools.EditTest do
   end
 
   test "fails when file is read-only" do
-    file_path =
-      System.tmp_dir!()
-      |> Path.join("agent_edit_test_ro_#{System.unique_integer([:positive])}.txt")
+    file_path = Path.join(@test_dir, "read_only.txt")
 
     File.write!(file_path, "change me")
     File.chmod!(file_path, 0o444)
@@ -98,5 +94,25 @@ defmodule Beamcore.Agent.Tools.EditTest do
     end
 
     File.rm!(file_path)
+  end
+
+  test "rejects absolute paths" do
+    params = %{
+      "path" => "/tmp/agent_edit_outside.txt",
+      "old_string" => "foo",
+      "new_string" => "bar"
+    }
+
+    assert Beamcore.Agent.Tools.Edit.execute(params) =~ "absolute paths are not allowed"
+  end
+
+  test "rejects path traversal" do
+    params = %{
+      "path" => "../agent_edit_outside.txt",
+      "old_string" => "foo",
+      "new_string" => "bar"
+    }
+
+    assert Beamcore.Agent.Tools.Edit.execute(params) =~ "path traversal is not allowed"
   end
 end

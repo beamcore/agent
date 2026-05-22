@@ -57,4 +57,23 @@ defmodule Beamcore.Agent.Tools.ReadTest do
     assert output =~ "Did you mean one of these?"
     assert output =~ "testfile.txt"
   end
+
+  test "execute/1 rejects absolute paths" do
+    output = Read.execute(%{"filePath" => "/etc/passwd"})
+
+    assert output =~ "absolute paths are not allowed"
+  end
+
+  test "execute/1 rejects path traversal" do
+    output = Read.execute(%{"filePath" => "../secret.txt"})
+
+    assert output =~ "path traversal is not allowed"
+  end
+
+  test "execute/1 reports missing files inside workspace as file not found" do
+    output = Read.execute(%{"filePath" => "test/missing_file_12345.txt"})
+
+    assert output =~ "Error: File not found"
+    refute output =~ "path outside workspace"
+  end
 end

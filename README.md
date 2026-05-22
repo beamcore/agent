@@ -46,11 +46,18 @@ Beamcore.Agent aims to evolve into a **distributed, Elixir-based coding agent** 
    make install
    ```
 
-3. Set your API key as an environment variable:
+3. Create local environment configuration:
    ```bash
-   export MISTRAL_API_KEY="your_api_key_here"
+   make init
    ```
-   *(Add this to your `.bashrc` or `.zshrc` for persistence.)*
+
+4. Put your real key into `.env` only when you want to run real chat/API calls:
+   ```env
+   MISTRAL_API_KEY=your_api_key_here
+   MISTRAL_BASE_URL=https://api.mistral.ai/v1
+   ```
+
+   `.env` is ignored by git. Keep `.env.example` committed with placeholders only.
 
 ---
 
@@ -152,9 +159,11 @@ Beamcore.Agent uses the following environment variables and configuration:
 ## 📊 Token Usage
 - Beamcore.Agent tracks token usage per session and displays it in the status bar.
 - The default model is `mistral-medium-3.5`.
-- Token limits:
+- Token controls:
+  - Tool outputs are truncated before being sent back into the next API request.
+  - In-memory history is compacted after each turn.
+  - Sub-agent depth and main tool-call depth are bounded to prevent loops.
   - **Soft Limit**: 190,000 tokens (triggers session rollover).
-  - **Max Messages**: 40 messages (older messages are trimmed to stay within limits).
 
 ---
 
@@ -172,12 +181,21 @@ Beamcore.Agent uses the following environment variables and configuration:
 ### Tool System
 - Tools are modular and can be extended by adding new modules under `lib/agent/tools/`.
 - Each tool defines a `spec/0` function for OpenAI function calling and an `execute/1` function for logic.
-- The `task` tool enables distributed execution by spawning sub-agents for complex or long-running tasks.
+- File and git tools are restricted to workspace-relative paths.
+- Absolute paths, path traversal, and symlink escapes are rejected before filesystem access.
+- Destructive filesystem operations require explicit confirmation.
+- The `mix` tool provides the main self-development validation loop through `validate`.
+
+### Runtime Tool Policy
+- Read-only user requests activate a runtime guard that blocks `write`, `edit`, `patch`, `fs`, `task`, `curl`, commits, pushes, and unsafe mix/git actions.
+- `task` is not exposed by default; it is available only when the user explicitly asks for sub-agent delegation.
+- `curl` is not exposed by default; it is available only when the user explicitly asks for external URL access.
+- Tool outputs are compacted before being sent back to the model to avoid accidental token explosions.
 
 ### Distributed Task Execution
-- The `task` tool allows the AI to delegate work to sub-agents, which operate independently of the main chat session.
-- Sub-agents can use all available tools and report their results back to the main session.
-- This enables parallelism and scalability for large-scale operations.
+- The `task` tool allows bounded delegation to sub-agents for complex work.
+- Sub-agents cannot recursively delegate to more sub-agents.
+- Delegation is intended for explicitly requested, bounded tasks only; direct tools should be used for normal edits, validation, and smoke tests.
 
 ---
 

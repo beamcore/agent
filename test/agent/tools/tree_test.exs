@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Tools.TreeTest do
   alias Beamcore.Agent.Tools.Tree
 
   setup do
-    dir = System.tmp_dir!() |> Path.join("agent_tree_test_#{System.unique_integer([:positive])}")
+    dir = "test/tmp_tree_test_#{System.unique_integer([:positive])}"
     File.mkdir_p!(dir)
 
     on_exit(fn ->
@@ -82,5 +82,17 @@ defmodule Beamcore.Agent.Tools.TreeTest do
     output = Tree.execute(params)
     assert String.contains?(output, "ignored_dir/")
     assert String.contains?(output, "test.log")
+  end
+
+  test "tree rejects absolute paths" do
+    output = Tree.execute(%{"path" => "/tmp"})
+
+    assert output =~ "absolute paths are not allowed"
+  end
+
+  test "tree rejects path traversal" do
+    output = Tree.execute(%{"path" => "../"})
+
+    assert output =~ "path traversal is not allowed"
   end
 end

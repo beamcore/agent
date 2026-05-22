@@ -1,8 +1,17 @@
 defmodule Beamcore.Agent.Tools.PatchTest do
   use ExUnit.Case
 
+  @test_dir "test/tmp_patch_test"
+
+  setup do
+    File.rm_rf!(@test_dir)
+    File.mkdir_p!(@test_dir)
+    on_exit(fn -> File.rm_rf!(@test_dir) end)
+    :ok
+  end
+
   test "applies unified diff" do
-    dir = System.tmp_dir!() |> Path.join("agent_patch_test_#{System.unique_integer([:positive])}")
+    dir = Path.join(@test_dir, "apply")
     File.mkdir_p!(dir)
     file_path = Path.join(dir, "target.txt")
     File.write!(file_path, "line 1\nline 2\nline 3\n")
@@ -25,14 +34,10 @@ defmodule Beamcore.Agent.Tools.PatchTest do
     output = Beamcore.Agent.Tools.Patch.execute(params)
     assert String.contains?(output, "Patch applied successfully")
     assert File.read!(file_path) == "line 1\nline two\nline 3\n"
-
-    File.rm_rf!(dir)
   end
 
   test "returns error on invalid patch" do
-    dir =
-      System.tmp_dir!() |> Path.join("agent_patch_err_test_#{System.unique_integer([:positive])}")
-
+    dir = Path.join(@test_dir, "invalid")
     File.mkdir_p!(dir)
 
     patch_content = """
@@ -52,7 +57,33 @@ defmodule Beamcore.Agent.Tools.PatchTest do
 
     output = Beamcore.Agent.Tools.Patch.execute(params)
     assert String.contains?(output, "Error applying patch")
+  end
 
-    File.rm_rf!(dir)
+  test "rejects path traversal in patch headers" do
+    patch_content = """
+    --- a/../outside.txt
+    +++ b/../outside.txt
+    @@ -1 +1 @@
+    -old
+    +new
+    """
+
+    output =
+      Beamcore.Agent.Tools.Patch.execute(%{
+        "patch_content" => patch_content,
+        "workdir" => @test_dir
+      })
+
+    assert output =~ "path traversal is not allowed"
+  end
+
+  test "rejects absolute workdir" do
+    output =
+      Beamcore.Agent.Tools.Patch.execute(%{
+        "patch_content" => "",
+        "workdir" => "/tmp"
+      })
+
+    assert output =~ "absolute paths are not allowed"
   end
 end

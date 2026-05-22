@@ -57,3 +57,42 @@ defmodule Beamcore.Agent.MockHTTPClient do
     end
   end
 end
+
+defmodule Beamcore.Agent.TestEnv do
+  def setup_env(env) do
+    previous = snapshot(Map.keys(env))
+    apply_env(env)
+
+    ExUnit.Callbacks.on_exit(fn ->
+      restore(previous)
+    end)
+
+    :ok
+  end
+
+  def with_env(env, fun) do
+    previous = snapshot(Map.keys(env))
+    apply_env(env)
+
+    try do
+      fun.()
+    after
+      restore(previous)
+    end
+  end
+
+  defp snapshot(names) do
+    Map.new(names, fn name -> {name, System.get_env(name)} end)
+  end
+
+  defp apply_env(env) do
+    Enum.each(env, fn
+      {name, nil} -> System.delete_env(name)
+      {name, value} -> System.put_env(name, value)
+    end)
+  end
+
+  defp restore(env) do
+    apply_env(env)
+  end
+end
