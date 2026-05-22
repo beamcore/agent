@@ -13,12 +13,11 @@ defmodule Beamcore.Agent.Chat do
     if Mix.env() == :test do
       {:ok, nil}
     else
-      {:ok, pid} = StatusBar.start_link()
-      StatusBar.setup(pid)
+      StatusBar.setup(StatusBar)
 
       Beamcore.Agent.OpenAI.client()
       |> Session.new()
-      |> Loop.start(pid)
+      |> Loop.start(StatusBar)
     end
   end
 end

@@ -13,8 +13,11 @@ defmodule Beamcore.Agent.OpenAI do
   def client do
     api_key =
       case System.get_env("MISTRAL_API_KEY") do
-        nil -> raise "MISTRAL_API_KEY environment variable not set"
-        key -> key
+        nil ->
+          raise "MISTRAL_API_KEY environment variable not set. Please set it using `export MISTRAL_API_KEY=your_api_key`."
+
+        key ->
+          key
       end
 
     base_url = System.get_env("MISTRAL_BASE_URL", @base_url)
