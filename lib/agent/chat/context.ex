@@ -29,6 +29,23 @@ defmodule Beamcore.Agent.Chat.Context do
     %__MODULE__{project_type: project_type, active_constraints: @default_constraints}
   end
 
+  @doc """
+  Returns a compacted version of the context for session rollover.
+  Preserves modified_files and project_type fully.
+  Trims lower-priority tracking lists.
+  """
+  def compact(%__MODULE__{} = context) do
+    %{context |
+      inspected_files: context.inspected_files |> MapSet.to_list() |> Enum.take(20) |> MapSet.new(),
+      modified_files: context.modified_files,
+      decisions: Enum.take(context.decisions, 6),
+      blocked_attempts: Enum.take(context.blocked_attempts, 3),
+      known_risks: Enum.take(context.known_risks, 3),
+      last_validation: context.last_validation,
+      pending_action: nil
+    }
+  end
+
   def from_user_request(%__MODULE__{} = context, content, policy) do
     context
     |> Map.put(:current_task, compact_text(content, 240))

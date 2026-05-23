@@ -7,7 +7,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   alias Beamcore.Agent.Core.{Pretty, StatusBar}
   alias Beamcore.Agent.Tools.Dispatcher
 
-  @max_tool_depth 12
+  @max_tool_depth 50
 
   @doc """
   Start the chat loop with the given session and status bar PID.
@@ -102,7 +102,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp send_message(session, content, pid, policy_override \\ nil) do
-    policy = policy_override || ToolPolicy.from_user_message(content)
+    policy = policy_override || session.policy_override || ToolPolicy.from_user_message(content)
 
     session =
       if ToolPolicy.confirmation_required?(policy) do
@@ -147,7 +147,9 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         StatusBar.update(pid, session)
 
-        if session.total_tokens >= 150_000 do
+        # --- Grace period logic ---
+        # Hard limit: force rollover immediately, even mid-tool-chain
+        if Session.needs_rollover_now?(session) do
           Session.summarize_and_rollover(session, messages ++ [message], pid)
         else
           message = normalize_tool_calls(message)
@@ -155,6 +157,8 @@ defmodule Beamcore.Agent.Chat.Loop do
           new_messages = messages ++ [compacted_message]
 
           if has_tool_calls?(message) do
+            # Agent has more work to do — continue the tool chain.
+            # Even if needs_compaction is true, we let it finish.
             {tool_responses, session} =
               Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
                 name = tool_call["function"]["name"]
@@ -178,7 +182,13 @@ defmodule Beamcore.Agent.Chat.Loop do
             Enum.each(tool_responses, &Session.log(session, &1))
             process_messages(session, new_messages ++ tool_responses, pid, depth + 1, policy)
           else
-            %{session | messages: Session.compact_history(new_messages)}
+            # Natural break — agent is done with tool calls, responding to user.
+            # If compaction is needed, this is the moment to do it.
+            if session.needs_compaction do
+              Session.summarize_and_rollover(session, new_messages, pid)
+            else
+              %{session | messages: Session.compact_history(new_messages)}
+            end
           end
         end
 

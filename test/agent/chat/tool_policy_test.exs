@@ -367,4 +367,24 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
 
     assert message =~ "Mutation requires a confirmed plan or explicit Policy block"
   end
+
+  test "default policy allows git by default" do
+    policy = ToolPolicy.default()
+    assert "git" in ToolPolicy.allowed_tool_names(policy)
+  end
+
+  test "yolo policy allows all tools and unrestricted paths" do
+    policy = ToolPolicy.yolo()
+    assert policy.mode == :unrestricted
+    
+    allowed = ToolPolicy.allowed_tool_names(policy)
+    assert "write" in allowed
+    assert "task" in allowed
+    assert "curl" in allowed
+    assert "git" in allowed
+    assert "image_generation" in allowed
+
+    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "any/path/here.ex"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "task", %{"command" => "rm -rf /"})
+  end
 end

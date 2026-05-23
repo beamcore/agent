@@ -16,6 +16,7 @@ defmodule Beamcore.Agent.Chat.Commands do
       "cancel" -> handle_cancel(session)
       "context" -> handle_context(session)
       "context clear" -> handle_context_clear(session)
+      "yolo" -> handle_yolo(session)
       "help" -> handle_help(session)
       _ -> handle_unknown(command, session)
     end
@@ -29,6 +30,11 @@ defmodule Beamcore.Agent.Chat.Commands do
     |> then(& &1)
   end
 
+  defp handle_yolo(session) do
+    IO.puts("🚀 YOLO mode enabled! All tools are now active and unrestricted.")
+    %{session | policy_override: Beamcore.Agent.Chat.ToolPolicy.yolo()}
+  end
+
   defp handle_help(session) do
     IO.puts("""
     Available commands:
@@ -37,6 +43,7 @@ defmodule Beamcore.Agent.Chat.Commands do
       /cancel - Cancel the pending plan
       /context - Show compact session context
       /context clear - Clear compact session context
+      /yolo - Enable all tools with unrestricted access
       /help - Show this help message
     """)
 

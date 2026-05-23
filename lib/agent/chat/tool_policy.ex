@@ -21,7 +21,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
         }
 
   @read_only_tools ~w(read grep glob tree git mix)
-  @unconfirmed_tools ~w(read grep glob tree plan)
+  @unconfirmed_tools ~w(read grep glob tree plan git)
   @restricted_write_tools ~w(read grep glob write edit patch fs mix)
   @development_tools ~w(read grep glob edit patch write tree git fs mix)
   @all_tool_names ~w(read grep glob edit patch write curl tree git fs task mix plan image_generation)
@@ -41,6 +41,21 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   end
 
   def from_user_message(_content), do: default()
+
+  @doc """
+  Permissive policy for trusted sessions. Allows all tools and paths.
+  """
+  @spec yolo() :: t()
+  def yolo do
+    %{
+      mode: :unrestricted,
+      allow_task: true,
+      allow_network: true,
+      allowed_write_paths: ["**/*"],
+      allowed_tools: nil,
+      blocked_tools: []
+    }
+  end
 
   @doc """
   Default policy for non-interactive direct tool calls.
@@ -71,6 +86,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   Returns the allowed tool names for the given policy.
   """
   @spec allowed_tool_names(t()) :: [binary()]
+  def allowed_tool_names(%{mode: :unrestricted} = _policy), do: @all_tool_names
+
   def allowed_tool_names(%{mode: :unconfirmed} = policy),
     do: apply_tool_filters(@unconfirmed_tools, policy)
 

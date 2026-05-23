@@ -151,11 +151,18 @@ defmodule Beamcore.Agent.Core.StatusBar do
 
       # Format token counts using SI notation
       total_tokens = SI.number_to_si(usage.total_tokens, precision: 1, trim: true)
-      prompt_tokens = SI.number_to_si(usage.prompt_tokens, precision: 1, trim: true)
-      completion_tokens = SI.number_to_si(usage.completion_tokens, precision: 1, trim: true)
+      last_prompt = SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)
+
+      compaction_icon = cond do
+        (usage.last_prompt_tokens || 0) >= 200_000 -> "🔴"
+        usage.needs_compaction -> "🟡"
+        true -> "🟢"
+      end
+
+      compaction_suffix = if (session.compaction_count || 0) > 0, do: " 🔄 x#{session.compaction_count}", else: ""
 
       status_text =
-        " 📊 Tokens: #{total_tokens} (P: #{prompt_tokens}, C: #{completion_tokens}) | 🆔 Session: #{session.session_id} "
+        " #{compaction_icon} Active: #{last_prompt} (Cycle: #{total_tokens})#{compaction_suffix} | 🆔 Session: #{session.session_id} "
 
       # Truncate if too long
       status_text =
@@ -180,8 +187,17 @@ defmodule Beamcore.Agent.Core.StatusBar do
       # Non-ANSI fallback: Print status as plain text
       usage = Session.usage(session)
 
+      compaction_icon = cond do
+        (usage.last_prompt_tokens || 0) >= 200_000 -> "🔴"
+        usage.needs_compaction -> "🟡"
+        true -> "🟢"
+      end
+
+      compaction_suffix = if (session.compaction_count || 0) > 0, do: " 🔄 x#{session.compaction_count}", else: ""
+      last_prompt = SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)
+
       IO.puts(
-        "[Status] Tokens: #{usage.total_tokens} (P: #{usage.prompt_tokens}, C: #{usage.completion_tokens}) | Session: #{session.session_id}"
+        "[Status] #{compaction_icon} Active: #{last_prompt} (Cycle: #{usage.total_tokens})#{compaction_suffix} | Session: #{session.session_id}"
       )
     end
 
