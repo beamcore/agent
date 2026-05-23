@@ -17,7 +17,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp loop(session, pid) do
-    StatusBar.update(pid, session)
     Pretty.print_prompt()
 
     case IO.gets("") do

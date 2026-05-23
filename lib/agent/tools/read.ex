@@ -56,6 +56,7 @@ defmodule Beamcore.Agent.Tools.Read do
               case File.stream!(expanded_path) |> Enum.count() do
                 total_lines when total_lines <= @small_file_threshold ->
                   read_file(expanded_path, 1, total_lines)
+
                 _ ->
                   read_file(expanded_path, offset, limit)
               end
