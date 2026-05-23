@@ -127,8 +127,10 @@ defmodule Beamcore.Agent.Chat.API do
     {:error, "Unexpected response format: #{inspect(response)}"}
   end
 
-  defp format_response_with_context(response_map, message, tool_calls, context) do
-    # Print thinking content if present
+  defp format_response_with_context(response_map, message, _tool_calls, context) do
+    # Tool calls are intentionally not printed here.
+    # The chat loop prints them only after runtime policy authorization.
+    # This prevents blocked mutation attempts from looking like executed tools.
     case Map.get(message, "content") do
       content when is_binary(content) and content != "" ->
         Beamcore.Agent.Core.Pretty.print_thinking(content, context)
@@ -136,20 +138,6 @@ defmodule Beamcore.Agent.Chat.API do
       _ ->
         :ok
     end
-
-    # Print tool calls
-    Enum.each(tool_calls, fn tool ->
-      name = get_in(tool, ["function", "name"])
-      raw_args = get_in(tool, ["function", "arguments"])
-
-      parsed_args =
-        case Jason.decode(raw_args) do
-          {:ok, decoded} -> decoded
-          _ -> raw_args
-        end
-
-      Beamcore.Agent.Core.Pretty.print_tool_call(name, parsed_args, context)
-    end)
 
     {:ok, %{message: message, raw_response: response_map}}
   end

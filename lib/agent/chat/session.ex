@@ -11,7 +11,9 @@ defmodule Beamcore.Agent.Chat.Session do
     :total_prompt_tokens,
     :total_completion_tokens,
     :total_tokens,
-    :project_nature
+    :project_nature,
+    :context,
+    :pending_user_message
   ]
 
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
@@ -25,7 +27,7 @@ defmodule Beamcore.Agent.Chat.Session do
   @max_system_chars 9_000
   @max_other_chars 2_000
   @max_tool_arg_chars 200
-  @large_tool_arg_keys ~w(content old_string new_string patch patch_content diff)
+  @large_tool_arg_keys ~w(content old_string new_string patch patch_content diff prompt instructions)
 
   @doc """
   Generates a funny session name in the format "color-property-animal".
@@ -58,9 +60,19 @@ defmodule Beamcore.Agent.Chat.Session do
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
       total_tokens: 0,
-      project_nature: project_nature
+      project_nature: project_nature,
+      context: Beamcore.Agent.Chat.Context.new(project_nature),
+      pending_user_message: nil
     }
     |> then(&log(&1, system_message))
+  end
+
+  def clear_pending_action(session) do
+    %{
+      session
+      | pending_user_message: nil,
+        context: Beamcore.Agent.Chat.Context.clear_pending_action(session.context)
+    }
   end
 
   @doc """
@@ -119,6 +131,26 @@ defmodule Beamcore.Agent.Chat.Session do
     |> trim_and_clean_messages(limit)
     |> Enum.map(&compact_for_api/1)
   end
+
+  @doc """
+  Prepares message history and injects compact session context.
+  """
+  def prepare_for_api(messages, context, limit) do
+    prepared = prepare_for_api(messages, limit)
+
+    if context do
+      inject_context_message(prepared, context)
+    else
+      prepared
+    end
+  end
+
+  defp inject_context_message([system | rest], context) do
+    [system, Beamcore.Agent.Chat.Context.to_message(context) | rest]
+  end
+
+  defp inject_context_message(messages, context),
+    do: [Beamcore.Agent.Chat.Context.to_message(context) | messages]
 
   @doc """
   Compact the in-memory history kept after a turn.

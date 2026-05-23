@@ -1,6 +1,6 @@
 defmodule Beamcore.Agent.Chat.LoopTest do
   use ExUnit.Case
-  alias Beamcore.Agent.Chat.{Loop, MultilineInput}
+  alias Beamcore.Agent.Chat.{Loop, MultilineInput, ToolPolicy}
 
   test "Loop.start/2 function signature is correct" do
     assert is_function(&Loop.start/2, 2)
@@ -34,5 +34,36 @@ defmodule Beamcore.Agent.Chat.LoopTest do
     assert {:ok, text, []} = MultilineInput.collect_until(["line 1", "line 2", ">>>"], ">>>")
 
     assert text == "line 1\nline 2"
+  end
+
+  test "multiline input does not infer policy before terminator" do
+    partial_lines = [
+      "Policy:",
+      "mode: restricted_write",
+      "allowed_write_paths:",
+      "- scratch/a.ex"
+    ]
+
+    assert {:more, partial_text} = MultilineInput.collect_until(partial_lines, "/end")
+
+    # The caller should not feed partial_text into ToolPolicy yet; complete paste is required.
+    refute String.contains?(partial_text, "/end")
+  end
+
+  test "complete pasted message is one policy input" do
+    lines = [
+      "Policy:",
+      "mode: restricted_write",
+      "allowed_write_paths:",
+      "- scratch/a.ex",
+      "Implement module.",
+      "/end"
+    ]
+
+    assert {:ok, text, []} = MultilineInput.collect_until(lines, "/end")
+    policy = ToolPolicy.from_user_message(text)
+
+    assert policy.mode == :restricted_write
+    assert policy.allowed_write_paths == ["scratch/a.ex"]
   end
 end

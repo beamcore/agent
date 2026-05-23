@@ -1,89 +1,43 @@
 defmodule Beamcore.Agent.Chat.ToolPolicy do
   @moduledoc """
-  Runtime tool policy derived from the latest user request.
+  Runtime tool policy derived from an explicit Policy block.
 
-  The system prompt guides the model, but this module enforces important
-  boundaries in code so that read-only requests cannot be violated by an
-  accidental tool call.
+  Natural-language task text is intentionally not used for mutation or network
+  intent detection. If a Policy block is present, it is the source of truth.
+  Without a Policy block, the safe default is development mode without task or
+  curl.
   """
 
-  @type mode :: :normal | :read_only | :restricted_write
+  alias Beamcore.Agent.Tools.PathSafety
+
+  @type mode :: :unconfirmed | :development | :read_only | :restricted_write | :invalid_policy
   @type t :: %{
           mode: mode(),
           allow_task: boolean(),
           allow_network: boolean(),
-          allowed_write_paths: [binary()]
+          allowed_write_paths: [binary()],
+          allowed_tools: [binary()] | nil,
+          blocked_tools: [binary()]
         }
 
-  @read_only_markers [
-    "read-only",
-    "readonly",
-    "do not modify",
-    "don't modify",
-    "do not edit",
-    "don't edit",
-    "do not write",
-    "don't write",
-    "do not create",
-    "don't create",
-    "do not delete",
-    "don't delete",
-    "no file modifications",
-    "no modifications",
-    "no writes",
-    "no edits",
-    "no creation",
-    "no deletion",
-    "analyze only",
-    "without changes"
-  ]
-
-  @task_markers [
-    "use task",
-    "use the task tool",
-    "sub-agent",
-    "subagent",
-    "delegate",
-    "delegation",
-    "parallel agents"
-  ]
-
-  @network_markers [
-    "curl",
-    "external url",
-    "external urls",
-    "fetch url",
-    "fetch external",
-    "http://",
-    "https://"
-  ]
-
   @read_only_tools ~w(read grep glob tree git mix)
+  @unconfirmed_tools ~w(read grep glob tree plan)
   @restricted_write_tools ~w(read grep glob write edit patch fs mix)
-  @normal_tools ~w(read grep glob edit patch write tree git fs mix)
-  @task_tool "task"
+  @development_tools ~w(read grep glob edit patch write tree git fs mix)
+  @all_tool_names ~w(read grep glob edit patch write curl tree git fs task mix plan image_generation)
+  @mutation_tools ~w(write edit patch fs image_generation)
   @read_only_git_operations ~w(status diff log)
   @read_only_mix_commands ~w(test compile validate)
-  @path_pattern ~r/(?:`)?([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+(?:\.[A-Za-z0-9_.-]+)?)(?:`)?/
+  @valid_modes ~w(read_only development restricted_write)
 
   @doc """
-  Build a policy from the latest user message.
+  Build a policy from the latest complete user message.
   """
   @spec from_user_message(binary()) :: t()
   def from_user_message(content) when is_binary(content) do
-    normalized = String.downcase(content)
-    read_only = contains_any?(normalized, @read_only_markers)
-    task_requested = contains_any?(normalized, @task_markers)
-    network_requested = contains_any?(normalized, @network_markers)
-    allowed_write_paths = extract_allowed_write_paths(content)
-    restricted_write = allowed_write_paths != [] and restricted_write_request?(normalized)
-
-    %{
-      mode: policy_mode(read_only, restricted_write),
-      allow_task: task_requested and not read_only and not restricted_write,
-      allow_network: network_requested and not read_only,
-      allowed_write_paths: allowed_write_paths
-    }
+    content
+    |> parse_policy_block()
+    |> policy_from_block()
   end
 
   def from_user_message(_content), do: default()
@@ -92,8 +46,16 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   Default policy for non-interactive direct tool calls.
   """
   @spec default() :: t()
-  def default,
-    do: %{mode: :normal, allow_task: false, allow_network: false, allowed_write_paths: []}
+  def default do
+    %{
+      mode: :unconfirmed,
+      allow_task: false,
+      allow_network: false,
+      allowed_write_paths: [],
+      allowed_tools: nil,
+      blocked_tools: []
+    }
+  end
 
   @doc """
   Policy used inside sub-agents. Nested task delegation is always disabled.
@@ -109,18 +71,29 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   Returns the allowed tool names for the given policy.
   """
   @spec allowed_tool_names(t()) :: [binary()]
-  def allowed_tool_names(%{mode: :read_only}), do: @read_only_tools
+  def allowed_tool_names(%{mode: :unconfirmed} = policy),
+    do: apply_tool_filters(@unconfirmed_tools, policy)
+
+  def allowed_tool_names(%{mode: :invalid_policy} = policy),
+    do: apply_tool_filters(@read_only_tools, policy)
+
+  def allowed_tool_names(%{mode: :read_only} = policy),
+    do: apply_tool_filters(@read_only_tools, policy)
 
   def allowed_tool_names(%{mode: :restricted_write} = policy) do
     @restricted_write_tools
-    |> maybe_add(@task_tool, Map.get(policy, :allow_task, false))
+    |> maybe_add("task", Map.get(policy, :allow_task, false))
     |> maybe_add("curl", Map.get(policy, :allow_network, false))
+    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
+    |> apply_tool_filters(policy)
   end
 
-  def allowed_tool_names(%{mode: :normal} = policy) do
-    @normal_tools
-    |> maybe_add(@task_tool, Map.get(policy, :allow_task, false))
+  def allowed_tool_names(%{mode: :development} = policy) do
+    @development_tools
+    |> maybe_add("task", Map.get(policy, :allow_task, false))
     |> maybe_add("curl", Map.get(policy, :allow_network, false))
+    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
+    |> apply_tool_filters(policy)
   end
 
   @doc """
@@ -132,10 +105,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       name not in allowed_tool_names(policy) ->
         {:error, blocked_message(policy, name)}
 
-      read_only?(policy) and name == "git" ->
+      confirmation_required?(policy) and name in @mutation_tools ->
+        {:error, mutation_confirmation_message()}
+
+      fail_closed?(policy) and name == "git" ->
         allow_read_only_git(args)
 
-      read_only?(policy) and name == "mix" ->
+      fail_closed?(policy) and name == "mix" ->
         allow_read_only_mix(args)
 
       restricted_write?(policy) ->
@@ -150,9 +126,151 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   def read_only?(%{mode: :read_only}), do: true
   def read_only?(_policy), do: false
 
+  @spec confirmation_required?(t()) :: boolean()
+  def confirmation_required?(%{mode: :unconfirmed}), do: true
+  def confirmation_required?(_policy), do: false
+
+  @spec invalid_policy?(t()) :: boolean()
+  def invalid_policy?(%{mode: :invalid_policy}), do: true
+  def invalid_policy?(_policy), do: false
+
   @spec restricted_write?(t()) :: boolean()
   def restricted_write?(%{mode: :restricted_write}), do: true
   def restricted_write?(_policy), do: false
+
+  defp fail_closed?(policy),
+    do: read_only?(policy) or invalid_policy?(policy) or confirmation_required?(policy)
+
+  @doc """
+  Build a one-turn restricted-write policy from a confirmed plan.
+  """
+  @spec restricted_write_policy([binary()], [binary()]) :: t()
+  def restricted_write_policy(allowed_write_paths, allowed_tools) do
+    allowed_tools = allowed_tools |> Enum.uniq()
+
+    %{
+      mode: :restricted_write,
+      allow_task: false,
+      allow_network: false,
+      allowed_write_paths: Enum.uniq(allowed_write_paths),
+      allowed_tools: allowed_tools,
+      blocked_tools: ["task", "curl", "git"]
+    }
+  end
+
+  defp policy_from_block(nil), do: default()
+
+  defp policy_from_block(block) do
+    mode = parse_mode(Map.get(block, "mode"))
+    allowed_tools = parse_tools(Map.get(block, "allowed_tools"))
+    blocked_tools = parse_tools(Map.get(block, "blocked_tools")) || []
+    allowed_write_paths = parse_paths(Map.get(block, "allowed_write_paths"))
+
+    %{
+      mode: mode,
+      allow_task: tool_enabled?("task", allowed_tools, blocked_tools),
+      allow_network: tool_enabled?("curl", allowed_tools, blocked_tools),
+      allowed_write_paths: allowed_write_paths,
+      allowed_tools: allowed_tools,
+      blocked_tools: blocked_tools
+    }
+  end
+
+  defp parse_mode([mode | _rest]), do: parse_mode(mode)
+  defp parse_mode(mode) when mode in @valid_modes, do: String.to_atom(mode)
+  defp parse_mode(_mode), do: :invalid_policy
+
+  defp parse_tools(nil), do: nil
+
+  defp parse_tools(values) do
+    values
+    |> Enum.flat_map(&split_values/1)
+    |> Enum.filter(&(&1 in @all_tool_names))
+    |> Enum.uniq()
+  end
+
+  defp parse_paths(nil), do: []
+
+  defp parse_paths(values) do
+    values
+    |> Enum.flat_map(&split_values/1)
+    |> Enum.map(&normalize_candidate_path/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+  end
+
+  defp split_values(value) do
+    value
+    |> String.split(",", trim: true)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  defp tool_enabled?(tool, allowed_tools, blocked_tools) do
+    tool in (allowed_tools || []) and tool not in blocked_tools
+  end
+
+  defp explicit_tool_enabled?(policy, tool) do
+    tool in (Map.get(policy, :allowed_tools) || []) and
+      tool not in Map.get(policy, :blocked_tools, [])
+  end
+
+  defp parse_policy_block(content) do
+    lines = String.split(content, ~r/\R/)
+
+    case Enum.split_while(lines, &(String.trim(&1) != "Policy:")) do
+      {_before, []} -> nil
+      {_before, [_policy | rest]} -> parse_policy_lines(rest)
+    end
+  end
+
+  defp parse_policy_lines(lines) do
+    {_current_key, data} =
+      Enum.reduce_while(lines, {nil, %{}}, fn line, {current_key, data} ->
+        trimmed = String.trim(line)
+
+        cond do
+          trimmed == "" ->
+            {:cont, {current_key, data}}
+
+          String.starts_with?(trimmed, "- ") and current_key ->
+            value = trimmed |> String.trim_leading("- ") |> String.trim()
+            {:cont, {current_key, Map.update(data, current_key, [value], &(&1 ++ [value]))}}
+
+          String.contains?(trimmed, ":") ->
+            [key, value] = String.split(trimmed, ":", parts: 2)
+            key = String.trim(key)
+            value = String.trim(value)
+
+            if valid_key?(key) do
+              data = Map.put_new(data, key, [])
+              data = if value == "", do: data, else: Map.put(data, key, [value])
+              {:cont, {key, data}}
+            else
+              {:halt, {current_key, data}}
+            end
+
+          true ->
+            {:halt, {current_key, data}}
+        end
+      end)
+
+    data
+  end
+
+  defp valid_key?(key), do: key in ~w(mode allowed_tools blocked_tools allowed_write_paths)
+
+  defp maybe_add(tools, tool, true), do: tools ++ [tool]
+  defp maybe_add(tools, _tool, false), do: tools
+
+  defp apply_tool_filters(tools, policy) do
+    tools
+    |> filter_allowed_tools(Map.get(policy, :allowed_tools))
+    |> Enum.reject(&(&1 in Map.get(policy, :blocked_tools, [])))
+  end
+
+  defp filter_allowed_tools(tools, nil), do: tools
+  defp filter_allowed_tools(tools, allowed_tools), do: Enum.filter(tools, &(&1 in allowed_tools))
 
   defp allow_read_only_git(args) do
     operation = Map.get(args, "operation") || Map.get(args, "command")
@@ -176,76 +294,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     end
   end
 
-  defp blocked_message(%{mode: :read_only}, name) do
-    "Tool call blocked by read-only policy: #{name}. The latest user request forbids file modifications, file creation, file deletion, task delegation, commits, pushes, and external network calls."
-  end
-
-  defp blocked_message(%{mode: :restricted_write}, name) do
-    "Tool call blocked by restricted-write policy: #{name}. Only explicitly allowed file writes are permitted."
-  end
-
-  defp blocked_message(%{mode: :normal}, @task_tool) do
-    "Tool call blocked: task delegation is disabled unless the user explicitly asks for task/sub-agent delegation. Use direct tools first."
-  end
-
-  defp blocked_message(%{mode: :normal}, "curl") do
-    "Tool call blocked: external network access is disabled unless the user explicitly asks to fetch an external URL."
-  end
-
-  defp blocked_message(_policy, name), do: "Tool call blocked by policy: #{name}."
-
-  defp maybe_add(tools, tool, true), do: tools ++ [tool]
-  defp maybe_add(tools, _tool, false), do: tools
-
-  defp contains_any?(text, markers), do: Enum.any?(markers, &String.contains?(text, &1))
-
-  defp policy_mode(_read_only, true), do: :restricted_write
-  defp policy_mode(true, false), do: :read_only
-  defp policy_mode(false, false), do: :normal
-
-  defp restricted_write_request?(text) do
-    String.contains?(text, "allowed files") or
-      String.contains?(text, "create only") or
-      String.contains?(text, "may create only") or
-      String.contains?(text, "only these files") or
-      String.contains?(text, "these files may be created") or
-      String.contains?(text, "создать только") or
-      String.contains?(text, "только")
-  end
-
-  @doc """
-  Extract explicitly allowed workspace-relative write paths from a user request.
-  """
-  @spec extract_allowed_write_paths(binary()) :: [binary()]
-  def extract_allowed_write_paths(content) when is_binary(content) do
-    @path_pattern
-    |> Regex.scan(content, capture: :all_but_first)
-    |> List.flatten()
-    |> Enum.map(&normalize_candidate_path/1)
-    |> Enum.reject(&is_nil/1)
-    |> Enum.uniq()
-  end
-
-  def extract_allowed_write_paths(_content), do: []
-
-  defp normalize_candidate_path(path) do
-    path = path |> String.trim() |> String.trim_trailing(".") |> String.trim_trailing(",")
-
-    cond do
-      Path.type(path) == :absolute -> nil
-      ".." in Path.split(path) -> nil
-      String.starts_with?(path, ".") -> nil
-      path |> Path.split() |> List.first() |> String.contains?(".") -> nil
-      true -> path |> Path.expand("/") |> Path.relative_to("/")
-    end
-  end
-
   defp allow_restricted_write(policy, name, args) do
     case name do
       "write" -> allow_exact_path(policy, Map.get(args, "filePath") || Map.get(args, "path"))
       "edit" -> allow_exact_path(policy, Map.get(args, "path"))
       "patch" -> allow_patch(policy, Map.get(args, "patch_content"))
       "fs" -> allow_restricted_fs(policy, args)
+      "image_generation" -> allow_exact_path(policy, Map.get(args, "output_path"))
       "mix" -> :ok
       "read" -> :ok
       "grep" -> :ok
@@ -320,7 +375,10 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     normalized = normalize_candidate_path(to_string(path || ""))
 
     allowed_parents =
-      policy |> Map.get(:allowed_write_paths, []) |> Enum.map(&Path.dirname/1) |> Enum.uniq()
+      policy
+      |> Map.get(:allowed_write_paths, [])
+      |> Enum.map(&Path.dirname/1)
+      |> Enum.uniq()
 
     if normalized in allowed_parents do
       :ok
@@ -329,8 +387,43 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     end
   end
 
+  defp blocked_message(%{mode: :read_only}, name) do
+    "Tool call blocked by read-only policy: #{name}."
+  end
+
+  defp blocked_message(%{mode: :unconfirmed}, name) when name in @mutation_tools do
+    mutation_confirmation_message()
+  end
+
+  defp blocked_message(%{mode: :unconfirmed}, name) do
+    "Tool call blocked by unconfirmed policy: #{name}. Mutation requires a confirmed plan or explicit Policy block."
+  end
+
+  defp blocked_message(%{mode: :invalid_policy}, name) do
+    "Tool call blocked by invalid policy: #{name}. The Policy block has an invalid mode, so mutation tools are disabled."
+  end
+
+  defp blocked_message(%{mode: :restricted_write}, name) do
+    "Tool call blocked by restricted-write policy: #{name}. Only explicitly allowed file writes are permitted."
+  end
+
+  defp blocked_message(_policy, name), do: "Tool call blocked by policy: #{name}."
+
   defp restricted_path_message(policy, path) do
     "Tool call blocked by restricted-write policy: #{path} is not in allowed_write_paths. Allowed write paths: #{Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")}."
+  end
+
+  defp mutation_confirmation_message do
+    "Mutation requires a confirmed plan or explicit Policy block."
+  end
+
+  defp normalize_candidate_path(path) do
+    path = path |> String.trim() |> String.trim_trailing(".") |> String.trim_trailing(",")
+
+    case PathSafety.resolve(path, allow_missing: true) do
+      {:ok, absolute_path} -> Path.relative_to(absolute_path, PathSafety.workspace_root())
+      {:error, _reason} -> nil
+    end
   end
 
   defp patch_line_path(line) do

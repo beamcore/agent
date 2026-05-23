@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   Handles the chat loop and user input.
   """
 
-  alias Beamcore.Agent.Chat.{API, Commands, MultilineInput, Session, ToolPolicy}
+  alias Beamcore.Agent.Chat.{API, Commands, Context, MultilineInput, Session, ToolPolicy}
   alias Beamcore.Agent.Core.{Pretty, StatusBar}
   alias Beamcore.Agent.Tools.Dispatcher
 
@@ -49,8 +49,16 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp handle_command("paste", session, pid), do: handle_paste(session, pid, "/end")
 
   defp handle_command(command, session, pid) do
-    new_session = Commands.execute(command, session)
-    loop(new_session, pid)
+    case Commands.execute(command, session) do
+      {:run_pending, confirmed_session, content, policy} ->
+        confirmed_session
+        |> send_message(content, pid, policy)
+        |> Session.clear_pending_action()
+        |> loop(pid)
+
+      new_session ->
+        loop(new_session, pid)
+    end
   end
 
   defp handle_paste(session, pid, terminator) do
@@ -93,8 +101,17 @@ defmodule Beamcore.Agent.Chat.Loop do
     if String.trim(text) == "", do: {:error, :empty}, else: {:ok, String.trim(text)}
   end
 
-  defp send_message(session, content, pid) do
-    policy = ToolPolicy.from_user_message(content)
+  defp send_message(session, content, pid, policy_override \\ nil) do
+    policy = policy_override || ToolPolicy.from_user_message(content)
+
+    session =
+      if ToolPolicy.confirmation_required?(policy) do
+        %{session | pending_user_message: content}
+      else
+        %{session | pending_user_message: nil}
+      end
+
+    session = %{session | context: Context.from_user_request(session.context, content, policy)}
     user_message = %{role: "user", content: content}
     Session.log(session, user_message)
 
@@ -109,7 +126,11 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp process_messages(session, messages, pid, depth, policy) do
     tools = Dispatcher.tool_specs(policy)
-    api_messages = Session.prepare_for_api(messages)
+
+    api_messages =
+      messages
+      |> Session.prepare_for_api(session.context, 24)
+      |> inject_policy_message(policy, tools)
 
     case API.execute(session.client, api_messages, tools, :main) do
       {:ok, %{message: message, raw_response: raw_response}} ->
@@ -134,18 +155,23 @@ defmodule Beamcore.Agent.Chat.Loop do
           new_messages = messages ++ [compacted_message]
 
           if has_tool_calls?(message) do
-            tool_responses =
-              Enum.map(message["tool_calls"], fn tool_call ->
+            {tool_responses, session} =
+              Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
                 name = tool_call["function"]["name"]
                 args = decode_tool_args(tool_call["function"]["arguments"])
 
                 content = Dispatcher.execute(name, args, policy)
+                print_tool_execution(name, args, content)
+                session = update_context(session, name, args, content)
 
-                %{
-                  role: "tool",
-                  tool_call_id: tool_call["id"],
-                  name: name,
-                  content: content
+                {
+                  %{
+                    role: "tool",
+                    tool_call_id: tool_call["id"],
+                    name: name,
+                    content: content
+                  },
+                  session
                 }
               end)
 
@@ -192,6 +218,53 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp has_tool_calls?(_message), do: false
 
+  defp inject_policy_message(messages, policy, tools) do
+    policy_message = %{
+      role: "system",
+      content: policy_summary(policy, tools)
+    }
+
+    case messages do
+      [system, context | rest] when is_map(system) and is_map(context) ->
+        [system, context, policy_message | rest]
+
+      [system | rest] when is_map(system) ->
+        [system, policy_message | rest]
+
+      other ->
+        [policy_message | other]
+    end
+  end
+
+  defp policy_summary(policy, tools) do
+    tool_names =
+      tools
+      |> Enum.map(fn tool ->
+        get_in(tool, [:function, :name]) || get_in(tool, ["function", "name"])
+      end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(", ")
+
+    case Map.get(policy, :mode) do
+      :unconfirmed ->
+        "Current turn policy: unconfirmed. Exposed tools: #{tool_names}. For file changes, call plan first. Do not call write, edit, patch, fs, image_generation, task, or curl before /confirm or an explicit Policy block."
+
+      :restricted_write ->
+        allowed_paths = Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")
+
+        "Current turn policy: restricted_write. Exposed tools: #{tool_names}. Allowed write paths: #{allowed_paths}. Do not call plan."
+
+      :read_only ->
+        "Current turn policy: read_only. Exposed tools: #{tool_names}. Do not call mutation or network tools."
+
+      :invalid_policy ->
+        "Current turn policy: invalid_policy. Exposed tools: #{tool_names}. Mutation tools are disabled."
+
+      _ ->
+        "Current turn policy: development. Exposed tools: #{tool_names}. Follow runtime safety constraints."
+    end
+  end
+
   defp decode_tool_args(args) when is_binary(args) do
     case Jason.decode(args) do
       {:ok, decoded} when is_map(decoded) -> decoded
@@ -200,4 +273,24 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp decode_tool_args(_args), do: %{}
+
+  defp update_context(session, name, args, content),
+    do: %{session | context: Context.update_from_tool(session.context, name, args, content)}
+
+  defp print_tool_execution(name, args, "Error: Tool call blocked" <> rest) do
+    Pretty.print_blocked_tool_call(name, args, "Tool call blocked" <> rest)
+  end
+
+  defp print_tool_execution(name, args, "Error: Mutation requires" <> rest) do
+    Pretty.print_blocked_tool_call(name, args, "Mutation requires" <> rest)
+  end
+
+  defp print_tool_execution(name, args, "Error: " <> reason) do
+    Pretty.print_tool_call(name, args)
+    Pretty.print_error(reason)
+  end
+
+  defp print_tool_execution(name, args, _content) do
+    Pretty.print_tool_call(name, args)
+  end
 end

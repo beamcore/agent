@@ -94,4 +94,34 @@ defmodule Beamcore.Agent.Core.PrettyTest do
     refute output =~ "+one"
     refute output =~ "+two"
   end
+
+  test "plan tool call display is compact" do
+    output =
+      capture_io(fn ->
+        Pretty.print_tool_call("plan", %{
+          "summary" => "Create a small file",
+          "create_files" => ["scratch/a.ex"],
+          "modify_files" => [],
+          "delete_files" => []
+        })
+      end)
+
+    assert output =~ "plan: 1 files"
+    assert output =~ "create: 1"
+    refute output =~ "Create a small file"
+  end
+
+  test "image generation tool call display is compact" do
+    output =
+      capture_io(fn ->
+        Pretty.print_tool_call("image_generation", %{
+          "prompt" => String.duplicate("image prompt ", 40),
+          "output_path" => "generated/architecture.png"
+        })
+      end)
+
+    assert output =~ "generated/architecture.png"
+    assert output =~ "prompt:"
+    refute output =~ "image prompt image prompt"
+  end
 end
