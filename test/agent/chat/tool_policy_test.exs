@@ -376,7 +376,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
   test "yolo policy allows all tools and unrestricted paths" do
     policy = ToolPolicy.yolo()
     assert policy.mode == :unrestricted
-    
+
     allowed = ToolPolicy.allowed_tool_names(policy)
     assert "write" in allowed
     assert "task" in allowed
