@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   Handles the chat loop and user input.
   """
 
-  alias Beamcore.Agent.Chat.{API, Commands, Session, ToolPolicy}
+  alias Beamcore.Agent.Chat.{API, Commands, MultilineInput, Session, ToolPolicy}
   alias Beamcore.Agent.Core.{Pretty, StatusBar}
   alias Beamcore.Agent.Tools.Dispatcher
 
@@ -31,8 +31,10 @@ defmodule Beamcore.Agent.Chat.Loop do
             loop(session, pid)
 
           "/" <> command ->
-            new_session = Commands.execute(command, session)
-            loop(new_session, pid)
+            handle_command(command, session, pid)
+
+          "<<<" ->
+            handle_paste(session, pid, ">>>")
 
           trimmed ->
             new_session = send_message(session, trimmed, pid)
@@ -42,6 +44,53 @@ defmodule Beamcore.Agent.Chat.Loop do
       _ ->
         :ok
     end
+  end
+
+  defp handle_command("paste", session, pid), do: handle_paste(session, pid, "/end")
+
+  defp handle_command(command, session, pid) do
+    new_session = Commands.execute(command, session)
+    loop(new_session, pid)
+  end
+
+  defp handle_paste(session, pid, terminator) do
+    IO.puts("Paste multi-line input. Finish with #{terminator}.")
+
+    case collect_paste([], terminator) do
+      {:ok, text} ->
+        session
+        |> send_message(text, pid)
+        |> loop(pid)
+
+      {:error, :empty} ->
+        Beamcore.Agent.Core.Pretty.print_error("Empty paste ignored.")
+        loop(session, pid)
+    end
+  end
+
+  defp collect_paste(lines, terminator) do
+    case IO.gets("") do
+      :eof ->
+        lines
+        |> MultilineInput.collect_until(terminator)
+        |> eof_paste_result()
+
+      input when is_binary(input) ->
+        line = String.trim_trailing(input, "\n") |> String.trim_trailing("\r")
+
+        case MultilineInput.collect_until(lines ++ [line], terminator) do
+          {:ok, text, _rest} -> {:ok, text}
+          {:error, :empty, _rest} -> {:error, :empty}
+          {:more, _text} -> collect_paste(lines ++ [line], terminator)
+        end
+    end
+  end
+
+  defp eof_paste_result({:ok, text, _rest}), do: {:ok, text}
+  defp eof_paste_result({:error, :empty, _rest}), do: {:error, :empty}
+
+  defp eof_paste_result({:more, text}) do
+    if String.trim(text) == "", do: {:error, :empty}, else: {:ok, String.trim(text)}
   end
 
   defp send_message(session, content, pid) do
@@ -64,7 +113,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     case API.execute(session.client, api_messages, tools, :main) do
       {:ok, %{message: message, raw_response: raw_response}} ->
-        Session.log(session, raw_response)
+        Session.log(session, Session.compact_raw_response(raw_response))
         Pretty.print_assistant(message["content"], :main)
         Pretty.print_raw_response(raw_response)
 
@@ -81,7 +130,8 @@ defmodule Beamcore.Agent.Chat.Loop do
           Session.summarize_and_rollover(session, messages ++ [message], pid)
         else
           message = normalize_tool_calls(message)
-          new_messages = messages ++ [message]
+          compacted_message = Session.compact_for_api(message)
+          new_messages = messages ++ [compacted_message]
 
           if has_tool_calls?(message) do
             tool_responses =

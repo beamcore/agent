@@ -220,6 +220,120 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert tool_msg.content =~ "mix test failed with exit code 2"
     end
 
+    test "prepare_for_api compacts large write tool call arguments but preserves path metadata" do
+      large_content =
+        "defmodule Scratch.Big do\n" <> String.duplicate("  def x, do: :ok\n", 80) <> "end\n"
+
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "create file"},
+        %{
+          role: "assistant",
+          tool_calls: [
+            %{
+              "id" => "call_1",
+              "function" => %{
+                "name" => "write",
+                "arguments" =>
+                  Jason.encode!(%{
+                    "filePath" => "scratch/big.ex",
+                    "content" => large_content
+                  })
+              }
+            }
+          ]
+        }
+      ]
+
+      prepared = Session.prepare_for_api(messages)
+      assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
+      [tool_call] = assistant.tool_calls
+      args = Jason.decode!(tool_call["function"]["arguments"])
+
+      assert args["filePath"] == "scratch/big.ex"
+      assert args["content"] =~ "[content omitted:"
+      assert args["content"] =~ "chars"
+      assert args["content"] =~ "lines"
+      refute args["content"] =~ "defmodule Scratch.Big"
+    end
+
+    test "prepare_for_api compacts patch arguments while keeping small arguments visible" do
+      patch = """
+      --- /dev/null
+      +++ b/scratch/a.ex
+      @@ -0,0 +1,80 @@
+      #{String.duplicate("+line\n", 80)}
+      """
+
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "patch file"},
+        %{
+          role: "assistant",
+          tool_calls: [
+            %{
+              "id" => "call_1",
+              "function" => %{
+                "name" => "patch",
+                "arguments" =>
+                  Jason.encode!(%{
+                    "patch_content" => patch,
+                    "workdir" => "."
+                  })
+              }
+            }
+          ]
+        }
+      ]
+
+      prepared = Session.prepare_for_api(messages)
+      assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
+      [tool_call] = assistant.tool_calls
+      args = Jason.decode!(tool_call["function"]["arguments"])
+
+      assert args["workdir"] == "."
+      assert args["patch_content"] =~ "[patch_content omitted:"
+      assert args["patch_content"] =~ "lines"
+      refute args["patch_content"] =~ "+line"
+    end
+
+    test "compact_raw_response logs compacted mutation tool calls" do
+      content = String.duplicate("hello\n", 100)
+
+      response = %{
+        "choices" => [
+          %{
+            "message" => %{
+              "tool_calls" => [
+                %{
+                  "id" => "call_1",
+                  "function" => %{
+                    "name" => "write",
+                    "arguments" =>
+                      Jason.encode!(%{"filePath" => "scratch/a.ex", "content" => content})
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+
+      compacted = Session.compact_raw_response(response)
+
+      args =
+        compacted["choices"]
+        |> hd()
+        |> get_in(["message", "tool_calls"])
+        |> hd()
+        |> get_in(["function", "arguments"])
+        |> Jason.decode!()
+
+      assert args["filePath"] == "scratch/a.ex"
+      assert args["content"] =~ "[content omitted:"
+      refute args["content"] =~ "hello\nhello\nhello"
+    end
+
     test "removes leading and orphaned tool messages" do
       messages = [
         %{role: "system", content: "sys"},
