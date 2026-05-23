@@ -101,7 +101,16 @@ defmodule Beamcore.Agent.Core.StatusBar do
 
   @impl true
   def handle_cast({:update_text, text}, state) do
-    do_update_text(text, state)
+    current_time = System.system_time(:millisecond)
+    last_update = state.last_update
+
+    # Debounce logic for update_text as well
+    if last_update && current_time - last_update < @debounce_interval do
+      # Store the pending text update
+      {:noreply, %{state | pending_update: {:update_text, text}}}
+    else
+      do_update_text(text, state)
+    end
   end
 
   @impl true
@@ -139,6 +148,9 @@ defmodule Beamcore.Agent.Core.StatusBar do
 
       {:update, session} ->
         do_update(session, %{state | pending_update: nil})
+
+      {:update_text, text} ->
+        do_update_text(text, %{state | pending_update: nil})
     end
   end
 
