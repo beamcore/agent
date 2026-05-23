@@ -152,4 +152,19 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert cleared.pending_user_message == nil
     assert cleared.context.pending_action == nil
   end
+
+  test "/yolo sets policy override to unrestricted" do
+    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+    output =
+      capture_io(fn ->
+        result = Commands.execute("yolo", session)
+        send(self(), {:yolo, result})
+      end)
+
+    assert output =~ "YOLO mode enabled"
+    assert_receive {:yolo, result}
+    assert result.policy_override != nil
+    assert result.policy_override.mode == :unrestricted
+  end
 end

@@ -183,7 +183,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       refute Enum.at(prepared, 1).content =~ "file content should not appear"
     end
 
-    test "truncates large message content to 4000 characters" do
+    test "does not truncate large message content" do
       large_content = String.duplicate("a", 5000)
 
       messages = [
@@ -193,11 +193,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       trimmed = Session.trim_and_clean_messages(messages)
       user_msg = Enum.find(trimmed, fn m -> m.role == "user" end)
-      assert String.length(user_msg.content) < 5000
-      assert user_msg.content =~ "... [content truncated for summarization] ..."
+      assert user_msg.content == large_content
     end
 
-    test "prepare_for_api compacts long tool output with useful head and tail" do
+    test "prepare_for_api preserves long tool output in full" do
       long_output =
         "HEAD diagnostic\n" <>
           String.duplicate("middle noise\n", 500) <>
@@ -213,13 +212,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       prepared = Session.prepare_for_api(messages)
       tool_msg = Enum.find(prepared, fn m -> m.role == "tool" end)
 
-      assert String.length(tool_msg.content) <= 1200
-      assert tool_msg.content =~ "HEAD diagnostic"
-      assert tool_msg.content =~ "TAIL validation error"
-      assert tool_msg.content =~ "content compacted"
+      assert tool_msg.content == long_output
     end
 
-    test "compact_history keeps latest user request while compacting long tool output" do
+    test "compact_history keeps latest user request and preserves long tool output" do
       long_output =
         "format failed\n" <>
           String.duplicate("noise\n", 600) <>
@@ -238,12 +234,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert List.last(compacted).content == "latest request must stay"
 
       tool_msg = Enum.find(compacted, fn m -> m.role == "tool" end)
-      assert String.length(tool_msg.content) <= 1200
-      assert tool_msg.content =~ "format failed"
-      assert tool_msg.content =~ "mix test failed with exit code 2"
+      assert tool_msg.content == long_output
     end
 
-    test "prepare_for_api compacts large write tool call arguments but preserves path metadata" do
+    test "prepare_for_api preserves large write tool call arguments" do
       large_content =
         "defmodule Scratch.Big do\n" <> String.duplicate("  def x, do: :ok\n", 80) <> "end\n"
 
@@ -274,13 +268,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       args = Jason.decode!(tool_call["function"]["arguments"])
 
       assert args["filePath"] == "scratch/big.ex"
-      assert args["content"] =~ "[content omitted:"
-      assert args["content"] =~ "chars"
-      assert args["content"] =~ "lines"
-      refute args["content"] =~ "defmodule Scratch.Big"
+      assert args["content"] == large_content
     end
 
-    test "prepare_for_api compacts patch arguments while keeping small arguments visible" do
+    test "prepare_for_api preserves patch arguments" do
       patch = """
       --- /dev/null
       +++ b/scratch/a.ex
@@ -315,12 +306,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       args = Jason.decode!(tool_call["function"]["arguments"])
 
       assert args["workdir"] == "."
-      assert args["patch_content"] =~ "[patch_content omitted:"
-      assert args["patch_content"] =~ "lines"
-      refute args["patch_content"] =~ "+line"
+      assert args["patch_content"] == patch
     end
 
-    test "compact_raw_response logs compacted mutation tool calls" do
+    test "compact_raw_response logs uncompacted mutation tool calls" do
       content = String.duplicate("hello\n", 100)
 
       response = %{
@@ -353,8 +342,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         |> Jason.decode!()
 
       assert args["filePath"] == "scratch/a.ex"
-      assert args["content"] =~ "[content omitted:"
-      refute args["content"] =~ "hello\nhello\nhello"
+      assert args["content"] == content
     end
 
     test "removes leading and orphaned tool messages" do
@@ -402,7 +390,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert Enum.at(trimmed, 2).content == "response 1\n\nresponse 2"
     end
 
-    test "limits total non-system messages to target count but keeps system message" do
+    test "does not limit total non-system messages to target count" do
       messages =
         [
           %{role: "system", content: "sys"}
@@ -415,11 +403,160 @@ defmodule Beamcore.Agent.Chat.SessionTest do
           end)
 
       # 40 non-system messages total.
-      # If we limit to 10, it should keep system message + last 10 non-system messages starting with user
+      # It should preserve all non-system messages
       trimmed = Session.trim_and_clean_messages(messages, 10)
-      assert length(trimmed) == 11
+      assert length(trimmed) == 41
       assert Enum.at(trimmed, 0).role == "system"
       assert Enum.at(trimmed, 1).role == "user"
+    end
+  end
+
+  describe "transparent rollover and grace period" do
+    test "update_usage/2 sets needs_compaction flag at grace threshold" do
+      client = Beamcore.Agent.OpenAI.client()
+      session = Session.new(client)
+
+      # Below threshold
+      session1 = Session.update_usage(session, %{"prompt_tokens" => 140_000, "completion_tokens" => 10, "total_tokens" => 140_010})
+      refute session1.needs_compaction
+      assert session1.last_prompt_tokens == 140_000
+
+      # At/above threshold
+      session2 = Session.update_usage(session1, %{"prompt_tokens" => 150_000, "completion_tokens" => 10, "total_tokens" => 150_010})
+      assert session2.needs_compaction
+      assert session2.last_prompt_tokens == 150_000
+
+      # Keeps needs_compaction: true even when subsequently updated with lower tokens
+      session3 = Session.update_usage(session2, %{"prompt_tokens" => 10_000, "completion_tokens" => 10, "total_tokens" => 10_010})
+      assert session3.needs_compaction
+      assert session3.last_prompt_tokens == 10_000
+    end
+
+    test "needs_rollover_now?/1 correctly identifies hard limit" do
+      client = Beamcore.Agent.OpenAI.client()
+      session = Session.new(client)
+
+      refute Session.needs_rollover_now?(session)
+
+      session1 = %{session | last_prompt_tokens: 199_999}
+      refute Session.needs_rollover_now?(session1)
+
+      session2 = %{session | last_prompt_tokens: 200_000}
+      assert Session.needs_rollover_now?(session2)
+    end
+
+    test "Context.compact/1 trims context fields while preserving modified files" do
+      context = Beamcore.Agent.Chat.Context.new(:elixir)
+      
+      # Populate fields
+      context = %{context |
+        inspected_files: MapSet.new(["a.ex", "b.ex", "c.ex", "d.ex", "e.ex", "f.ex", "g.ex", "h.ex", "i.ex", "j.ex", "k.ex", "l.ex", "m.ex", "n.ex", "o.ex", "p.ex", "q.ex", "r.ex", "s.ex", "t.ex", "u.ex", "v.ex"]),
+        modified_files: MapSet.new(["write.ex"]),
+        decisions: ["dec1", "dec2", "dec3", "dec4", "dec5", "dec6", "dec7"],
+        blocked_attempts: ["att1", "att2", "att3", "att4"],
+        known_risks: ["risk1", "risk2", "risk3", "risk4"],
+        last_validation: %{command: "test", ok: true, summary: "passed"},
+        pending_action: %{summary: "action"}
+      }
+
+      compacted = Beamcore.Agent.Chat.Context.compact(context)
+
+      assert compacted.project_type == :elixir
+      assert MapSet.size(compacted.inspected_files) == 20
+      assert compacted.modified_files == MapSet.new(["write.ex"])
+      assert length(compacted.decisions) == 6
+      assert length(compacted.blocked_attempts) == 3
+      assert length(compacted.known_risks) == 3
+      assert compacted.last_validation == %{command: "test", ok: true, summary: "passed"}
+      assert compacted.pending_action == nil
+    end
+
+    test "summarize_and_rollover/3 transparently rolls over the session, preserving session_id and context" do
+      client = Beamcore.Agent.OpenAI.client()
+      session = Session.new(client)
+
+      # 1. Mock the API call
+      Process.put(:mock_completions_create, fn _client, params ->
+        assert params.model == "mistral-small-2603"
+        {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "Summary of our work."}}]}}
+      end)
+
+      # Ensure cleanup
+      on_exit(fn ->
+        Process.delete(:mock_completions_create)
+      end)
+
+      # 2. Modify context to verify it gets preserved and compacted
+      session = %{session |
+        context: %{session.context |
+          modified_files: MapSet.new(["lib/modified.ex"]),
+          inspected_files: MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
+        },
+        session_id: "test-session-id",
+        last_prompt_tokens: 155_000,
+        needs_compaction: true
+      }
+
+      # 3. Perform rollover
+      new_session = Session.summarize_and_rollover(session, session.messages, nil)
+
+      # 4. Assertions
+      assert new_session.session_id == "test-session-id"
+      assert new_session.compaction_count == 1
+      assert new_session.needs_compaction == false
+      assert new_session.last_prompt_tokens == 0
+      assert new_session.total_tokens == 0
+      assert new_session.total_prompt_tokens == 0
+      assert new_session.total_completion_tokens == 0
+      
+      # Context modified_files preserved, inspected_files preserved (and compacted)
+      assert new_session.context.modified_files == MapSet.new(["lib/modified.ex"])
+      assert new_session.context.inspected_files == MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
+
+      # Combined system message contains the original prompt and the summary
+      [%{role: "system", content: system_content}] = new_session.messages
+      assert system_content =~ "Summary of our work."
+    end
+
+    test "summarize_and_rollover/3 performs fallback local compaction if API call fails" do
+      client = Beamcore.Agent.OpenAI.client()
+      session = Session.new(client)
+
+      # 1. Mock API call failure
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:error, "API is down"}
+      end)
+
+      # Ensure cleanup
+      on_exit(fn ->
+        Process.delete(:mock_completions_create)
+      end)
+
+      # 2. Modify session context
+      session = %{session |
+        context: %{session.context |
+          modified_files: MapSet.new(["lib/fallback_modified.ex"])
+        },
+        session_id: "fallback-session-id",
+        last_prompt_tokens: 155_000,
+        needs_compaction: true
+      }
+
+      # 3. Perform rollover
+      new_session = Session.summarize_and_rollover(session, session.messages, nil)
+
+      # 4. Assertions
+      assert new_session.session_id == "fallback-session-id"
+      assert new_session.compaction_count == 1
+      assert new_session.needs_compaction == false
+      assert new_session.last_prompt_tokens == 0
+      assert new_session.total_tokens == 0
+      
+      # Context is still compacted and preserved
+      assert new_session.context.modified_files == MapSet.new(["lib/fallback_modified.ex"])
+      
+      # Message history is locally trimmed but non-empty
+      assert length(new_session.messages) > 0
     end
   end
 end

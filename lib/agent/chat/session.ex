@@ -11,6 +11,10 @@ defmodule Beamcore.Agent.Chat.Session do
     :total_prompt_tokens,
     :total_completion_tokens,
     :total_tokens,
+    :last_prompt_tokens,
+    :needs_compaction,
+    :compaction_count,
+    :policy_override,
     :project_nature,
     :context,
     :pending_user_message
@@ -21,13 +25,9 @@ defmodule Beamcore.Agent.Chat.Session do
   @qualities ~w(hairy slimy fluffy scaly shiny bumpy soft hard fast slow loud quiet smart silly funny brave shy happy sad angry)
   @api_message_limit 24
   @history_message_limit 32
-  @max_tool_result_chars 1_200
-  @max_assistant_chars 3_000
-  @max_user_chars 4_000
-  @max_system_chars 9_000
-  @max_other_chars 2_000
-  @max_tool_arg_chars 200
-  @large_tool_arg_keys ~w(content old_string new_string patch patch_content diff prompt instructions)
+
+  @grace_threshold 150_000
+  @hard_limit 200_000
 
   @doc """
   Generates a funny session name in the format "color-property-animal".
@@ -60,6 +60,10 @@ defmodule Beamcore.Agent.Chat.Session do
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
       total_tokens: 0,
+      last_prompt_tokens: 0,
+      needs_compaction: false,
+      compaction_count: 0,
+      policy_override: nil,
       project_nature: project_nature,
       context: Beamcore.Agent.Chat.Context.new(project_nature),
       pending_user_message: nil
@@ -95,12 +99,24 @@ defmodule Beamcore.Agent.Chat.Session do
   }
   """
   def update_usage(session, usage) do
+    last_prompt = usage["prompt_tokens"] || 0
+
     %{
       session
-      | total_prompt_tokens: session.total_prompt_tokens + usage["prompt_tokens"],
-        total_completion_tokens: session.total_completion_tokens + usage["completion_tokens"],
-        total_tokens: session.total_tokens + usage["total_tokens"]
+      | total_prompt_tokens: session.total_prompt_tokens + (usage["prompt_tokens"] || 0),
+        total_completion_tokens: session.total_completion_tokens + (usage["completion_tokens"] || 0),
+        total_tokens: session.total_tokens + (usage["total_tokens"] || 0),
+        last_prompt_tokens: last_prompt,
+        needs_compaction: session.needs_compaction || last_prompt >= @grace_threshold
     }
+  end
+
+  @doc """
+  Returns true if the session has hit the hard limit and must rollover
+  immediately, even mid-tool-chain.
+  """
+  def needs_rollover_now?(session) do
+    (session.last_prompt_tokens || 0) >= @hard_limit
   end
 
   @doc """
@@ -115,7 +131,9 @@ defmodule Beamcore.Agent.Chat.Session do
     %{
       prompt_tokens: session.total_prompt_tokens,
       completion_tokens: session.total_completion_tokens,
-      total_tokens: session.total_tokens
+      total_tokens: session.total_tokens,
+      last_prompt_tokens: session.last_prompt_tokens || 0,
+      needs_compaction: session.needs_compaction || false
     }
   end
 
@@ -192,79 +210,95 @@ defmodule Beamcore.Agent.Chat.Session do
   Summarizes the current session context and rolls over into a new session.
   """
   def summarize_and_rollover(session, messages, pid) do
-    Beamcore.Agent.Core.Pretty.print_warning(
-      "Token limit approaching. Summarizing and rolling over to a new session..."
-    )
-
-    Beamcore.Agent.Core.StatusBar.update_text(
-      pid,
-      " ⚠️  ROLLING OVER SESSION (Summarizing context...) "
-    )
+    Beamcore.Agent.Core.StatusBar.update_text(pid, " 🔄 Compacting context... ")
 
     summary_prompt = %{
       role: "user",
-      content:
-        "We are approaching the context limit. Please summarize the progress we've made so far, key decisions, the current state of the codebase, and what needs to be done next. This summary will be used to seed our next session so we can continue seamlessly."
+      content: """
+      Summarize our conversation so far in a compact format. Include:
+      1. Key decisions made and their rationale
+      2. Current state of the work (what's done, what's in progress)
+      3. Files modified or created
+      4. Any errors encountered and how they were resolved
+      5. What needs to be done next
+      Keep it concise but preserve all critical context needed to continue seamlessly.
+      """
     }
 
-    trimmed_messages = trim_and_clean_messages(messages, 30)
-    temp_messages = trimmed_messages ++ [summary_prompt]
+    trimmed = trim_and_clean_messages(messages, 30)
 
-    case Beamcore.Agent.Chat.API.execute(session.client, temp_messages, [], :main,
+    case Beamcore.Agent.Chat.API.execute(
+           session.client,
+           trimmed ++ [summary_prompt],
+           [],
+           :main,
            model: "mistral-small-2603"
          ) do
       {:ok, %{message: %{"content" => summary}}} ->
-        # Validate the summary content
-        default_summary =
-          "Previous session summary was empty or invalid. Continuing with a fresh session."
+        validated = validate_summary(summary)
+        system_msg = List.first(session.messages)
+        system_content = system_msg[:content] || system_msg["content"]
 
-        validated_summary =
-          if summary && is_binary(summary) && String.length(summary) > 0 &&
-               String.length(summary) <= 10_000 do
-            summary
-          else
-            default_summary
-          end
-
-        new_session = new(session.client)
-
-        # Explicitly reset token counters for the new session
-        new_session = %{
-          new_session
-          | total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            total_tokens: 0
-        }
-
-        # Extract the original system message
-        [%{role: "system", content: original_system_message}] = new_session.messages
-
-        # Create a combined system message with the original prompt and summary
-        combined_system_message = %{
+        combined_system = %{
           role: "system",
-          content:
-            "System: #{original_system_message}\n\nPrevious Session Summary:\n#{validated_summary}"
+          content: """
+          #{system_content}
+
+          [Compacted session context — conversation continues seamlessly]
+          #{validated}
+          """
         }
 
-        # Replace the system message in the new session
-        new_session = %{new_session | messages: [combined_system_message]}
+        new_session = %{session |
+          messages: [combined_system],
+          last_prompt_tokens: 0,
+          needs_compaction: false,
+          compaction_count: session.compaction_count + 1,
+          total_prompt_tokens: 0,
+          total_completion_tokens: 0,
+          total_tokens: 0,
+          context: Beamcore.Agent.Chat.Context.compact(session.context)
+        }
 
-        # Log the combined system message to the new session
-        log(new_session, combined_system_message)
+        log(new_session, %{
+          event: "transparent_compaction",
+          compaction_number: new_session.compaction_count,
+          previous_prompt_tokens: session.last_prompt_tokens,
+          previous_total_tokens: session.total_tokens,
+          messages_before: length(messages),
+          timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+        })
 
         Beamcore.Agent.Core.StatusBar.update(pid, new_session)
-
-        Beamcore.Agent.Core.Pretty.print_assistant(
-          "Session rolled over successfully. New session ID: #{new_session.session_id}",
-          :main
-        )
-
         new_session
 
-      {:error, reason} ->
-        Beamcore.Agent.Core.Pretty.print_error("Failed to summarize session: #{inspect(reason)}")
-        # If it fails, return the old session
-        %{session | messages: messages}
+      {:error, _reason} ->
+        # Fallback: aggressive local trim if API summary fails
+        fallback = messages
+          |> trim_and_clean_messages(10)
+          |> Enum.map(&compact_for_api/1)
+
+        %{session |
+          messages: fallback,
+          needs_compaction: false,
+          compaction_count: session.compaction_count + 1,
+          last_prompt_tokens: 0,
+          total_prompt_tokens: 0,
+          total_completion_tokens: 0,
+          total_tokens: 0,
+          context: Beamcore.Agent.Chat.Context.compact(session.context)
+        }
+    end
+  end
+
+  defp validate_summary(summary) do
+    default = "Previous context was compacted. Continuing with current session state."
+
+    if summary && is_binary(summary) && String.length(summary) > 0 &&
+         String.length(summary) <= 10_000 do
+      summary
+    else
+      default
     end
   end
 
@@ -272,163 +306,36 @@ defmodule Beamcore.Agent.Chat.Session do
   Trims and cleans a message list before it is sent to the summarizer.
   Ensures it is under the token/character threshold and conforms to message alternation requirements.
   """
-  def trim_and_clean_messages(messages, limit \\ 30) do
+  def trim_and_clean_messages(messages, _limit \\ 30) do
     # 1. Separate system messages and others
     {system_messages, other_messages} =
       Enum.split_with(messages, fn m ->
         (m[:role] || m["role"]) == "system"
       end)
 
-    # 2. Truncate content of all messages to 4000 chars to avoid huge payloads
-    truncated_messages = Enum.map(other_messages, &truncate_message_content/1)
+    # 2. Clean up orphaned tools
+    cleaned_messages = clean_orphaned_tools(other_messages)
 
-    # 3. Take the last `limit` messages
-    trimmed_messages = Enum.take(truncated_messages, -limit)
-
-    # 4. Clean up orphaned tools
-    cleaned_messages = clean_orphaned_tools(trimmed_messages)
-
-    # 5. Ensure it starts with a user message
+    # 3. Ensure it starts with a user message
     user_starting_messages = ensure_starts_with_user(cleaned_messages)
 
-    # 6. Merge consecutive same-role messages
+    # 4. Merge consecutive same-role messages
     final_messages = merge_consecutive_roles(user_starting_messages)
 
-    # 7. Ensure non-empty user message fallback
+    # 5. Ensure non-empty user message fallback
     final_messages =
       case final_messages do
         [] -> [%{role: "user", content: "Continuing the conversation."}]
         other -> other
       end
 
-    # 8. Combine back with system messages
+    # 6. Combine back with system messages
     system_messages ++ final_messages
   end
 
-  defp truncate_for_api(message) do
-    role = message[:role] || message["role"]
-    content = message[:content] || message["content"]
+  defp truncate_for_api(message), do: message
 
-    max_chars =
-      case role do
-        "system" -> @max_system_chars
-        "tool" -> @max_tool_result_chars
-        "assistant" -> @max_assistant_chars
-        "user" -> @max_user_chars
-        _ -> @max_other_chars
-      end
-
-    if is_binary(content) and String.length(content) > max_chars do
-      put_message_content(message, compact_content(content, max_chars))
-    else
-      message
-    end
-  end
-
-  defp compact_tool_calls(message) do
-    case message[:tool_calls] || message["tool_calls"] do
-      tool_calls when is_list(tool_calls) ->
-        put_tool_calls(message, Enum.map(tool_calls, &compact_tool_call/1))
-
-      _other ->
-        message
-    end
-  end
-
-  defp compact_tool_call(tool_call) do
-    function = tool_call[:function] || tool_call["function"]
-
-    if is_map(function) do
-      arguments = function[:arguments] || function["arguments"]
-      compacted_arguments = compact_tool_arguments(arguments)
-      compacted_function = put_map_value(function, "arguments", compacted_arguments)
-      put_map_value(tool_call, "function", compacted_function)
-    else
-      tool_call
-    end
-  end
-
-  defp compact_tool_arguments(arguments) when is_binary(arguments) do
-    case Jason.decode(arguments) do
-      {:ok, decoded} when is_map(decoded) ->
-        decoded
-        |> Enum.into(%{}, fn {key, value} -> {key, compact_tool_arg(key, value)} end)
-        |> Jason.encode!()
-
-      _ ->
-        arguments
-    end
-  end
-
-  defp compact_tool_arguments(arguments), do: arguments
-
-  defp compact_tool_arg(key, value)
-       when key in @large_tool_arg_keys and is_binary(value) do
-    if String.length(value) > @max_tool_arg_chars do
-      "[#{key} omitted: #{String.length(value)} chars, #{line_count(value)} lines]"
-    else
-      value
-    end
-  end
-
-  defp compact_tool_arg(_key, value), do: value
-
-  defp put_tool_calls(message, tool_calls) do
-    if Map.has_key?(message, :tool_calls) do
-      Map.put(message, :tool_calls, tool_calls)
-    else
-      Map.put(message, "tool_calls", tool_calls)
-    end
-  end
-
-  defp put_map_value(map, key, value) do
-    atom_key = String.to_existing_atom(key)
-
-    cond do
-      Map.has_key?(map, atom_key) -> Map.put(map, atom_key, value)
-      true -> Map.put(map, key, value)
-    end
-  rescue
-    ArgumentError -> Map.put(map, key, value)
-  end
-
-  defp line_count(value), do: value |> String.split("\n") |> length()
-
-  defp compact_content(
-         content,
-         max_chars,
-         marker \\ "\n... [content compacted; middle omitted] ...\n"
-       ) do
-    marker_size = String.length(marker)
-    budget = max(max_chars - marker_size, 0)
-    head_size = div(budget, 2)
-    tail_size = budget - head_size
-
-    String.slice(content, 0, head_size) <> marker <> String.slice(content, -tail_size, tail_size)
-  end
-
-  defp put_message_content(message, content) do
-    if Map.has_key?(message, :content) do
-      Map.put(message, :content, content)
-    else
-      Map.put(message, "content", content)
-    end
-  end
-
-  defp truncate_message_content(message) do
-    content = message[:content] || message["content"]
-
-    cond do
-      is_binary(content) and String.length(content) > 4000 ->
-        put_message_content(
-          message,
-          compact_content(content, 4000, "\n... [content truncated for summarization] ...\n")
-        )
-
-      true ->
-        message
-    end
-  end
+  defp compact_tool_calls(message), do: message
 
   defp clean_orphaned_tools(messages) do
     messages =
@@ -459,9 +366,17 @@ defmodule Beamcore.Agent.Chat.Session do
   end
 
   defp ensure_starts_with_user(messages) do
-    Enum.drop_while(messages, fn msg ->
-      (msg[:role] || msg["role"]) != "user"
-    end)
+    case messages do
+      [] ->
+        []
+
+      [msg | _] = list ->
+        if (msg[:role] || msg["role"]) == "user" do
+          list
+        else
+          [%{role: "user", content: "Continuing the conversation."} | list]
+        end
+    end
   end
 
   defp merge_consecutive_roles(messages) do

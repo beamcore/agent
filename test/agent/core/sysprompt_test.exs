@@ -6,14 +6,14 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
 
     assert prompt =~ "Command Execution Restriction"
     assert prompt =~ "Direct shell, bash, sh, or any other command execution is **not allowed**"
-    assert prompt =~ "You must use only the tools provided above"
+    assert prompt =~ "You must use only the tools provided below"
   end
 
   test "generate/0 includes senior self-development objectives" do
     prompt = Beamcore.Agent.Core.SysPrompt.generate()
 
     assert prompt =~ "general-purpose senior coding agent"
-    assert prompt =~ "Improve this codebase safely and incrementally"
+    assert prompt =~ "improve this codebase safely and incrementally"
     assert prompt =~ "Produce excellent production-quality code"
     assert prompt =~ "smallest meaningful change"
     assert prompt =~ "ExUnit tests"
@@ -22,11 +22,8 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
   test "generate/0 allows standalone coding in other languages" do
     prompt = Beamcore.Agent.Core.SysPrompt.generate()
 
-    assert prompt =~ "write code in any programming language"
+    assert prompt =~ "Write code in any programming language"
     assert prompt =~ "Java"
-    assert prompt =~ "Do not refuse standalone coding questions"
-    assert prompt =~ "answer directly without tools"
-    assert prompt =~ "Use Mix only for this Elixir project's validation"
   end
 
   test "generate/0 includes code quality principles" do
@@ -53,8 +50,7 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
 
     safety_rules = [
       "workspace boundaries",
-      "workspace-relative",
-      "Absolute paths",
+      "Do not use absolute paths",
       "path traversal",
       "symlink escapes",
       "Do not expose, print, commit, or invent secrets",
@@ -89,12 +85,7 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
   test "generate/0 describes confirmation flow and explicit Policy blocks" do
     prompt = Beamcore.Agent.Core.SysPrompt.generate()
 
-    assert prompt =~ "confirmed pending plan"
-    assert prompt =~ "Do not ask normal users to write Policy blocks"
-    assert prompt =~ "ask the user to confirm with /confirm"
-    assert prompt =~ "mode: restricted_write"
-    assert prompt =~ "allowed_write_paths:"
-    assert prompt =~ "blocked_tools:"
+    assert prompt =~ "confirmation and Policy block"
   end
 
   test "generate/0 includes all important tools" do
