@@ -7,7 +7,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   alias Beamcore.Agent.Core.{Pretty, StatusBar}
   alias Beamcore.Agent.Tools.Dispatcher
 
-  @max_tool_depth 50
+  @max_tool_depth 100
 
   @doc """
   Start the chat loop with the given session and status bar PID.
