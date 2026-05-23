@@ -23,8 +23,8 @@ defmodule Beamcore.Agent.Chat.Session do
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
   @animals ~w(cat dog bird fish elephant lion tiger bear wolf fox owl hawk eagle shark whale dolphin octopus spider snake frog)
   @qualities ~w(hairy slimy fluffy scaly shiny bumpy soft hard fast slow loud quiet smart silly funny brave shy happy sad angry)
-  @api_message_limit 24
-  @history_message_limit 32
+  @api_message_limit 304
+  @history_message_limit 632
 
   @grace_threshold 150_000
   @hard_limit 200_000
