@@ -94,10 +94,40 @@ defmodule Beamcore.Agent.Tools.Grep do
     args = if include, do: ["-g", include | common_args], else: common_args
 
     case safe_cmd("rg", args ++ [path], stderr_to_stdout: true) do
-      {:ok, output, 0} -> {:ok, output}
-      {:ok, output, 1} -> {:nomatch, output}
-      {:ok, output, _exit_code} -> {:error, output}
-      {:error, reason} -> {:unavailable, reason}
+      {:ok, output, 0} ->
+        output = filter_ignored_output(output, path, show_all)
+        if output == "", do: {:nomatch, output}, else: {:ok, output}
+
+      {:ok, output, 1} ->
+        {:nomatch, filter_ignored_output(output, path, show_all)}
+
+      {:ok, output, _exit_code} ->
+        {:error, output}
+
+      {:error, reason} ->
+        {:unavailable, reason}
+    end
+  end
+
+  defp filter_ignored_output(output, _path, true), do: output
+
+  defp filter_ignored_output(output, path, false) do
+    ignored = ignored_names(path)
+
+    if MapSet.size(ignored) == 0 do
+      output
+    else
+      output
+      |> String.split("\n", trim: true)
+      |> Enum.reject(fn line ->
+        file =
+          line
+          |> String.split(":", parts: 2)
+          |> List.first()
+
+        MapSet.member?(ignored, Path.basename(file))
+      end)
+      |> Enum.join("\n")
     end
   end
 
