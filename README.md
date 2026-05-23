@@ -1,10 +1,11 @@
 # Beamcore.Agent
 
-Beamcore.Agent is an Elixir/Mix CLI coding agent for Mistral API. It focuses on safe self-development: bounded workspace tools, explicit mutation confirmation, compact session context, token-aware history, and repeatable Mix validation.
+Beamcore.Agent is a general-purpose CLI coding agent running inside an Elixir/Mix workspace. It can answer and write code in any language, while its self-development workflow is optimized for this Elixir project: bounded workspace tools, explicit mutation confirmation, compact session context, token-aware history, image generation, and repeatable Mix validation.
 
 ## Core ideas
 
-- **Elixir-first workflow**: understand the Mix project, edit small, test focused, validate with Mix.
+- **General coding help**: answer standalone Java, Python, C++, JavaScript, Go, Rust, Erlang, Elixir, and other coding questions directly in chat.
+- **Elixir-first workspace workflow**: when improving this repository, understand the Mix project, edit small, test focused, validate with Mix.
 - **Safe tool execution**: file and git paths are workspace-relative; absolute paths, traversal, and symlink escapes are rejected.
 - **Confirmed mutations**: normal write/edit/patch/fs requests create a pending plan first; mutations run only after `/confirm` or an explicit `Policy:` block.
 - **Compact context**: the agent remembers inspected files, modified files, validation state, and pending plans without storing full file contents.
@@ -65,6 +66,13 @@ MISTRAL_IMAGE_AGENT_ID=
 | `/context` | Print compact session context. |
 | `/context clear` | Clear compact session context. |
 | `/help` | Show command help. |
+
+
+## General coding questions
+
+The current workspace is Elixir/Mix, but the assistant is not Elixir-only. It should answer standalone programming questions in the requested language without refusing or forcing the answer back to this repository. For example, a question like `can you write something in Java?` should receive a Java example directly in chat.
+
+Workspace mutation rules still apply to every language: creating or editing Java, Python, C++, or any other files requires an explicit `Policy:` block or the normal `plan -> /confirm` flow. Mix validation only validates this Elixir project; the agent should not claim it compiled or ran non-Elixir code unless an appropriate project tool exists.
 
 ## Normal mutation flow
 
