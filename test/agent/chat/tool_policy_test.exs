@@ -3,83 +3,133 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
 
   alias Beamcore.Agent.Chat.ToolPolicy
 
-  test "detects read-only requests" do
-    policy = ToolPolicy.from_user_message("Read-only smoke test. Do not modify files.")
+  test "defaults to unconfirmed mode without mutation tools when no Policy block exists" do
+    policy = ToolPolicy.from_user_message("Implement the requested change.")
+
+    assert policy.mode == :unconfirmed
+    assert policy.allowed_write_paths == []
+    assert "plan" in ToolPolicy.allowed_tool_names(policy)
+    refute "write" in ToolPolicy.allowed_tool_names(policy)
+    refute "edit" in ToolPolicy.allowed_tool_names(policy)
+    refute "patch" in ToolPolicy.allowed_tool_names(policy)
+    refute "fs" in ToolPolicy.allowed_tool_names(policy)
+    refute "task" in ToolPolicy.allowed_tool_names(policy)
+    refute "curl" in ToolPolicy.allowed_tool_names(policy)
+  end
+
+  test "natural-language read-only examples do not drive policy without a Policy block" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Discuss this quoted example: "do not modify files".
+      Then implement the task normally.
+      """)
+
+    assert policy.mode == :unconfirmed
+  end
+
+  test "mutation without explicit Policy or confirmed plan is blocked" do
+    policy = ToolPolicy.from_user_message("Create scratch/a.ex.")
+
+    for tool <- ~w(write edit patch fs) do
+      assert {:error, message} = ToolPolicy.allow_tool_call(policy, tool, %{})
+      assert message =~ "Mutation requires a confirmed plan or explicit Policy block."
+    end
+  end
+
+  test "parses Policy mode read_only" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: read_only
+      allowed_tools:
+      - read
+      - mix
+      """)
 
     assert policy.mode == :read_only
-    refute policy.allow_task
+    assert ToolPolicy.allowed_tool_names(policy) == ["read", "mix"]
   end
 
-  test "keeps pure read-only requests read-only" do
-    for prompt <- [
-          "Do not modify files",
-          "Read-only smoke test",
-          "Analyze only. Do not create, modify, or delete files.",
-          "Review the code without changes"
-        ] do
-      policy = ToolPolicy.from_user_message(prompt)
-
-      assert policy.mode == :read_only
-      assert policy.allowed_write_paths == []
-
-      assert {:error, _message} =
-               ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
-    end
-  end
-
-  test "allows task only when explicitly requested in normal mode" do
-    policy = ToolPolicy.from_user_message("Use task delegation to inspect the codebase.")
-
-    assert policy.mode == :normal
-    assert policy.allow_task
-    refute policy.allow_network
-  end
-
-  test "allows network only when explicitly requested" do
-    default_policy = ToolPolicy.from_user_message("Inspect local files.")
-    network_policy = ToolPolicy.from_user_message("Fetch https://example.com with curl.")
-
-    refute default_policy.allow_network
-    assert network_policy.allow_network
-  end
-
-  test "read-only policy blocks mutating tools" do
-    policy = ToolPolicy.from_user_message("Do not modify files.")
-
-    for tool <- ~w(write edit patch fs curl task) do
-      assert {:error, message} = ToolPolicy.allow_tool_call(policy, tool, %{})
-      assert message =~ "read-only policy"
-    end
-  end
-
-  test "read-only policy allows safe git operations only" do
-    policy = ToolPolicy.from_user_message("Read-only audit.")
-
-    assert :ok == ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "status"})
-    assert :ok == ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "diff"})
-
-    assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "commit"})
-
-    assert message =~ "git operation"
-  end
-
-  test "read-only policy allows validate but blocks mutating mix commands" do
-    policy = ToolPolicy.from_user_message("Read-only validation.")
-
-    assert :ok == ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "validate"})
-
-    assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "format"})
-
-    assert message =~ "mix command"
-  end
-
-  test "detects restricted-write requests and extracts allowed paths" do
+  test "parses Policy mode development" do
     policy =
-      ToolPolicy.from_user_message(
-        "You may create only these two files: scratch/rolling_average.ex and scratch/rolling_average_test.exs. Do not create any other files."
-      )
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: development
+      """)
+
+    assert policy.mode == :development
+    assert "write" in ToolPolicy.allowed_tool_names(policy)
+    refute "task" in ToolPolicy.allowed_tool_names(policy)
+    refute "curl" in ToolPolicy.allowed_tool_names(policy)
+  end
+
+  test "invalid Policy mode fails closed and does not expose mutation tools" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: admin
+      allowed_tools:
+      - write
+      - edit
+      - patch
+      - fs
+      """)
+
+    assert policy.mode == :invalid_policy
+
+    for tool <- ~w(write edit patch fs) do
+      refute tool in ToolPolicy.allowed_tool_names(policy)
+    end
+  end
+
+  test "invalid Policy mode blocks mutation tool calls with a clear message" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: admin
+      allowed_tools:
+      - write
+      - edit
+      - patch
+      - fs
+      """)
+
+    assert {:error, write_message} =
+             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
+
+    assert write_message =~ "invalid policy"
+    assert write_message =~ "mutation tools are disabled"
+
+    assert {:error, _message} =
+             ToolPolicy.allow_tool_call(policy, "edit", %{"path" => "scratch/a.ex"})
+
+    assert {:error, _message} =
+             ToolPolicy.allow_tool_call(policy, "patch", %{
+               "patch_content" => "+++ b/scratch/a.ex"
+             })
+
+    assert {:error, _message} =
+             ToolPolicy.allow_tool_call(policy, "fs", %{
+               "operation" => "mkdir",
+               "path" => "scratch"
+             })
+  end
+
+  test "parses Policy mode restricted_write with allowed paths and tool filters" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: restricted_write
+      allowed_write_paths:
+      - scratch/rolling_average.ex
+      - scratch/rolling_average_test.exs
+      allowed_tools:
+      - write
+      - mix
+      blocked_tools:
+      - task
+      - curl
+      """)
 
     assert policy.mode == :restricted_write
 
@@ -87,83 +137,97 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
              "scratch/rolling_average.ex",
              "scratch/rolling_average_test.exs"
            ]
+
+    assert ToolPolicy.allowed_tool_names(policy) == ["write", "mix"]
   end
 
-  test "extracts allowed paths from bullets, inline text, colon lists, and code formatting" do
-    prompts = [
-      """
-      Allowed files:
-      - `scratch/a.ex`
-      - `scratch/a_test.exs`
-      """,
-      "You may create only scratch/a.ex and scratch/a_test.exs",
-      "Allowed files: scratch/a.ex, scratch/a_test.exs",
-      "Only these files may be created: `scratch/a.ex`, `scratch/a_test.exs`"
-    ]
-
-    for prompt <- prompts do
-      policy = ToolPolicy.from_user_message(prompt)
-      assert policy.mode == :restricted_write
-      assert policy.allowed_write_paths == ["scratch/a.ex", "scratch/a_test.exs"]
-    end
-  end
-
-  test "detects supported Russian restricted-write phrasing" do
+  test "Policy parser stops before task body sections" do
     policy =
-      ToolPolicy.from_user_message("можно создать только scratch/a.ex, больше ничего не менять")
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: read_only
+      allowed_tools:
+      - read
+
+      Task:
+      mode: restricted_write
+      allowed_write_paths:
+      - scratch/a.ex
+      """)
+
+    assert policy.mode == :read_only
+    assert policy.allowed_write_paths == []
+    assert ToolPolicy.allowed_tool_names(policy) == ["read"]
+  end
+
+  test "restricted_write can target root-level project files" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: restricted_write
+      allowed_write_paths:
+      - README.md
+      - mix.exs
+      allowed_tools:
+      - write
+      """)
+
+    assert policy.allowed_write_paths == ["README.md", "mix.exs"]
+    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "README.md"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "mix.exs"})
+  end
+
+  test "Policy block overrides natural-language task body" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: restricted_write
+      allowed_write_paths:
+      - scratch/a.ex
+      allowed_tools:
+      - write
+      - mix
+
+      Task body says "do not modify files" as an example, but the Policy block is authoritative.
+      """)
 
     assert policy.mode == :restricted_write
-    assert policy.allowed_write_paths == ["scratch/a.ex"]
+    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
   end
 
-  test "restricted-write allows only listed write and edit paths" do
+  test "restricted_write allows only listed paths" do
     policy =
-      ToolPolicy.from_user_message(
-        "Allowed files: scratch/rolling_average.ex, scratch/rolling_average_test.exs"
-      )
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: restricted_write
+      allowed_write_paths:
+      - scratch/a.ex
+      allowed_tools:
+      - write
+      - edit
+      - patch
+      - fs
+      """)
 
-    assert :ok ==
-             ToolPolicy.allow_tool_call(policy, "write", %{
-               "filePath" => "scratch/rolling_average.ex"
-             })
-
-    assert :ok ==
-             ToolPolicy.allow_tool_call(policy, "write", %{
-               "path" => "scratch/rolling_average_test.exs"
-             })
-
-    assert :ok ==
-             ToolPolicy.allow_tool_call(policy, "edit", %{"path" => "scratch/rolling_average.ex"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "edit", %{"path" => "scratch/a.ex"})
 
     assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "eval/string_utils.ex"})
+             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/b.ex"})
 
-    assert message =~ "restricted-write policy"
-    assert message =~ "eval/string_utils.ex is not in allowed_write_paths"
-
-    assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "README.md"})
-
-    assert message =~
-             "Allowed write paths: scratch/rolling_average.ex, scratch/rolling_average_test.exs"
+    assert message =~ "scratch/b.ex is not in allowed_write_paths"
   end
 
-  test "restricted-write smoke prompt extracts only the requested scratch files" do
-    prompt =
-      "Small coding quality smoke test. You may create only these two files: scratch/rolling_average.ex and scratch/rolling_average_test.exs. Do not create or modify any other files. Do not use task, curl, git, grep, tree, edit, patch, or fs. Implement Scratch.RollingAverage.moving_average/2. Add ExUnit tests in scratch/rolling_average_test.exs and make the test file load scratch/rolling_average.ex with Code.require_file/2."
-
-    policy = ToolPolicy.from_user_message(prompt)
-
-    assert policy.mode == :restricted_write
-
-    assert policy.allowed_write_paths == [
-             "scratch/rolling_average.ex",
-             "scratch/rolling_average_test.exs"
-           ]
-  end
-
-  test "restricted-write allows only parent mkdir for allowed files" do
-    policy = ToolPolicy.from_user_message("Create only: scratch/a.ex")
+  test "restricted_write allows parent mkdir only for allowed paths" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: restricted_write
+      allowed_write_paths:
+      - scratch/a.ex
+      allowed_tools:
+      - fs
+      """)
 
     assert :ok ==
              ToolPolicy.allow_tool_call(policy, "fs", %{
@@ -177,32 +241,27 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert message =~ "eval is not in allowed_write_paths"
   end
 
-  test "restricted-write keeps fs remove blocked" do
-    policy = ToolPolicy.from_user_message("Create only: scratch/a.ex")
-
-    assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "fs", %{
-               "operation" => "remove",
-               "path" => "scratch/a.ex",
-               "confirm" => true
-             })
-
-    assert message =~ "fs \"remove\" is not allowed"
-  end
-
-  test "restricted-write enforces every changed patch path" do
-    policy = ToolPolicy.from_user_message("Allowed files: scratch/a.ex, scratch/a_test.exs")
+  test "restricted_write enforces every patch path" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: restricted_write
+      allowed_write_paths:
+      - scratch/a.ex
+      allowed_tools:
+      - patch
+      """)
 
     allowed_patch = """
     --- /dev/null
     +++ b/scratch/a.ex
     @@ -0,0 +1 @@
-    +defmodule Scratch.A, do: :ok
+    +ok
     """
 
     blocked_patch = """
     --- /dev/null
-    +++ b/eval/string_utils.ex
+    +++ b/scratch/b.ex
     @@ -0,0 +1 @@
     +bad
     """
@@ -212,6 +271,100 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert {:error, message} =
              ToolPolicy.allow_tool_call(policy, "patch", %{"patch_content" => blocked_patch})
 
-    assert message =~ "eval/string_utils.ex is not in allowed_write_paths"
+    assert message =~ "scratch/b.ex is not in allowed_write_paths"
+  end
+
+  test "read_only blocks write even if allowed_tools includes write" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: read_only
+      allowed_tools:
+      - read
+      - write
+      """)
+
+    refute "write" in ToolPolicy.allowed_tool_names(policy)
+
+    assert {:error, message} =
+             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
+
+    assert message =~ "read-only policy"
+  end
+
+  test "blocked_tools wins over allowed_tools" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: development
+      allowed_tools:
+      - read
+      - mix
+      blocked_tools:
+      - mix
+      """)
+
+    assert ToolPolicy.allowed_tool_names(policy) == ["read"]
+    assert {:error, _message} = ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "test"})
+  end
+
+  test "read_only keeps git and mix constrained" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: read_only
+      allowed_tools:
+      - git
+      - mix
+      """)
+
+    assert :ok == ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "status"})
+
+    assert {:error, _message} =
+             ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "commit"})
+
+    assert :ok == ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "validate"})
+
+    assert {:error, _message} =
+             ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "format"})
+  end
+
+  test "restricted_write allows explicitly listed image generation output path" do
+    policy =
+      ToolPolicy.from_user_message("""
+      Policy:
+      mode: restricted_write
+      allowed_write_paths:
+      - generated/architecture.png
+      allowed_tools:
+      - image_generation
+      """)
+
+    assert ToolPolicy.allowed_tool_names(policy) == ["image_generation"]
+
+    assert :ok ==
+             ToolPolicy.allow_tool_call(policy, "image_generation", %{
+               "output_path" => "generated/architecture.png"
+             })
+
+    assert {:error, message} =
+             ToolPolicy.allow_tool_call(policy, "image_generation", %{
+               "output_path" => "generated/other.png"
+             })
+
+    assert message =~ "restricted-write policy"
+  end
+
+  test "unconfirmed policy does not expose image generation" do
+    policy = ToolPolicy.from_user_message("Generate an image for the project.")
+
+    refute "image_generation" in ToolPolicy.allowed_tool_names(policy)
+
+    assert {:error, message} =
+             ToolPolicy.allow_tool_call(policy, "image_generation", %{
+               "output_path" => "generated/image.png"
+             })
+
+    assert message =~ "Mutation requires a confirmed plan or explicit Policy block"
   end
 end

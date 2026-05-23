@@ -17,6 +17,8 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     Beamcore.Agent.Tools.Git,
     Beamcore.Agent.Tools.Fs,
     Beamcore.Agent.Tools.Task,
+    Beamcore.Agent.Tools.Plan,
+    Beamcore.Agent.Tools.ImageGeneration,
     Beamcore.Agent.Tools.Mix
   ]
 

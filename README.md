@@ -1,240 +1,227 @@
 # Beamcore.Agent
 
-**Beamcore.Agent** is an Elixir-based coding agent, designed to assist with software development tasks. It provides a powerful set of tools for file operations, code search, version control, and task orchestration, all executed in a deterministic and safe manner. Beamcore.Agent operates as a **distributed coding agent**, enabling large-scale operations with a small footprint, efficient resource usage, and self-healing processes.
+Beamcore.Agent is an Elixir/Mix CLI coding agent for Mistral API. It focuses on safe self-development: bounded workspace tools, explicit mutation confirmation, compact session context, token-aware history, and repeatable Mix validation.
 
----
+## Core ideas
 
-## 🎯 Vision
+- **Elixir-first workflow**: understand the Mix project, edit small, test focused, validate with Mix.
+- **Safe tool execution**: file and git paths are workspace-relative; absolute paths, traversal, and symlink escapes are rejected.
+- **Confirmed mutations**: normal write/edit/patch/fs requests create a pending plan first; mutations run only after `/confirm` or an explicit `Policy:` block.
+- **Compact context**: the agent remembers inspected files, modified files, validation state, and pending plans without storing full file contents.
+- **Token discipline**: tool outputs, mutation arguments, and history are compacted before they are sent back to Mistral.
+- **Image generation**: optional real image generation through Mistral Agents with the built-in `image_generation` tool.
 
-Beamcore.Agent aims to evolve into a **distributed, Elixir-based coding agent** capable of orchestrating complex, large-scale operations with:
+## Requirements
 
-- **Small Footprint**: Lightweight processes that consume minimal resources, leveraging Elixir's BEAM VM for efficiency.
-- **Efficiency**: Optimized for performance, with built-in rate limiting, retry mechanisms, and parallel task execution.
-- **Self-Healing**: Fault-tolerant design with automatic recovery, session rollover, and context preservation.
-- **Scalability**: Distributed task execution via sub-agents, enabling horizontal scaling for complex workflows.
-- **Determinism**: All operations are deterministic, ensuring reliability and reproducibility.
+- Elixir 1.12+
+- Erlang/OTP 24+
+- A Mistral API key for real chat/API calls
 
----
-
-
-### Developer Experience
-- **Slash Commands**: Use `/new` and `/help` for session management.
-- **Status Bar**: Real-time feedback on token usage, session state, and tool execution.
-- **Pretty Printing**: Formatted output for code, errors, and tool responses.
-- **Session Logging**: All interactions are logged to `~/.agent/sessions/` as JSON files for persistence and review.
-
----
-
-## 🛠️ Installation
-
-### Prerequisites
-- [Elixir 1.12+](https://elixir-lang.org/install.html)
-- [Erlang/OTP 24+](https://www.erlang.org/downloads)
-- A **Mistral API key** (set as an environment variable).
-
----
-
-### Steps
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/beamcore/agent.git
-   cd agent
-   ```
-
-2. Install dependencies:
-   ```bash
-   make install
-   ```
-
-3. Create local environment configuration:
-   ```bash
-   make init
-   ```
-
-4. Put your real key into `.env` only when you want to run real chat/API calls:
-   ```env
-   MISTRAL_API_KEY=your_api_key_here
-   MISTRAL_BASE_URL=https://api.mistral.ai/v1
-   ```
-
-   `.env` is ignored by git. Keep `.env.example` committed with placeholders only.
-
----
-
-## 🚀 Usage
-
-### Start the Chat
-Run the following command to start an interactive chat session:
+## Setup
 
 ```bash
-make chat
+git clone https://github.com/beamcore/agent.git
+cd agent
+make deps
+make init
 ```
 
-The chat will start, and you can begin interacting with the AI. The system prompt is pre-configured to assist with software development tasks in the current directory.
+Edit `.env` locally:
 
----
-
-### Example Interaction
-```
-> Read the contents of lib/agent.ex
-
->> [AI responds with the file contents or invokes the `read` tool]
-
-> Search for all files with the pattern **/*.ex
-
->> [AI invokes the `glob` tool and lists matching files]
-
-> Edit lib/agent.ex to add a new function
-
->> [AI invokes the `edit` tool to modify the file]
-
-> Use task tool to refactor the codebase
-
->> [AI delegates the task to a sub-agent for asynchronous execution]
+```env
+MISTRAL_API_KEY=your_api_key_here
+MISTRAL_BASE_URL=https://api.mistral.ai/v1
+BEAMCORE_IMAGE_PROVIDER=mistral
+MISTRAL_IMAGE_MODEL=mistral-medium-latest
+MISTRAL_IMAGE_AGENT_ID=
 ```
 
----
+`.env` is ignored by git. Keep `.env.example` committed with empty placeholders only.
 
-## ⌨️ Slash Commands
-During a chat session, you can use the following slash commands:
+## Make targets
 
-| Command | Description                          |
-|---------|--------------------------------------|
-| `/new`  | Start a new chat session (resets the conversation history). |
-| `/help` | Show the list of available slash commands. |
+| Target | Description |
+|---|---|
+| `make deps` | Install dependencies. |
+| `make compile` | Compile the project. |
+| `make test` | Run ExUnit tests. |
+| `make format` | Format the project. |
+| `make chat` | Start the interactive agent. |
+| `make init` | Create `.env` from `.env.example` if missing. |
+| `make install` | Build a production release and install a local executable. |
+| `make uninstall` | Remove the installed release/executable. |
+| `make clean` | Remove `_build` and `deps`. |
+| `make help` | Show available targets. |
 
----
+## Chat commands
 
-## 🔧 Available Tools
-Beamcore.Agent provides the following tools, which the AI can invoke automatically:
+| Command | Description |
+|---|---|
+| `/new` | Start a fresh chat session and reset context. |
+| `/paste` | Enter multi-line input mode; finish with `/end`. |
+| `<<<` | Alternative multi-line input mode; finish with `>>>`. |
+| `/confirm` | Confirm the pending mutation plan for one execution turn. |
+| `/cancel` | Cancel the pending mutation plan. |
+| `/context` | Print compact session context. |
+| `/context clear` | Clear compact session context. |
+| `/help` | Show command help. |
 
-| Tool      | Description                                  |
-|-----------|----------------------------------------------|
-| `read`    | Read the contents of a file.                 |
-| `write`   | Write content to a file.                     |
-| `edit`    | Replace text in a file.                      |
-| `patch`   | Apply a unified diff patch to a file.        |
-| `glob`    | Find files matching a glob pattern.          |
-| `grep`    | Search for patterns in files.                |
-| `fs`      | Perform filesystem operations (move, copy, remove, etc.). |
-| `git`     | Perform git operations (clone, add, commit, etc.). |
-| `curl`    | Fetch content from URLs.                     |
-| `mix`     | Run safe, scoped Elixir mix commands (test, compile, format, etc.). |
-| `task`    | Execute sub-agents for focused tasks.        |
-| `tree`    | Generate a compact file tree for a directory.|
+## Normal mutation flow
 
----
+For normal user text, the agent should not write immediately. It first creates a non-mutating plan:
 
-## 📜 Configuration
-Beamcore.Agent uses the following environment variables and configuration:
+```text
+> Create scratch/policy_test.ex with a tiny module. Do not touch anything else.
 
-| Variable            | Description                          | Required | Default Value                     |
-|---------------------|--------------------------------------|----------|-----------------------------------|
-| `MISTRAL_API_KEY`   | Your Mistral API key.                | Yes      | -                                 |
-| `MISTRAL_BASE_URL`  | Custom base URL for the Mistral API. | No       | `https://api.mistral.ai/v1`       |
-| `rate_limit_ms`     | Rate limit (in milliseconds) between API calls. | No       | `1000` (configurable in `config/config.exs`) |
+Pending plan stored. Confirm with `/confirm` ...
 
-### Rate Limiting
-- The default rate limit is set to **1000ms** between API calls to avoid hitting Mistral's rate limits.
-- This can be configured in `config/config.exs`:
-  ```elixir
-  config :agent, :rate_limit_ms, 1000
-  ```
+> /confirm
 
----
+File created: scratch/policy_test.ex
+```
 
-## 💾 Session Management
-- **Session Logging**: All interactions are logged to `~/.agent/sessions/` as JSON files for persistence and review.
-- **Session Rollover**: When the total token usage approaches **190,000 tokens**, Beamcore.Agent automatically:
-  1. Summarizes the current session's context.
-  2. Starts a new session with the summary included in the system prompt.
-  3. Resets the token counters for the new session.
-- **Token Tracking**: Real-time tracking of:
-  - Prompt tokens
-  - Completion tokens
-  - Total tokens
+Before confirmation, mutation tools are hidden from the API schema and runtime-blocked as a second safety layer. After confirmation, the generated policy is active for exactly one turn and is then cleared.
 
----
+## Explicit Policy blocks
 
-## 📊 Token Usage
-- Beamcore.Agent tracks token usage per session and displays it in the status bar.
-- The default model is `mistral-medium-3.5`.
-- Token controls:
-  - Tool outputs are truncated before being sent back into the next API request.
-  - In-memory history is compacted after each turn.
-  - Sub-agent depth and main tool-call depth are bounded to prevent loops.
-  - **Soft Limit**: 190,000 tokens (triggers session rollover).
+Advanced users and tests can bypass the planning step with an explicit machine-readable policy:
 
----
+```text
+/paste
+Policy:
+mode: restricted_write
+allowed_write_paths:
+- scratch/example.ex
+allowed_tools:
+- write
+- mix
+blocked_tools:
+- task
+- curl
+- git
 
-## 🏗️ Architecture
+Task:
+Create scratch/example.ex and run focused validation.
+/end
+```
 
-### Core Components
-- **Chat Loop**: Handles user input, tool execution, and message processing (`Beamcore.Agent.Chat.Loop`).
-- **Session Management**: Manages conversation history, token usage, and rollover (`Beamcore.Agent.Chat.Session`).
-- **Tool Dispatcher**: Routes tool invocations to their respective handlers (`Beamcore.Agent.Tools.Dispatcher`).
-- **Rate Limiter**: Enforces configurable rate limits for API calls (`Beamcore.Agent.Chat.RateLimiter`).
-- **OpenAI Client**: Wrapper for the Mistral API (`Beamcore.Agent.OpenAI`).
-- **System Prompt**: Generates the system prompt for the chat assistant (`Beamcore.Agent.Core.SysPrompt`).
-- **Project Detector**: Scans the working directory to detect the project nature/language support (`Beamcore.Agent.Discovery.Detector`).
+Supported modes:
 
-### Tool System
-- Tools are modular and can be extended by adding new modules under `lib/agent/tools/`.
-- Each tool defines a `spec/0` function for OpenAI function calling and an `execute/1` function for logic.
-- File and git tools are restricted to workspace-relative paths.
-- Absolute paths, path traversal, and symlink escapes are rejected before filesystem access.
-- Destructive filesystem operations require explicit confirmation.
-- The `mix` tool provides the main self-development validation loop through `validate`.
+- `read_only`
+- `development`
+- `restricted_write`
 
-### Runtime Tool Policy
-- Read-only user requests activate a runtime guard that blocks `write`, `edit`, `patch`, `fs`, `task`, `curl`, commits, pushes, and unsafe mix/git actions.
-- `task` is not exposed by default; it is available only when the user explicitly asks for sub-agent delegation.
-- `curl` is not exposed by default; it is available only when the user explicitly asks for external URL access.
-- Tool outputs are compacted before being sent back to the model to avoid accidental token explosions.
+If a `Policy:` block has an invalid mode, the runtime fails closed and disables mutation tools.
 
-### Distributed Task Execution
-- The `task` tool allows bounded delegation to sub-agents for complex work.
-- Sub-agents cannot recursively delegate to more sub-agents.
-- Delegation is intended for explicitly requested, bounded tasks only; direct tools should be used for normal edits, validation, and smoke tests.
+## Tools
 
----
+| Tool | Description |
+|---|---|
+| `plan` | Stores a non-mutating pending plan for `/confirm`. |
+| `read` | Reads workspace-relative files/directories with offset/limit support. |
+| `grep` | Searches file content with workspace boundary checks and fallback if `rg` is unavailable. |
+| `glob` | Finds files by glob pattern with workspace boundary checks and fallback if `rg` is unavailable. |
+| `tree` | Prints a compact workspace tree. |
+| `write` | Writes full file content to an allowed workspace-relative path. |
+| `edit` | Replaces exact text in an allowed file. |
+| `patch` | Applies a patch only when every touched path is allowed. |
+| `fs` | Performs limited filesystem operations; destructive actions require explicit confirmation. |
+| `git` | Performs bounded git operations inside the workspace. |
+| `mix` | Runs safe Mix commands such as `format --check-formatted`, `compile`, `test`, and `validate`. |
+| `image_generation` | Uses Mistral Agents with the built-in `image_generation` tool, downloads generated files, and saves them to allowed workspace paths. |
+| `curl` | Fetches external URLs only when explicitly enabled. |
+| `task` | Delegates to sub-agents only when explicitly enabled. |
 
-## 🤝 Contributing
-Contributions are welcome! Here’s how you can help:
+## Image generation
 
-1. **Fork the repository**.
-2. **Create a feature branch**:
-   ```bash
-   git checkout -b feature/your-idea
-   ```
-3. **Write Tests**: Ensure all new features or bug fixes are covered by tests in the `test/` directory.
-4. **Run Tests**:
-   ```bash
-   mix test
-   ```
-5. **Format Code**:
-   ```bash
-   mix format
-   ```
-6. **Commit your changes**:
-   ```bash
-   git commit -am "Add amazing feature"
-   ```
-7. **Push to the branch**:
-   ```bash
-   git push origin feature/your-idea
-   ```
-8. **Open a Pull Request** on GitHub.
+The `image_generation` tool performs real API calls through a provider layer. The default provider is `mistral`. Mistral image generation follows the documented Agents flow: create or reuse an agent with `tools: [%{type: "image_generation"}]`, start a conversation with that agent, extract `tool_file` chunks from the response, and download generated files through `/v1/files/{file_id}/content`. Downloaded files are validated as PNG, JPEG, or WebP before they are written to disk, so JSON/error payloads are not saved as broken images.
 
----
+Example explicit policy:
 
-## 📦 Dependencies
-Beamcore.Agent relies on the following Elixir packages:
-- [`openai_ex`](https://hex.pm/packages/openai_ex): OpenAI-compatible API client for Elixir.
-- [`jason`](https://hex.pm/packages/jason): JSON parser and generator.
-- [`number`](https://hex.pm/packages/number): Number formatting utilities.
+```text
+/paste
+Policy:
+mode: restricted_write
+allowed_write_paths:
+- generated/architecture.png
+allowed_tools:
+- image_generation
+blocked_tools:
+- task
+- curl
+- git
+- write
+- edit
+- patch
+- fs
 
----
+Task:
+Generate a clean architecture diagram for this Elixir CLI agent. Use a dark terminal-inspired style, show Chat Loop, Tool Policy, Dispatcher, Tools, Mistral API, and Session Context. Save it to generated/architecture.png.
+/end
+```
 
-## 📄 License
-Beamcore.Agent is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+Optional environment variables:
+
+| Variable | Description |
+|---|---|
+| `BEAMCORE_IMAGE_PROVIDER` | Image generation provider. Currently supported: `mistral`. Defaults to `mistral`. |
+| `MISTRAL_IMAGE_MODEL` | Model used when creating a temporary Mistral image agent. Defaults to `mistral-medium-latest`. |
+| `MISTRAL_IMAGE_AGENT_ID` | Existing Mistral image-generation agent ID. If set, the tool reuses it instead of creating a temporary agent. |
+
+## Validation loop
+
+The `mix` tool supports `validate`, which runs:
+
+1. `mix format --check-formatted`
+2. `mix compile`
+3. `mix test`
+
+Manual equivalent:
+
+```bash
+mix format --check-formatted
+mix compile
+mix test
+mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})'
+```
+
+## Runtime safety
+
+- No shell/bash/sh/zsh tool exists.
+- Runtime code does not depend on `Mix.env/0` or test-only branches.
+- Tool calls are authorized before execution.
+- Blocked tool calls are printed as blocked, not as successful execution.
+- Mutation tool arguments and outputs are compacted in active API history.
+- `task` and `curl` are hidden unless explicitly enabled.
+- `image_generation` is hidden unless explicitly enabled and must write to an allowed output path.
+
+## Architecture
+
+- `Beamcore.Agent.Chat.Loop` handles input, tool execution, policy messages, and status updates.
+- `Beamcore.Agent.Chat.ToolPolicy` parses explicit `Policy:` blocks and enforces runtime permissions.
+- `Beamcore.Agent.Chat.Context` stores compact session metadata.
+- `Beamcore.Agent.Tools.Dispatcher` routes authorized tool calls.
+- `Beamcore.Agent.Tools.Plan` stores pending mutation plans.
+- `Beamcore.Agent.Tools.ImageGeneration` is the safe local tool that validates output paths and saves generated image bytes.
+- `Beamcore.Agent.Providers.ImageGeneration` dispatches image requests to the configured provider.
+- `Beamcore.Agent.Providers.Mistral` implements Mistral Agents image generation through `Beamcore.Agent.OpenAI` REST helpers.
+- `Beamcore.Agent.OpenAI` is the single Mistral API boundary: OpenaiEx chat client plus binary-safe REST helpers for Agents, Conversations, and Files.
+- `Beamcore.Agent.Core.SysPrompt` defines the coding-agent behavior and safety rules.
+
+## Development checklist
+
+Before committing:
+
+```bash
+git diff --check
+mix format --check-formatted
+mix compile
+mix test
+mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})'
+```
+
+Also verify that `.env`, `scratch/`, `eval/`, temporary files, and generated artifacts are not staged unless intentionally requested.
+
+## License
+
+Beamcore.Agent is licensed under the MIT License. See `LICENSE` for details.

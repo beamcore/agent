@@ -22,6 +22,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     assert session.log_file != nil
     assert File.dir?(Path.dirname(session.log_file))
     assert session.project_nature == :elixir
+    assert session.context.project_type == :elixir
   end
 
   test "log/2 appends data to file" do
@@ -160,6 +161,28 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   end
 
   describe "trim_and_clean_messages/2" do
+    test "prepare_for_api includes compact session context message" do
+      context =
+        Beamcore.Agent.Chat.Context.new(:elixir)
+        |> Beamcore.Agent.Chat.Context.update_from_tool(
+          "read",
+          %{"filePath" => "README.md"},
+          "file content should not appear"
+        )
+
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "hello"}
+      ]
+
+      prepared = Session.prepare_for_api(messages, context, 24)
+
+      assert Enum.at(prepared, 1).role == "system"
+      assert Enum.at(prepared, 1).content =~ "Known session context"
+      assert Enum.at(prepared, 1).content =~ "README.md"
+      refute Enum.at(prepared, 1).content =~ "file content should not appear"
+    end
+
     test "truncates large message content to 4000 characters" do
       large_content = String.duplicate("a", 5000)
 

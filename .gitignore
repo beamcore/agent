@@ -11,4 +11,5 @@ erl_crash.dump
 *.beam
 /config/*.secret.exs
 .elixir_ls/
-/errors
+/errors.DS_Store
+.DS_Store

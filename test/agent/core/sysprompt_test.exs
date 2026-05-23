@@ -50,7 +50,7 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
       "Do not expose, print, commit, or invent secrets",
       ".env",
       ".env.example",
-      "read-only"
+      "Policy block"
     ]
 
     Enum.each(safety_rules, fn rule ->
@@ -76,6 +76,17 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
     end)
   end
 
+  test "generate/0 describes confirmation flow and explicit Policy blocks" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate()
+
+    assert prompt =~ "confirmed pending plan"
+    assert prompt =~ "Do not ask normal users to write Policy blocks"
+    assert prompt =~ "ask the user to confirm with /confirm"
+    assert prompt =~ "mode: restricted_write"
+    assert prompt =~ "allowed_write_paths:"
+    assert prompt =~ "blocked_tools:"
+  end
+
   test "generate/0 includes all important tools" do
     prompt = Beamcore.Agent.Core.SysPrompt.generate()
 
@@ -90,6 +101,7 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
       "fs",
       "git",
       "mix",
+      "plan",
       "curl"
     ]
 

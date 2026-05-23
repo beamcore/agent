@@ -212,6 +212,30 @@ defmodule Beamcore.Agent.Core.Pretty do
     format_tool_args(name, args, context)
   end
 
+  @doc """
+  Print a tool call that was rejected by runtime policy.
+  """
+  def print_blocked_tool_call(name, args, reason, context \\ :main) do
+    prefix = get_prefix(context)
+    path = Map.get(args, "filePath") || Map.get(args, "path")
+
+    target =
+      if path do
+        " path: #{path}"
+      else
+        ""
+      end
+
+    IO.puts(
+      "\n" <>
+        colorize(prefix, &Colors.bright_yellow/0) <>
+        colorize("⛔ blocked tool: ", &Colors.bright_red/0) <>
+        colorize("#{name}", &Colors.bright_cyan/0) <>
+        colorize(target, &Colors.dim/0) <>
+        colorize(" — #{reason}", &Colors.dim/0)
+    )
+  end
+
   defp format_tool_args(
          "edit",
          %{"path" => path, "old_string" => old, "new_string" => new},
@@ -227,7 +251,9 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-  defp format_tool_args("read", %{"filePath" => path} = args, _context) do
+  defp format_tool_args("read", args, _context)
+       when is_map(args) and (is_map_key(args, "filePath") or is_map_key(args, "path")) do
+    path = Map.get(args, "filePath") || Map.get(args, "path")
     offset = Map.get(args, "offset", 1)
     limit = Map.get(args, "limit", 200)
 
@@ -238,7 +264,9 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-  defp format_tool_args("write", %{"filePath" => path, "content" => content}, _context) do
+  defp format_tool_args("write", %{"content" => content} = args, _context) do
+    path = Map.get(args, "filePath") || Map.get(args, "path", "unknown")
+
     IO.puts(
       colorize("path: ", &Colors.dim/0) <>
         colorize(path, &Colors.bright_white/0) <>
@@ -314,6 +342,32 @@ defmodule Beamcore.Agent.Core.Pretty do
 
   defp format_tool_args("mkdir", %{"path" => path}, _context) do
     IO.puts(colorize("path: ", &Colors.dim/0) <> colorize(path, &Colors.bright_white/0))
+  end
+
+  defp format_tool_args("plan", args, _context) do
+    create_files = Map.get(args, "create_files", [])
+    modify_files = Map.get(args, "modify_files", [])
+    delete_files = Map.get(args, "delete_files", [])
+    total_files = length(create_files) + length(modify_files) + length(delete_files)
+
+    IO.puts(
+      colorize("plan: #{total_files} files", &Colors.bright_white/0) <>
+        colorize(
+          " (create: #{length(create_files)}, modify: #{length(modify_files)}, delete: #{length(delete_files)})",
+          &Colors.dim/0
+        )
+    )
+  end
+
+  defp format_tool_args("image_generation", args, _context) do
+    output_path = Map.get(args, "output_path", "unknown")
+    prompt = Map.get(args, "prompt", "")
+
+    IO.puts(
+      colorize("output: ", &Colors.dim/0) <>
+        colorize(output_path, &Colors.bright_white/0) <>
+        colorize(" (prompt: #{String.length(prompt)} chars)", &Colors.dim/0)
+    )
   end
 
   defp format_tool_args(_name, args, _context) do

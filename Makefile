@@ -6,6 +6,9 @@ ifneq (,$(wildcard .env))
 include .env
 export MISTRAL_API_KEY
 export MISTRAL_BASE_URL
+export BEAMCORE_IMAGE_PROVIDER
+export MISTRAL_IMAGE_MODEL
+export MISTRAL_IMAGE_AGENT_ID
 endif
 
 # Default target
@@ -103,7 +106,7 @@ init:
 
 # Create .env.example if it doesn't exist
 .env.example:
-	printf "MISTRAL_API_KEY=\nMISTRAL_BASE_URL=https://api.mistral.ai/v1\n" > .env.example
+	printf "MISTRAL_API_KEY=\nMISTRAL_BASE_URL=https://api.mistral.ai/v1\nBEAMCORE_IMAGE_PROVIDER=mistral\nMISTRAL_IMAGE_MODEL=mistral-medium-latest\nMISTRAL_IMAGE_AGENT_ID=\n" > .env.example
 
 # Add a target to update dependencies
 update:
