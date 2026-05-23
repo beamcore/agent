@@ -417,17 +417,35 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       session = Session.new(client)
 
       # Below threshold
-      session1 = Session.update_usage(session, %{"prompt_tokens" => 140_000, "completion_tokens" => 10, "total_tokens" => 140_010})
+      session1 =
+        Session.update_usage(session, %{
+          "prompt_tokens" => 140_000,
+          "completion_tokens" => 10,
+          "total_tokens" => 140_010
+        })
+
       refute session1.needs_compaction
       assert session1.last_prompt_tokens == 140_000
 
       # At/above threshold
-      session2 = Session.update_usage(session1, %{"prompt_tokens" => 150_000, "completion_tokens" => 10, "total_tokens" => 150_010})
+      session2 =
+        Session.update_usage(session1, %{
+          "prompt_tokens" => 150_000,
+          "completion_tokens" => 10,
+          "total_tokens" => 150_010
+        })
+
       assert session2.needs_compaction
       assert session2.last_prompt_tokens == 150_000
 
       # Keeps needs_compaction: true even when subsequently updated with lower tokens
-      session3 = Session.update_usage(session2, %{"prompt_tokens" => 10_000, "completion_tokens" => 10, "total_tokens" => 10_010})
+      session3 =
+        Session.update_usage(session2, %{
+          "prompt_tokens" => 10_000,
+          "completion_tokens" => 10,
+          "total_tokens" => 10_010
+        })
+
       assert session3.needs_compaction
       assert session3.last_prompt_tokens == 10_000
     end
@@ -447,16 +465,41 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
     test "Context.compact/1 trims context fields while preserving modified files" do
       context = Beamcore.Agent.Chat.Context.new(:elixir)
-      
+
       # Populate fields
-      context = %{context |
-        inspected_files: MapSet.new(["a.ex", "b.ex", "c.ex", "d.ex", "e.ex", "f.ex", "g.ex", "h.ex", "i.ex", "j.ex", "k.ex", "l.ex", "m.ex", "n.ex", "o.ex", "p.ex", "q.ex", "r.ex", "s.ex", "t.ex", "u.ex", "v.ex"]),
-        modified_files: MapSet.new(["write.ex"]),
-        decisions: ["dec1", "dec2", "dec3", "dec4", "dec5", "dec6", "dec7"],
-        blocked_attempts: ["att1", "att2", "att3", "att4"],
-        known_risks: ["risk1", "risk2", "risk3", "risk4"],
-        last_validation: %{command: "test", ok: true, summary: "passed"},
-        pending_action: %{summary: "action"}
+      context = %{
+        context
+        | inspected_files:
+            MapSet.new([
+              "a.ex",
+              "b.ex",
+              "c.ex",
+              "d.ex",
+              "e.ex",
+              "f.ex",
+              "g.ex",
+              "h.ex",
+              "i.ex",
+              "j.ex",
+              "k.ex",
+              "l.ex",
+              "m.ex",
+              "n.ex",
+              "o.ex",
+              "p.ex",
+              "q.ex",
+              "r.ex",
+              "s.ex",
+              "t.ex",
+              "u.ex",
+              "v.ex"
+            ]),
+          modified_files: MapSet.new(["write.ex"]),
+          decisions: ["dec1", "dec2", "dec3", "dec4", "dec5", "dec6", "dec7"],
+          blocked_attempts: ["att1", "att2", "att3", "att4"],
+          known_risks: ["risk1", "risk2", "risk3", "risk4"],
+          last_validation: %{command: "test", ok: true, summary: "passed"},
+          pending_action: %{summary: "action"}
       }
 
       compacted = Beamcore.Agent.Chat.Context.compact(context)
@@ -478,7 +521,13 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       # 1. Mock the API call
       Process.put(:mock_completions_create, fn _client, params ->
         assert params.model == "mistral-small-2603"
-        {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "Summary of our work."}}]}}
+
+        {:ok,
+         %{
+           "choices" => [
+             %{"message" => %{"role" => "assistant", "content" => "Summary of our work."}}
+           ]
+         }}
       end)
 
       # Ensure cleanup
@@ -487,14 +536,16 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       end)
 
       # 2. Modify context to verify it gets preserved and compacted
-      session = %{session |
-        context: %{session.context |
-          modified_files: MapSet.new(["lib/modified.ex"]),
-          inspected_files: MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
-        },
-        session_id: "test-session-id",
-        last_prompt_tokens: 155_000,
-        needs_compaction: true
+      session = %{
+        session
+        | context: %{
+            session.context
+            | modified_files: MapSet.new(["lib/modified.ex"]),
+              inspected_files: MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
+          },
+          session_id: "test-session-id",
+          last_prompt_tokens: 155_000,
+          needs_compaction: true
       }
 
       # 3. Perform rollover
@@ -508,10 +559,12 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.total_tokens == 0
       assert new_session.total_prompt_tokens == 0
       assert new_session.total_completion_tokens == 0
-      
+
       # Context modified_files preserved, inspected_files preserved (and compacted)
       assert new_session.context.modified_files == MapSet.new(["lib/modified.ex"])
-      assert new_session.context.inspected_files == MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
+
+      assert new_session.context.inspected_files ==
+               MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
 
       # Combined system message contains the original prompt and the summary
       [%{role: "system", content: system_content}] = new_session.messages
@@ -533,13 +586,12 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       end)
 
       # 2. Modify session context
-      session = %{session |
-        context: %{session.context |
-          modified_files: MapSet.new(["lib/fallback_modified.ex"])
-        },
-        session_id: "fallback-session-id",
-        last_prompt_tokens: 155_000,
-        needs_compaction: true
+      session = %{
+        session
+        | context: %{session.context | modified_files: MapSet.new(["lib/fallback_modified.ex"])},
+          session_id: "fallback-session-id",
+          last_prompt_tokens: 155_000,
+          needs_compaction: true
       }
 
       # 3. Perform rollover
@@ -551,10 +603,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.needs_compaction == false
       assert new_session.last_prompt_tokens == 0
       assert new_session.total_tokens == 0
-      
+
       # Context is still compacted and preserved
       assert new_session.context.modified_files == MapSet.new(["lib/fallback_modified.ex"])
-      
+
       # Message history is locally trimmed but non-empty
       assert length(new_session.messages) > 0
     end

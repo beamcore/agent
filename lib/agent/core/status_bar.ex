@@ -153,13 +153,15 @@ defmodule Beamcore.Agent.Core.StatusBar do
       total_tokens = SI.number_to_si(usage.total_tokens, precision: 1, trim: true)
       last_prompt = SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)
 
-      compaction_icon = cond do
-        (usage.last_prompt_tokens || 0) >= 200_000 -> "🔴"
-        usage.needs_compaction -> "🟡"
-        true -> "🟢"
-      end
+      compaction_icon =
+        cond do
+          (usage.last_prompt_tokens || 0) >= 200_000 -> "🔴"
+          usage.needs_compaction -> "🟡"
+          true -> "🟢"
+        end
 
-      compaction_suffix = if (session.compaction_count || 0) > 0, do: " 🔄 x#{session.compaction_count}", else: ""
+      compaction_suffix =
+        if (session.compaction_count || 0) > 0, do: " 🔄 x#{session.compaction_count}", else: ""
 
       status_text =
         " #{compaction_icon} Active: #{last_prompt} (Cycle: #{total_tokens})#{compaction_suffix} | 🆔 Session: #{session.session_id} "
@@ -187,13 +189,16 @@ defmodule Beamcore.Agent.Core.StatusBar do
       # Non-ANSI fallback: Print status as plain text
       usage = Session.usage(session)
 
-      compaction_icon = cond do
-        (usage.last_prompt_tokens || 0) >= 200_000 -> "🔴"
-        usage.needs_compaction -> "🟡"
-        true -> "🟢"
-      end
+      compaction_icon =
+        cond do
+          (usage.last_prompt_tokens || 0) >= 200_000 -> "🔴"
+          usage.needs_compaction -> "🟡"
+          true -> "🟢"
+        end
 
-      compaction_suffix = if (session.compaction_count || 0) > 0, do: " 🔄 x#{session.compaction_count}", else: ""
+      compaction_suffix =
+        if (session.compaction_count || 0) > 0, do: " 🔄 x#{session.compaction_count}", else: ""
+
       last_prompt = SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)
 
       IO.puts(

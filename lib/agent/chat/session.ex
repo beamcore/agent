@@ -104,7 +104,8 @@ defmodule Beamcore.Agent.Chat.Session do
     %{
       session
       | total_prompt_tokens: session.total_prompt_tokens + (usage["prompt_tokens"] || 0),
-        total_completion_tokens: session.total_completion_tokens + (usage["completion_tokens"] || 0),
+        total_completion_tokens:
+          session.total_completion_tokens + (usage["completion_tokens"] || 0),
         total_tokens: session.total_tokens + (usage["total_tokens"] || 0),
         last_prompt_tokens: last_prompt,
         needs_compaction: session.needs_compaction || last_prompt >= @grace_threshold
@@ -249,15 +250,16 @@ defmodule Beamcore.Agent.Chat.Session do
           """
         }
 
-        new_session = %{session |
-          messages: [combined_system],
-          last_prompt_tokens: 0,
-          needs_compaction: false,
-          compaction_count: session.compaction_count + 1,
-          total_prompt_tokens: 0,
-          total_completion_tokens: 0,
-          total_tokens: 0,
-          context: Beamcore.Agent.Chat.Context.compact(session.context)
+        new_session = %{
+          session
+          | messages: [combined_system],
+            last_prompt_tokens: 0,
+            needs_compaction: false,
+            compaction_count: session.compaction_count + 1,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_tokens: 0,
+            context: Beamcore.Agent.Chat.Context.compact(session.context)
         }
 
         log(new_session, %{
@@ -274,19 +276,21 @@ defmodule Beamcore.Agent.Chat.Session do
 
       {:error, _reason} ->
         # Fallback: aggressive local trim if API summary fails
-        fallback = messages
+        fallback =
+          messages
           |> trim_and_clean_messages(10)
           |> Enum.map(&compact_for_api/1)
 
-        %{session |
-          messages: fallback,
-          needs_compaction: false,
-          compaction_count: session.compaction_count + 1,
-          last_prompt_tokens: 0,
-          total_prompt_tokens: 0,
-          total_completion_tokens: 0,
-          total_tokens: 0,
-          context: Beamcore.Agent.Chat.Context.compact(session.context)
+        %{
+          session
+          | messages: fallback,
+            needs_compaction: false,
+            compaction_count: session.compaction_count + 1,
+            last_prompt_tokens: 0,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_tokens: 0,
+            context: Beamcore.Agent.Chat.Context.compact(session.context)
         }
     end
   end
