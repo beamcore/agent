@@ -12,11 +12,21 @@ defmodule Beamcore.Agent.Core.SysPromptTest do
   test "generate/0 includes senior self-development objectives" do
     prompt = Beamcore.Agent.Core.SysPrompt.generate()
 
-    assert prompt =~ "Elixir-first coding agent"
+    assert prompt =~ "general-purpose senior coding agent"
     assert prompt =~ "Improve this codebase safely and incrementally"
     assert prompt =~ "Produce excellent production-quality code"
     assert prompt =~ "smallest meaningful change"
     assert prompt =~ "ExUnit tests"
+  end
+
+  test "generate/0 allows standalone coding in other languages" do
+    prompt = Beamcore.Agent.Core.SysPrompt.generate()
+
+    assert prompt =~ "write code in any programming language"
+    assert prompt =~ "Java"
+    assert prompt =~ "Do not refuse standalone coding questions"
+    assert prompt =~ "answer directly without tools"
+    assert prompt =~ "Use Mix only for this Elixir project's validation"
   end
 
   test "generate/0 includes code quality principles" do
