@@ -174,6 +174,52 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert user_msg.content =~ "... [content truncated for summarization] ..."
     end
 
+    test "prepare_for_api compacts long tool output with useful head and tail" do
+      long_output =
+        "HEAD diagnostic\n" <>
+          String.duplicate("middle noise\n", 500) <>
+          "TAIL validation error\n"
+
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "run validation"},
+        %{role: "assistant", tool_calls: [%{"id" => "call_1"}]},
+        %{role: "tool", tool_call_id: "call_1", content: long_output}
+      ]
+
+      prepared = Session.prepare_for_api(messages)
+      tool_msg = Enum.find(prepared, fn m -> m.role == "tool" end)
+
+      assert String.length(tool_msg.content) <= 1200
+      assert tool_msg.content =~ "HEAD diagnostic"
+      assert tool_msg.content =~ "TAIL validation error"
+      assert tool_msg.content =~ "content compacted"
+    end
+
+    test "compact_history keeps latest user request while compacting long tool output" do
+      long_output =
+        "format failed\n" <>
+          String.duplicate("noise\n", 600) <>
+          "mix test failed with exit code 2\n"
+
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "old request"},
+        %{role: "assistant", tool_calls: [%{"id" => "call_1"}]},
+        %{role: "tool", tool_call_id: "call_1", content: long_output},
+        %{role: "user", content: "latest request must stay"}
+      ]
+
+      compacted = Session.compact_history(messages)
+
+      assert List.last(compacted).content == "latest request must stay"
+
+      tool_msg = Enum.find(compacted, fn m -> m.role == "tool" end)
+      assert String.length(tool_msg.content) <= 1200
+      assert tool_msg.content =~ "format failed"
+      assert tool_msg.content =~ "mix test failed with exit code 2"
+    end
+
     test "removes leading and orphaned tool messages" do
       messages = [
         %{role: "system", content: "sys"},

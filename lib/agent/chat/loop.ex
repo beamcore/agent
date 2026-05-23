@@ -55,7 +55,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp process_messages(session, messages, _pid, depth, _policy) when depth >= @max_tool_depth do
     Pretty.print_warning("Tool loop depth limit (#{@max_tool_depth}) reached. Stopping.")
-    %{session | messages: messages}
+    %{session | messages: Session.compact_history(messages)}
   end
 
   defp process_messages(session, messages, pid, depth, policy) do
@@ -102,7 +102,7 @@ defmodule Beamcore.Agent.Chat.Loop do
             Enum.each(tool_responses, &Session.log(session, &1))
             process_messages(session, new_messages ++ tool_responses, pid, depth + 1, policy)
           else
-            %{session | messages: new_messages}
+            %{session | messages: Session.compact_history(new_messages)}
           end
         end
 

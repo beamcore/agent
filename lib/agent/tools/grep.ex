@@ -6,8 +6,7 @@ defmodule Beamcore.Agent.Tools.Grep do
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Search file contents by regular expression inside workspace-relative paths.
-  Supports optional include glob filtering, pagination, and a built-in Elixir fallback when ripgrep is unavailable.
+  Search workspace file contents by regex with optional include, offset, and limit.
   """
 
   def name, do: "grep"
@@ -27,8 +26,7 @@ defmodule Beamcore.Agent.Tools.Grep do
             },
             path: %{
               type: "string",
-              description:
-                "The workspace-relative file or directory to search in. Defaults to the workspace root."
+              description: "Workspace-relative file or directory. Defaults to root."
             },
             include: %{
               type: "string",
@@ -36,7 +34,7 @@ defmodule Beamcore.Agent.Tools.Grep do
             },
             all: %{
               type: "boolean",
-              description: "If true, search hidden and ignored files. Defaults to false."
+              description: "If true, include hidden and ignored files."
             },
             offset: %{
               type: "integer",

@@ -17,6 +17,13 @@ defmodule Beamcore.Agent.Chat.Session do
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
   @animals ~w(cat dog bird fish elephant lion tiger bear wolf fox owl hawk eagle shark whale dolphin octopus spider snake frog)
   @qualities ~w(hairy slimy fluffy scaly shiny bumpy soft hard fast slow loud quiet smart silly funny brave shy happy sad angry)
+  @api_message_limit 24
+  @history_message_limit 32
+  @max_tool_result_chars 1_200
+  @max_assistant_chars 3_000
+  @max_user_chars 4_000
+  @max_system_chars 9_000
+  @max_other_chars 2_000
 
   @doc """
   Generates a funny session name in the format "color-property-animal".
@@ -105,7 +112,7 @@ defmodule Beamcore.Agent.Chat.Session do
   back to the model. This keeps the active session useful while preventing a
   single smoke test or large read from consuming tens of thousands of tokens.
   """
-  def prepare_for_api(messages, limit \\ 24) do
+  def prepare_for_api(messages, limit \\ @api_message_limit) do
     messages
     |> trim_and_clean_messages(limit)
     |> Enum.map(&truncate_for_api/1)
@@ -114,8 +121,10 @@ defmodule Beamcore.Agent.Chat.Session do
   @doc """
   Compact the in-memory history kept after a turn.
   """
-  def compact_history(messages, limit \\ 32) do
-    trim_and_clean_messages(messages, limit)
+  def compact_history(messages, limit \\ @history_message_limit) do
+    messages
+    |> trim_and_clean_messages(limit)
+    |> Enum.map(&truncate_for_api/1)
   end
 
   @doc """
@@ -241,23 +250,31 @@ defmodule Beamcore.Agent.Chat.Session do
 
     max_chars =
       case role do
-        "system" -> 12_000
-        "tool" -> 2_000
-        "assistant" -> 4_000
-        "user" -> 6_000
-        _ -> 3_000
+        "system" -> @max_system_chars
+        "tool" -> @max_tool_result_chars
+        "assistant" -> @max_assistant_chars
+        "user" -> @max_user_chars
+        _ -> @max_other_chars
       end
 
     if is_binary(content) and String.length(content) > max_chars do
-      put_message_content(
-        message,
-        String.slice(content, 0, max_chars) <>
-          "
-... [content truncated before API request] ..."
-      )
+      put_message_content(message, compact_content(content, max_chars))
     else
       message
     end
+  end
+
+  defp compact_content(
+         content,
+         max_chars,
+         marker \\ "\n... [content compacted; middle omitted] ...\n"
+       ) do
+    marker_size = String.length(marker)
+    budget = max(max_chars - marker_size, 0)
+    head_size = div(budget, 2)
+    tail_size = budget - head_size
+
+    String.slice(content, 0, head_size) <> marker <> String.slice(content, -tail_size, tail_size)
   end
 
   defp put_message_content(message, content) do
@@ -273,10 +290,10 @@ defmodule Beamcore.Agent.Chat.Session do
 
     cond do
       is_binary(content) and String.length(content) > 4000 ->
-        truncated =
-          String.slice(content, 0, 4000) <> "\n... [content truncated for summarization] ..."
-
-        put_message_content(message, truncated)
+        put_message_content(
+          message,
+          compact_content(content, 4000, "\n... [content truncated for summarization] ...\n")
+        )
 
       true ->
         message

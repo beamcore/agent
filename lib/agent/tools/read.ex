@@ -8,9 +8,7 @@ defmodule Beamcore.Agent.Tools.Read do
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Read a workspace file or list contents of a workspace directory.
-  Returns line-numbered contents up to a configurable limit from the given start offset.
-  Essential for reviewing source files, inspecting structure, and viewing directories.
+  Read a workspace-relative file or directory with offset/limit. Rejects unsafe paths.
   """
 
   def name, do: "read"
@@ -27,11 +25,11 @@ defmodule Beamcore.Agent.Tools.Read do
             filePath: %{type: "string", description: "The workspace-relative path to read"},
             offset: %{
               type: "integer",
-              description: "The line number to start reading from (1-indexed)"
+              description: "Start line or directory entry, 1-indexed"
             },
             limit: %{
               type: "integer",
-              description: "The maximum number of lines to read (defaults to 50)"
+              description: "Maximum lines or entries to return, defaults to 50"
             }
           },
           required: ["filePath"]
