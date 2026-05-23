@@ -24,6 +24,8 @@ defmodule Beamcore.Agent.Chat.Session do
   @max_user_chars 4_000
   @max_system_chars 9_000
   @max_other_chars 2_000
+  @max_tool_arg_chars 200
+  @large_tool_arg_keys ~w(content old_string new_string patch patch_content diff)
 
   @doc """
   Generates a funny session name in the format "color-property-animal".
@@ -115,7 +117,7 @@ defmodule Beamcore.Agent.Chat.Session do
   def prepare_for_api(messages, limit \\ @api_message_limit) do
     messages
     |> trim_and_clean_messages(limit)
-    |> Enum.map(&truncate_for_api/1)
+    |> Enum.map(&compact_for_api/1)
   end
 
   @doc """
@@ -124,7 +126,34 @@ defmodule Beamcore.Agent.Chat.Session do
   def compact_history(messages, limit \\ @history_message_limit) do
     messages
     |> trim_and_clean_messages(limit)
-    |> Enum.map(&truncate_for_api/1)
+    |> Enum.map(&compact_for_api/1)
+  end
+
+  @doc """
+  Compact raw API responses before persistent logging.
+  """
+  def compact_raw_response(%{"choices" => choices} = response) when is_list(choices) do
+    compacted_choices =
+      Enum.map(choices, fn
+        %{"message" => message} = choice ->
+          Map.put(choice, "message", compact_tool_calls(message))
+
+        choice ->
+          choice
+      end)
+
+    Map.put(response, "choices", compacted_choices)
+  end
+
+  def compact_raw_response(response), do: response
+
+  @doc """
+  Compact a single message before storing it in active chat history.
+  """
+  def compact_for_api(message) do
+    message
+    |> compact_tool_calls()
+    |> truncate_for_api()
   end
 
   @doc """
@@ -263,6 +292,75 @@ defmodule Beamcore.Agent.Chat.Session do
       message
     end
   end
+
+  defp compact_tool_calls(message) do
+    case message[:tool_calls] || message["tool_calls"] do
+      tool_calls when is_list(tool_calls) ->
+        put_tool_calls(message, Enum.map(tool_calls, &compact_tool_call/1))
+
+      _other ->
+        message
+    end
+  end
+
+  defp compact_tool_call(tool_call) do
+    function = tool_call[:function] || tool_call["function"]
+
+    if is_map(function) do
+      arguments = function[:arguments] || function["arguments"]
+      compacted_arguments = compact_tool_arguments(arguments)
+      compacted_function = put_map_value(function, "arguments", compacted_arguments)
+      put_map_value(tool_call, "function", compacted_function)
+    else
+      tool_call
+    end
+  end
+
+  defp compact_tool_arguments(arguments) when is_binary(arguments) do
+    case Jason.decode(arguments) do
+      {:ok, decoded} when is_map(decoded) ->
+        decoded
+        |> Enum.into(%{}, fn {key, value} -> {key, compact_tool_arg(key, value)} end)
+        |> Jason.encode!()
+
+      _ ->
+        arguments
+    end
+  end
+
+  defp compact_tool_arguments(arguments), do: arguments
+
+  defp compact_tool_arg(key, value)
+       when key in @large_tool_arg_keys and is_binary(value) do
+    if String.length(value) > @max_tool_arg_chars do
+      "[#{key} omitted: #{String.length(value)} chars, #{line_count(value)} lines]"
+    else
+      value
+    end
+  end
+
+  defp compact_tool_arg(_key, value), do: value
+
+  defp put_tool_calls(message, tool_calls) do
+    if Map.has_key?(message, :tool_calls) do
+      Map.put(message, :tool_calls, tool_calls)
+    else
+      Map.put(message, "tool_calls", tool_calls)
+    end
+  end
+
+  defp put_map_value(map, key, value) do
+    atom_key = String.to_existing_atom(key)
+
+    cond do
+      Map.has_key?(map, atom_key) -> Map.put(map, atom_key, value)
+      true -> Map.put(map, key, value)
+    end
+  rescue
+    ArgumentError -> Map.put(map, key, value)
+  end
+
+  defp line_count(value), do: value |> String.split("\n") |> length()
 
   defp compact_content(
          content,

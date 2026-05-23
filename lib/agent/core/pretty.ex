@@ -217,9 +217,14 @@ defmodule Beamcore.Agent.Core.Pretty do
          %{"path" => path, "old_string" => old, "new_string" => new},
          _context
        ) do
-    IO.puts(colorize("path: ", &Colors.dim/0) <> colorize(path, &Colors.bright_white/0))
-    IO.puts(colorize("      - ", &Colors.red/0) <> format_multiline(old, 8))
-    IO.puts(colorize("      + ", &Colors.green/0) <> format_multiline(new, 8))
+    IO.puts(
+      colorize("path: ", &Colors.dim/0) <>
+        colorize(path, &Colors.bright_white/0) <>
+        colorize(
+          " (old: #{String.length(old)} chars, new: #{String.length(new)} chars)",
+          &Colors.dim/0
+        )
+    )
   end
 
   defp format_tool_args("read", %{"filePath" => path} = args, _context) do
@@ -234,8 +239,11 @@ defmodule Beamcore.Agent.Core.Pretty do
   end
 
   defp format_tool_args("write", %{"filePath" => path, "content" => content}, _context) do
-    IO.puts(colorize("path: ", &Colors.dim/0) <> colorize(path, &Colors.bright_white/0))
-    IO.puts(colorize("      content: ", &Colors.dim/0) <> format_multiline(content, 15))
+    IO.puts(
+      colorize("path: ", &Colors.dim/0) <>
+        colorize(path, &Colors.bright_white/0) <>
+        colorize(" (#{byte_size(content)} bytes)", &Colors.dim/0)
+    )
   end
 
   defp format_tool_args("grep", %{"pattern" => pattern} = args, _context) do
@@ -288,8 +296,20 @@ defmodule Beamcore.Agent.Core.Pretty do
   end
 
   defp format_tool_args("patch", %{"patch_content" => patch}, _context) do
-    IO.puts(colorize("patch:", &Colors.dim/0))
-    IO.puts(format_multiline(patch, 6))
+    paths = patch_paths(patch)
+    line_count = patch |> String.split("\n") |> length()
+
+    label =
+      case paths do
+        [] -> "patch"
+        paths -> Enum.join(paths, ", ")
+      end
+
+    IO.puts(
+      colorize("patch: ", &Colors.dim/0) <>
+        colorize(label, &Colors.bright_white/0) <>
+        colorize(" (#{length(paths)} files, #{line_count} lines)", &Colors.dim/0)
+    )
   end
 
   defp format_tool_args("mkdir", %{"path" => path}, _context) do
@@ -300,13 +320,25 @@ defmodule Beamcore.Agent.Core.Pretty do
     IO.puts(colorize("a: ", &Colors.bright_yellow/0) <> inspect(args, pretty: true))
   end
 
-  defp format_multiline(text, indent) do
-    padding = String.duplicate(" ", indent)
-
-    text
-    |> String.trim_trailing()
-    |> String.replace("\n", "\n" <> padding)
+  defp patch_paths(patch) do
+    patch
+    |> String.split("\n")
+    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
+    |> Enum.map(&patch_line_path/1)
+    |> Enum.reject(&(&1 in [nil, "/dev/null"]))
+    |> Enum.map(&strip_patch_prefix/1)
+    |> Enum.uniq()
   end
+
+  defp patch_line_path(line) do
+    line
+    |> String.split(~r/\s+/, parts: 3, trim: true)
+    |> Enum.at(1)
+  end
+
+  defp strip_patch_prefix("a/" <> path), do: path
+  defp strip_patch_prefix("b/" <> path), do: path
+  defp strip_patch_prefix(path), do: path
 
   @doc "
   Print a tool response.
