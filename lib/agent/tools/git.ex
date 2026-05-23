@@ -5,10 +5,7 @@ defmodule Beamcore.Agent.Tools.Git do
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Execute common git operations: clone, add, status, restore, log, diff, and commit.
-  For log queries, it returns the two latest commits to keep context compact.
-  Use this whenever you need to interact with the repository's git version control.
-  Workdirs and path arguments must stay inside the current workspace.
+  Run explicit git operations inside the workspace. Log returns two commits.
   """
 
   def name, do: "git"
@@ -41,8 +38,7 @@ defmodule Beamcore.Agent.Tools.Git do
             },
             workdir: %{
               type: "string",
-              description:
-                "The directory to run the git command in. Defaults to current directory."
+              description: "Workspace-relative directory. Defaults to root."
             },
             staged: %{
               type: "boolean",

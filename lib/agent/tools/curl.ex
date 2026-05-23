@@ -4,9 +4,7 @@ defmodule Beamcore.Agent.Tools.Curl do
   """
 
   @description """
-  Fetch content from a URL via HTTP GET, POST, PUT, DELETE, or PATCH methods.
-  Supports custom headers, request bodies, and custom timeouts for web resource access.
-  Returns the response body, HTTP status code, and all returned response headers.
+  Fetch an external URL only when policy explicitly allows network access.
   """
 
   @max_bytes 2_000_000

@@ -16,6 +16,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert "read" in names
     assert "mix" in names
     refute "task" in names
+    refute "curl" in names
   end
 
   test "tool_specs includes task only when policy allows explicit delegation" do
@@ -23,6 +24,15 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
     assert "task" in names
+    refute "curl" in names
+  end
+
+  test "tool_specs includes curl only when policy allows explicit network access" do
+    policy = ToolPolicy.from_user_message("Fetch https://example.com with curl.")
+    names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
+
+    assert "curl" in names
+    refute "task" in names
   end
 
   test "conductor_tool_specs applies read-only policy" do
@@ -30,6 +40,12 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
     assert Enum.sort(names) == Enum.sort(~w(read grep glob tree git mix))
+    refute "task" in names
+    refute "curl" in names
+    refute "write" in names
+    refute "edit" in names
+    refute "patch" in names
+    refute "fs" in names
   end
 
   test "execute blocks mutating tools in read-only mode" do

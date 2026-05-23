@@ -8,9 +8,7 @@ defmodule Beamcore.Agent.Tools.Task do
   alias Beamcore.Agent.OpenAI
 
   @description """
-  Execute a bounded sub-task using an autonomous agent separate from the active chat session.
-  Use only when the user explicitly asked for delegation or the task is too large for direct work.
-  Nested task delegation is disabled to prevent token explosions.
+  Run a bounded sub-agent only when the user explicitly asks for delegation.
   """
 
   @funny_names [

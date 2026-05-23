@@ -4,9 +4,7 @@ defmodule Beamcore.Agent.Tools.Tree do
   """
 
   @description """
-  Generate a clean, compact directory tree layout showing all file structures.
-  Displays files, subdirectories, and their sizes in human-readable formatted units.
-  Useful for understanding folder structures and locating files within the project.
+  Show a compact workspace directory tree with sizes. Rejects unsafe paths.
   """
 
   @ignored_names [
@@ -35,8 +33,7 @@ defmodule Beamcore.Agent.Tools.Tree do
           properties: %{
             path: %{
               type: "string",
-              description:
-                "The directory to generate the tree for. Defaults to current directory."
+              description: "Workspace-relative directory. Defaults to root."
             },
             depth: %{
               type: "integer",
@@ -44,7 +41,7 @@ defmodule Beamcore.Agent.Tools.Tree do
             },
             all: %{
               type: "boolean",
-              description: "If true, show hidden and ignored files. Defaults to false."
+              description: "If true, include hidden and ignored files."
             }
           }
         }
