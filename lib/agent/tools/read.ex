@@ -3,8 +3,9 @@ defmodule Beamcore.Agent.Tools.Read do
   Tool to read workspace files or directories.
   """
 
-  @default_limit 50
+  @default_limit 200
   @max_line_length 200
+  @small_file_threshold 250
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -29,7 +30,7 @@ defmodule Beamcore.Agent.Tools.Read do
             },
             limit: %{
               type: "integer",
-              description: "Maximum lines or entries to return, defaults to 50"
+              description: "Maximum lines or entries to return, defaults to 200"
             }
           },
           required: ["filePath"]
@@ -50,7 +51,17 @@ defmodule Beamcore.Agent.Tools.Read do
             read_directory(expanded_path, offset, limit)
 
           {:ok, %File.Stat{type: :regular}} ->
-            read_file(expanded_path, offset, limit)
+            # For small files, read in full if no custom offset/limit is provided
+            if offset == 1 && limit == @default_limit do
+              case File.stream!(expanded_path) |> Enum.count() do
+                total_lines when total_lines <= @small_file_threshold ->
+                  read_file(expanded_path, 1, total_lines)
+                _ ->
+                  read_file(expanded_path, offset, limit)
+              end
+            else
+              read_file(expanded_path, offset, limit)
+            end
 
           {:ok, _} ->
             "Error: Path is not a regular file or directory: #{expanded_path}"
