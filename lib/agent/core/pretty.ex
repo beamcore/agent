@@ -338,8 +338,69 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-  defp format_tool_args("mkdir", %{"path" => path}, _context) do
-    IO.puts(colorize("path: ", &Colors.dim/0) <> colorize(path, &Colors.bright_white/0))
+  defp format_tool_args("fs", %{"operation" => op} = args, _context) do
+    target = Map.get(args, "target")
+    op_str = colorize(op, &Colors.bright_magenta/0)
+    path_str = colorize(Map.get(args, "path", ""), &Colors.bright_white/0)
+
+    header =
+      colorize("op: ", &Colors.dim/0) <>
+        op_str <> colorize(" path: ", &Colors.dim/0) <> path_str
+
+    header =
+      if target do
+        header <> colorize(" target: ", &Colors.dim/0) <> colorize(target, &Colors.bright_white/0)
+      else
+        header
+      end
+
+    IO.puts(header)
+  end
+
+  defp format_tool_args("git", %{"operation" => op} = args, _context) do
+    op_str = colorize(op, &Colors.bright_magenta/0)
+
+    parts =
+      [
+        colorize("op: ", &Colors.dim/0) <> op_str,
+        maybe_format_arg("path", Map.get(args, "path")),
+        maybe_format_arg("url", Map.get(args, "url")),
+        maybe_format_arg("message", Map.get(args, "message")),
+        maybe_format_arg("workdir", Map.get(args, "workdir"))
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    IO.puts(Enum.join(parts, " "))
+  end
+
+  defp format_tool_args("task", %{"name" => name, "prompt" => prompt} = args, _context) do
+    model = Map.get(args, "model", "default")
+
+    IO.puts(
+      colorize("name: ", &Colors.dim/0) <>
+        colorize(name, &Colors.bright_white/0) <>
+        colorize(" model: ", &Colors.dim/0) <>
+        colorize(model, &Colors.bright_blue/0) <>
+        colorize(" prompt: ", &Colors.dim/0) <>
+        colorize(String.slice(prompt, 0, 60) <> "...", &Colors.bright_magenta/0)
+    )
+  end
+
+  defp format_tool_args("mix", %{"command" => cmd} = args, _context) do
+    mix_args = Map.get(args, "args", "")
+
+    header =
+      colorize("command: ", &Colors.dim/0) <>
+        colorize(cmd, &Colors.bright_magenta/0)
+
+    header =
+      if mix_args != "" do
+        header <> colorize(" args: ", &Colors.dim/0) <> colorize(mix_args, &Colors.bright_white/0)
+      else
+        header
+      end
+
+    IO.puts(header)
   end
 
   defp format_tool_args("plan", args, _context) do
@@ -370,6 +431,11 @@ defmodule Beamcore.Agent.Core.Pretty do
 
   defp format_tool_args(_name, args, _context) do
     IO.puts(colorize("a: ", &Colors.bright_yellow/0) <> inspect(args, pretty: true))
+  end
+
+  defp maybe_format_arg(_label, nil), do: nil
+  defp maybe_format_arg(label, val) do
+    colorize("#{label}: ", &Colors.dim/0) <> colorize(to_string(val), &Colors.bright_white/0)
   end
 
   defp patch_paths(patch) do
