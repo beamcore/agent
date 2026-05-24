@@ -1,6 +1,6 @@
 # Makefile for Beamcore.Agent - Mistral API client
 
-.PHONY: all deps compile test format dialyzer shell clean help
+.PHONY: all deps compile test format dialyzer shell clean help chat chat-plain tui
 
 ifneq (,$(wildcard .env))
 include .env
@@ -77,7 +77,8 @@ help:
 	@echo "  install      - Install agent to $(INSTALL_PATH) and $(BIN_PATH)"
 	@echo "  uninstall    - Remove agent from $(INSTALL_PATH) and $(BIN_PATH)"
 	@echo "  help         - Show this help message"
-	@echo "  chat         - Start interactive chat with Mistral"
+	@echo "  chat         - Start the primary agent TUI"
+	@echo "  chat-plain   - Start the plain emergency fallback"
 
 # Run the application
 run: compile
@@ -95,9 +96,16 @@ api-inspect: compile
 completion-test: compile
 	mix run -e "client = Beamcore.Agent.OpenAI.client(); IO.puts(\"Client ready for API calls\"); IO.inspect(client)"
 
-# Start interactive chat
+# Start primary agent chat
 chat: compile
 	mix run -e "Beamcore.Agent.chat()"
+
+# Start plain emergency fallback
+chat-plain: compile
+	mix run -e "Beamcore.Agent.chat(:plain)"
+
+# Alias for the primary TUI entrypoint
+tui: chat
 
 # Environment setup
 init:

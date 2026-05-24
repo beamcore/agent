@@ -12,6 +12,10 @@ defmodule Beamcore.Agent.Chat.API do
                       )
   @default_model "mistral-medium-3.5"
 
+  def default_model do
+    Application.get_env(:agent, :chat_model, @default_model)
+  end
+
   @doc """
   Execute an API call with retry logic.
   """
@@ -41,7 +45,7 @@ defmodule Beamcore.Agent.Chat.API do
 
         Beamcore.Agent.Chat.RateLimiter.wait()
 
-        model = Keyword.get(opts, :model, @default_model)
+        model = Keyword.get(opts, :model, default_model())
 
         Beamcore.Agent.Retry.execute(
           fn ->
@@ -58,22 +62,22 @@ defmodule Beamcore.Agent.Chat.API do
 
               case response do
                 {:error, %OpenaiEx.Error{kind: :bad_request} = error} ->
-                  print_debug_info(messages, tools, model, error)
-                  format_response(response, context)
+                  maybe_print_debug(opts, messages, tools, model, error)
+                  format_response(response, context, opts)
 
                 {:error, %OpenaiEx.Error{status_code: 400} = error} ->
-                  print_debug_info(messages, tools, model, error)
-                  format_response(response, context)
+                  maybe_print_debug(opts, messages, tools, model, error)
+                  format_response(response, context, opts)
 
                 {:error, reason} when is_binary(reason) ->
                   if String.contains?(reason, "status_code: 400") do
-                    print_debug_info(messages, tools, model, reason)
+                    maybe_print_debug(opts, messages, tools, model, reason)
                   end
 
-                  format_response(response, context)
+                  format_response(response, context, opts)
 
                 _ ->
-                  format_response(response, context)
+                  format_response(response, context, opts)
               end
             rescue
               e ->
@@ -90,24 +94,26 @@ defmodule Beamcore.Agent.Chat.API do
          {:ok,
           %{"choices" => [%{"message" => %{"tool_calls" => tool_calls} = message} | _]} =
             response_map},
-         context
+         context,
+         opts
        )
        when is_list(tool_calls) do
-    format_response_with_context(response_map, message, tool_calls, context)
+    format_response_with_context(response_map, message, tool_calls, context, opts)
   end
 
   defp format_response(
          {:ok, %{"choices" => [%{"message" => message} | _]} = response_map},
-         _context
+         _context,
+         _opts
        ) do
     {:ok, %{message: message, raw_response: response_map}}
   end
 
-  defp format_response({:ok, response_map}, context) do
+  defp format_response({:ok, response_map}, context, opts) do
     # Fallback clause
     message = (response_map["choices"] |> List.first())["message"]
 
-    if Map.has_key?(message, "tool_calls") do
+    if Map.has_key?(message, "tool_calls") and not Keyword.get(opts, :silent, false) do
       if content = message["content"],
         do: Beamcore.Agent.Core.Pretty.print_thinking(content, context)
     end
@@ -115,31 +121,39 @@ defmodule Beamcore.Agent.Chat.API do
     {:ok, %{message: message, raw_response: response_map}}
   end
 
-  defp format_response({:error, %OpenaiEx.Error{} = error}, _context) do
+  defp format_response({:error, %OpenaiEx.Error{} = error}, _context, _opts) do
     {:error, error}
   end
 
-  defp format_response({:error, reason}, _context) do
+  defp format_response({:error, reason}, _context, _opts) do
     {:error, reason}
   end
 
-  defp format_response(response, _context) do
+  defp format_response(response, _context, _opts) do
     {:error, "Unexpected response format: #{inspect(response)}"}
   end
 
-  defp format_response_with_context(response_map, message, _tool_calls, context) do
+  defp format_response_with_context(response_map, message, _tool_calls, context, opts) do
     # Tool calls are intentionally not printed here.
     # The chat loop prints them only after runtime policy authorization.
     # This prevents blocked mutation attempts from looking like executed tools.
     case Map.get(message, "content") do
       content when is_binary(content) and content != "" ->
-        Beamcore.Agent.Core.Pretty.print_thinking(content, context)
+        unless Keyword.get(opts, :silent, false) do
+          Beamcore.Agent.Core.Pretty.print_thinking(content, context)
+        end
 
       _ ->
         :ok
     end
 
     {:ok, %{message: message, raw_response: response_map}}
+  end
+
+  defp maybe_print_debug(opts, messages, tools, model, error_info) do
+    unless Keyword.get(opts, :silent, false) do
+      print_debug_info(messages, tools, model, error_info)
+    end
   end
 
   defp print_debug_info(messages, tools, model, error_info) do

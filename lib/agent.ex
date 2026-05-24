@@ -43,9 +43,42 @@ defmodule Beamcore.Agent do
   end
 
   @doc """
-  Start an interactive chat session.
+  Start the primary interactive agent chat experience.
   """
-  def chat do
-    Beamcore.Agent.Chat.start()
+  def chat(mode \\ :auto, opts \\ [])
+
+  def chat(:auto, opts) do
+    if Beamcore.Agent.TUI.Capability.supported?(opts) do
+      start_tui(opts)
+    else
+      fallback_to_plain(Beamcore.Agent.TUI.Capability.unsupported_reason(opts), opts)
+    end
+  rescue
+    error ->
+      fallback_to_plain(Exception.message(error), opts)
   end
+
+  def chat(:tui, opts), do: start_tui(opts)
+  def chat(:plain, opts), do: start_plain(opts)
+  def chat(:classic, opts), do: chat(:plain, opts)
+
+  @doc false
+  def chat_mode(opts \\ []) do
+    if Beamcore.Agent.TUI.Capability.supported?(opts), do: :tui, else: :plain
+  end
+
+  defp fallback_to_plain(reason, opts) do
+    IO.puts("TUI unavailable: #{reason}")
+    IO.puts("Starting plain emergency fallback.")
+    start_plain(opts)
+  end
+
+  defp start_tui(opts),
+    do: call_start(Keyword.get(opts, :tui_start, &Beamcore.Agent.TUI.start/1), opts)
+
+  defp start_plain(opts),
+    do: call_start(Keyword.get(opts, :plain_start, &Beamcore.Agent.Chat.start/0), opts)
+
+  defp call_start(fun, opts) when is_function(fun, 1), do: fun.(opts)
+  defp call_start(fun, _opts) when is_function(fun, 0), do: fun.()
 end

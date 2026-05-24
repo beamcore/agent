@@ -4,39 +4,41 @@ defmodule Beamcore.Agent.Chat.Commands do
   """
 
   alias Beamcore.Agent.Chat.Session
-  alias Beamcore.Agent.Core.Pretty
 
   @doc """
   Handle a command and return the updated session.
   """
-  def execute(command, session) do
+  def execute(command, session, opts \\ []) do
+    output = Keyword.get(opts, :output, &IO.puts/1)
+    custom_output? = Keyword.has_key?(opts, :output)
+
     case command do
-      "new" -> handle_new(session)
-      "confirm" -> handle_confirm(session)
-      "cancel" -> handle_cancel(session)
-      "context" -> handle_context(session)
-      "context clear" -> handle_context_clear(session)
-      "yolo" -> handle_yolo(session)
-      "help" -> handle_help(session)
-      _ -> handle_unknown(command, session)
+      "new" -> handle_new(session, output)
+      "confirm" -> handle_confirm(session, output)
+      "cancel" -> handle_cancel(session, output)
+      "context" -> handle_context(session, output)
+      "context clear" -> handle_context_clear(session, output)
+      "yolo" -> handle_yolo(session, output)
+      "help" -> handle_help(session, output)
+      _ -> handle_unknown(command, session, output, custom_output?)
     end
   end
 
-  defp handle_new(session) do
-    IO.puts("Starting new session...")
+  defp handle_new(session, output) do
+    output.("Starting new session...")
 
     session.client
     |> Session.new()
     |> then(& &1)
   end
 
-  defp handle_yolo(session) do
-    IO.puts("🚀 YOLO mode enabled! All tools are now active and unrestricted.")
+  defp handle_yolo(session, output) do
+    output.("🚀 YOLO mode enabled! All tools are now active and unrestricted.")
     %{session | policy_override: Beamcore.Agent.Chat.ToolPolicy.yolo()}
   end
 
-  defp handle_help(session) do
-    IO.puts("""
+  defp handle_help(session, output) do
+    output.("""
     Available commands:
       /new  - Start a new chat session
       /confirm - Confirm the pending plan
@@ -50,47 +52,52 @@ defmodule Beamcore.Agent.Chat.Commands do
     session
   end
 
-  defp handle_context(session) do
-    IO.puts(Beamcore.Agent.Chat.Context.summary(session.context))
+  defp handle_context(session, output) do
+    output.(Beamcore.Agent.Chat.Context.summary(session.context))
     session
   end
 
-  defp handle_context_clear(session) do
-    IO.puts("Session context cleared.")
+  defp handle_context_clear(session, output) do
+    output.("Session context cleared.")
     %{session | context: Beamcore.Agent.Chat.Context.new(session.project_nature)}
   end
 
-  defp handle_confirm(%{context: %{pending_action: nil}} = session) do
-    IO.puts("No pending action to confirm.")
+  defp handle_confirm(%{context: %{pending_action: nil}} = session, output) do
+    output.("No pending action to confirm.")
     session
   end
 
-  defp handle_confirm(%{pending_user_message: nil} = session) do
-    IO.puts("No pending action to confirm.")
+  defp handle_confirm(%{pending_user_message: nil} = session, output) do
+    output.("No pending action to confirm.")
     session
   end
 
-  defp handle_confirm(session) do
+  defp handle_confirm(session, output) do
     pending_action = session.context.pending_action
     confirmed_content = confirmed_execution_content(session.pending_user_message, pending_action)
     confirmed_session = Session.clear_pending_action(session)
 
-    IO.puts("Confirmed pending action.")
+    output.("Confirmed pending action.")
     {:run_pending, confirmed_session, confirmed_content, pending_action.policy}
   end
 
-  defp handle_cancel(%{context: %{pending_action: nil}} = session) do
-    IO.puts("No pending action to cancel.")
+  defp handle_cancel(%{context: %{pending_action: nil}} = session, output) do
+    output.("No pending action to cancel.")
     session
   end
 
-  defp handle_cancel(session) do
-    IO.puts("Pending action canceled.")
+  defp handle_cancel(session, output) do
+    output.("Pending action canceled.")
     Session.clear_pending_action(session)
   end
 
-  defp handle_unknown(command, session) do
-    Pretty.print_error("Unknown command: /#{command}")
+  defp handle_unknown(command, session, _output, false) do
+    Beamcore.Agent.Core.Pretty.print_error("Unknown command: /#{command}")
+    session
+  end
+
+  defp handle_unknown(command, session, output, true) do
+    output.("Error: Unknown command: /#{command}")
     session
   end
 

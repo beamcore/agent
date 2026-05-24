@@ -47,12 +47,50 @@ MISTRAL_IMAGE_AGENT_ID=
 | `make compile` | Compile the project. |
 | `make test` | Run ExUnit tests. |
 | `make format` | Format the project. |
-| `make chat` | Start the interactive agent. |
+| `make chat` | Start the primary polished terminal UI agent chat. |
+| `make chat-plain` | Start the plain emergency fallback. |
 | `make init` | Create `.env` from `.env.example` if missing. |
 | `make install` | Build a production release and install a local executable. |
 | `make uninstall` | Remove the installed release/executable. |
 | `make clean` | Remove `_build` and `deps`. |
 | `make help` | Show available targets. |
+
+## Primary chat
+
+Run the product with:
+
+```bash
+make chat
+```
+
+`make chat` starts the main terminal UI. The UI is the product experience: chat,
+tool activity, pending plans, confirmations, image generation status, and token
+state all live in one screen. If the TUI cannot start because the terminal is
+not interactive or unsupported, the app prints a short reason and starts the
+plain emergency fallback.
+
+The fallback can be forced when needed:
+
+```bash
+make chat-plain
+mix run -e "Beamcore.Agent.chat(:plain)"
+```
+
+The TUI and fallback use the same runtime: one session flow, one tool policy
+system, one dispatcher, one confirmation flow, one context model, and one image
+generation flow.
+
+## TUI keybindings
+
+| Key | Action |
+|---|---|
+| `Enter` | Send the current message. |
+| `Shift+Enter` | Insert a newline when supported by the terminal. |
+| `Ctrl+S` | Send the current message. |
+| `Tab` | Open the tool details popup. |
+| `Up` / `Down` | Scroll chat or move through command suggestions. |
+| `Esc` | Close popups and command suggestions. |
+| `Ctrl+C` | Exit cleanly. |
 
 ## Chat commands
 
@@ -65,8 +103,68 @@ MISTRAL_IMAGE_AGENT_ID=
 | `/cancel` | Cancel the pending mutation plan. |
 | `/context` | Print compact session context. |
 | `/context clear` | Clear compact session context. |
+| `/yolo` | Enable all tools with unrestricted access. |
 | `/help` | Show command help. |
+| `/quit`, `/exit`, `/q` | Exit the TUI. |
 
+The plain fallback also keeps `/paste` and `<<<` multi-line input for emergency
+line-based operation.
+
+## TUI layout
+
+- **Wide**: chat transcript, right activity/tool sidebar, bottom input, status
+  bar, and compact header.
+- **Medium**: chat transcript, compact activity strip, input, and status bar.
+- **Narrow**: single-column chat, input, compact status, and activity details
+  via `Tab`.
+- **Tiny**: a minimal terminal-too-small screen with a fallback hint.
+
+The empty state is intentional: it shows the product title, a short
+description, example prompts, `/help`, session/model/provider details, and a
+small animated BeamCore mascot.
+
+## Activity timeline
+
+Tools are first-class UI events. The timeline shows compact labels for `plan`,
+`read`, `write`, `edit`, `patch`, `fs`, `grep`, `glob`, `tree`, `git`, `mix`,
+`image_generation`, blocked attempts, validation events, and errors.
+
+Examples:
+
+```text
+read README.md
+write lib/foo.ex
+mix test
+image_generation -> generated/architecture.png
+blocked write scratch/a.ex
+```
+
+Tool states are `queued`, `running`, `done`, `blocked`, and `error`. The normal
+UI never dumps raw tool maps or full file payloads.
+
+## Confirmation UI
+
+Mutation plans show a dedicated confirmation panel with summary, files to
+create/modify/delete, allowed tools, validation command, risks, and `/confirm`
+or `/cancel` hints. Before `/confirm`, mutation tools remain hidden and
+runtime-blocked by policy. After `/confirm`, the confirmed restricted policy is
+used for exactly one execution turn.
+
+## Image generation UI
+
+When `image_generation` is allowed by an explicit policy or confirmed plan, the
+activity timeline shows the prompt summary, output path, running/done/error
+status, saved file path, and an `open generated/file.png` hint after success.
+The TUI does not require external image viewers.
+
+## TUI troubleshooting
+
+- **Terminal too small**: enlarge the terminal; tiny mode shows a clear warning.
+- **TUI does not start**: `make chat` prints the reason and falls back to plain mode.
+- **tmux**: use a recent tmux and a capable `$TERM`, such as `screen-256color`.
+- **SSH**: make sure the remote session has an interactive TTY and useful `$TERM`.
+- **Truecolor**: truecolor is not required; the theme uses terminal-safe colors.
+- **Plain fallback**: use `make chat-plain` only when the TUI cannot run.
 
 ## General coding questions
 
