@@ -314,12 +314,10 @@ defmodule Beamcore.Agent.Core.Pretty do
 
   defp format_tool_args("tree", args, _context) do
     path = Map.get(args, "path", ".")
-    depth = Map.get(args, "depth", 2)
 
     IO.puts(
       colorize("path: ", &Colors.dim/0) <>
-        colorize(path, &Colors.bright_white/0) <>
-        colorize(" (depth: #{depth})", &Colors.dim/0)
+        colorize(path, &Colors.bright_white/0)
     )
   end
 
