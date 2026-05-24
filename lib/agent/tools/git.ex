@@ -1,6 +1,6 @@
 defmodule Beamcore.Agent.Tools.Git do
   @moduledoc """
-  Tool to perform git operations.
+  Tool to perform git operations within the workspace safely.
   """
   alias Beamcore.Agent.Tools.PathSafety
 
@@ -22,27 +22,27 @@ defmodule Beamcore.Agent.Tools.Git do
             operation: %{
               type: "string",
               enum: ["clone", "add", "status", "restore", "log", "diff", "commit"],
-              description: "The git operation to perform."
+              description: "Git operation to run."
             },
             path: %{
               type: "string",
-              description: "The file or directory path for operations like add, restore, diff."
+              description: "Target file/directory path (relative to workdir)."
             },
             url: %{
               type: "string",
-              description: "The repository URL for clone."
+              description: "Repository URL for clone."
             },
             message: %{
               type: "string",
-              description: "The commit message for commit operation."
+              description: "Commit message for commit."
             },
             workdir: %{
               type: "string",
-              description: "Workspace-relative directory. Defaults to root."
+              description: "Workspace-relative workdir (defaults to root)."
             },
             staged: %{
               type: "boolean",
-              description: "If true, show staged changes for diff. Defaults to false."
+              description: "If true, show staged changes for diff."
             }
           },
           required: ["operation"]
@@ -65,19 +65,19 @@ defmodule Beamcore.Agent.Tools.Git do
   defp execute_operation(operation, params, workdir) do
     case operation do
       "clone" ->
-        url = Map.get(params, "url")
+        case Map.get(params, "url") do
+          nil ->
+            "Error: url is required for clone operation."
 
-        if url do
-          path = Map.get(params, "path")
+          url ->
+            path = Map.get(params, "path")
 
-          with :ok <- validate_optional_path(path) do
-            args = if path, do: ["clone", url, path], else: ["clone", url]
-            run_git(args, workdir)
-          else
-            {:error, reason} -> PathSafety.error(reason)
-          end
-        else
-          "Error: url is required for clone operation."
+            with :ok <- validate_optional_path(path) do
+              args = if path, do: ["clone", url, path], else: ["clone", url]
+              run_git(args, workdir)
+            else
+              {:error, reason} -> PathSafety.error(reason)
+            end
         end
 
       "add" ->
@@ -93,16 +93,16 @@ defmodule Beamcore.Agent.Tools.Git do
         run_git(["status"], workdir)
 
       "restore" ->
-        path = Map.get(params, "path")
+        case Map.get(params, "path") do
+          nil ->
+            "Error: path is required for restore operation."
 
-        if path do
-          with :ok <- PathSafety.validate_pattern(path) do
-            run_git(["restore", path], workdir)
-          else
-            {:error, reason} -> PathSafety.error(reason)
-          end
-        else
-          "Error: path is required for restore operation."
+          path ->
+            with :ok <- PathSafety.validate_pattern(path) do
+              run_git(["restore", path], workdir)
+            else
+              {:error, reason} -> PathSafety.error(reason)
+            end
         end
 
       "log" ->
@@ -122,12 +122,23 @@ defmodule Beamcore.Agent.Tools.Git do
         end
 
       "commit" ->
-        message = Map.get(params, "message")
+        case Map.get(params, "message") do
+          nil ->
+            "Error: message is required for commit operation."
 
-        if message do
-          run_git(["commit", "-m", message], workdir)
-        else
-          "Error: message is required for commit operation."
+          message ->
+            # Dynamic git configuration overrides to ensure commit succeeds even in environments with missing git configuration.
+            args = [
+              "-c",
+              "user.name=Beamcore Agent",
+              "-c",
+              "user.email=agent@beamcore.dev",
+              "commit",
+              "-m",
+              message
+            ]
+
+            run_git(args, workdir)
         end
 
       _ ->
@@ -139,16 +150,36 @@ defmodule Beamcore.Agent.Tools.Git do
   defp validate_optional_path(path), do: PathSafety.validate_pattern(path)
 
   defp run_git(args, workdir) do
-    case System.cmd("git", args, cd: workdir, stderr_to_stdout: true) do
-      {output, 0} ->
-        if String.trim(output) == "" do
-          "Success (no output)"
-        else
-          truncate(output)
-        end
+    case System.find_executable("git") do
+      nil ->
+        "Error: git executable not found in system PATH."
 
-      {output, _exit_code} ->
-        "Error: #{truncate(output)}"
+      _path ->
+        try do
+          case System.cmd("git", args, cd: workdir, stderr_to_stdout: true) do
+            {output, 0} ->
+              if String.trim(output) == "" do
+                "Success (no output)"
+              else
+                truncate(output)
+              end
+
+            {output, exit_code} ->
+              trimmed = String.trim(output)
+
+              if trimmed == "" do
+                "Error: Command failed with exit code #{exit_code} (no output)"
+              else
+                "Error: #{truncate(trimmed)}"
+              end
+          end
+        rescue
+          e in ErlangError ->
+            "Error: OS error executing git: #{inspect(e.original)}"
+
+          e ->
+            "Error: Unexpected execution failure: #{Exception.message(e)}"
+        end
     end
   end
 
