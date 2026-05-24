@@ -75,4 +75,39 @@ defmodule Beamcore.Agent.Tools.GlobTest do
 
     assert output =~ "path traversal is not allowed"
   end
+
+  test "paginates and sorts output correctly" do
+    dir = Path.join(@test_dir, "pagination")
+    File.mkdir_p!(dir)
+    File.write!(Path.join(dir, "a.ex"), "")
+    File.write!(Path.join(dir, "c.ex"), "")
+    File.write!(Path.join(dir, "b.ex"), "")
+
+    # Limit = 2, Offset = 1
+    output =
+      Beamcore.Agent.Tools.Glob.execute(%{
+        "pattern" => "*.ex",
+        "path" => dir,
+        "limit" => 2,
+        "offset" => 1
+      })
+
+    assert String.contains?(output, "a.ex")
+    assert String.contains?(output, "b.ex")
+    refute String.contains?(output, "c.ex")
+    assert String.contains?(output, "(Showing matches 1-2. 1 matches left.")
+
+    # Offset = 3, Limit = 2
+    output =
+      Beamcore.Agent.Tools.Glob.execute(%{
+        "pattern" => "*.ex",
+        "path" => dir,
+        "limit" => 2,
+        "offset" => 3
+      })
+
+    assert String.contains?(output, "c.ex")
+    refute String.contains?(output, "a.ex")
+    refute String.contains?(output, "b.ex")
+  end
 end
