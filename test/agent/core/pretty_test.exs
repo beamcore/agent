@@ -124,4 +124,72 @@ defmodule Beamcore.Agent.Core.PrettyTest do
     assert output =~ "prompt:"
     refute output =~ "image prompt image prompt"
   end
+
+  test "fs tool call display matches polished output" do
+    old_no_color = System.get_env("NO_COLOR")
+    System.put_env("NO_COLOR", "true")
+
+    output =
+      capture_io(fn ->
+        Pretty.print_tool_call("fs", %{"operation" => "mkdir", "path" => "lib/new_dir"})
+      end)
+
+    if old_no_color,
+      do: System.put_env("NO_COLOR", old_no_color),
+      else: System.delete_env("NO_COLOR")
+
+    assert output =~ "op: mkdir"
+    assert output =~ "path: lib/new_dir"
+  end
+
+  test "git tool call display matches polished output" do
+    old_no_color = System.get_env("NO_COLOR")
+    System.put_env("NO_COLOR", "true")
+
+    output =
+      capture_io(fn ->
+        Pretty.print_tool_call("git", %{"operation" => "add", "path" => "lib/agent.ex"})
+      end)
+
+    if old_no_color,
+      do: System.put_env("NO_COLOR", old_no_color),
+      else: System.delete_env("NO_COLOR")
+
+    assert output =~ "op: add"
+    assert output =~ "path: lib/agent.ex"
+  end
+
+  test "task tool call display matches polished output" do
+    old_no_color = System.get_env("NO_COLOR")
+    System.put_env("NO_COLOR", "true")
+
+    output =
+      capture_io(fn ->
+        Pretty.print_tool_call("task", %{"name" => "sneezing_walrus", "prompt" => "solve it"})
+      end)
+
+    if old_no_color,
+      do: System.put_env("NO_COLOR", old_no_color),
+      else: System.delete_env("NO_COLOR")
+
+    assert output =~ "name: sneezing_walrus"
+    assert output =~ "prompt: solve it..."
+  end
+
+  test "mix tool call display matches polished output" do
+    old_no_color = System.get_env("NO_COLOR")
+    System.put_env("NO_COLOR", "true")
+
+    output =
+      capture_io(fn ->
+        Pretty.print_tool_call("mix", %{"command" => "test", "args" => "test/agent_test.exs"})
+      end)
+
+    if old_no_color,
+      do: System.put_env("NO_COLOR", old_no_color),
+      else: System.delete_env("NO_COLOR")
+
+    assert output =~ "command: test"
+    assert output =~ "args: test/agent_test.exs"
+  end
 end

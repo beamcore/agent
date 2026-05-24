@@ -78,4 +78,34 @@ defmodule Beamcore.Agent.Tools.TaskTest do
     funny_name = "dusty_cat"
     assert Task.ensure_funny_name(funny_name) == funny_name
   end
+
+  test "execute/1 does not include 'task' tool in the allowed tools list" do
+    parent_pid = self()
+
+    Process.put(:mock_completions_create, fn _client, params ->
+      send(parent_pid, {:intercepted_tools, params.tools})
+
+      {:ok,
+       %{
+         "choices" => [
+           %{
+             "message" => %{
+               "role" => "assistant",
+               "content" => "Completed task without calling other sub-agents."
+             }
+           }
+         ]
+       }}
+    end)
+
+    params = %{
+      "prompt" => "Do some tasks."
+    }
+
+    _result = Task.execute(params)
+
+    assert_receive {:intercepted_tools, tools}
+    # Ensure that none of the tools passed to API have the name "task"
+    refute Enum.any?(tools, fn tool -> tool.function.name == "task" end)
+  end
 end
