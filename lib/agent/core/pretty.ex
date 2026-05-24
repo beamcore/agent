@@ -434,6 +434,7 @@ defmodule Beamcore.Agent.Core.Pretty do
   end
 
   defp maybe_format_arg(_label, nil), do: nil
+
   defp maybe_format_arg(label, val) do
     colorize("#{label}: ", &Colors.dim/0) <> colorize(to_string(val), &Colors.bright_white/0)
   end
