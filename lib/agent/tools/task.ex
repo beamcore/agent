@@ -105,7 +105,11 @@ defmodule Beamcore.Agent.Tools.Task do
 
   defp process_subagent(messages, depth, name, state, policy) do
     client = OpenAI.client()
-    tools = Dispatcher.tool_specs(policy)
+
+    tools =
+      policy
+      |> Dispatcher.tool_specs()
+      |> Enum.reject(fn spec -> spec.function.name == "task" end)
 
     trimmed = trim_messages(messages)
 
