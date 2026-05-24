@@ -7,17 +7,6 @@ defmodule Beamcore.Agent.Tools.Tree do
   Show a compact workspace directory tree with sizes. Rejects unsafe paths.
   """
 
-  @ignored_names [
-    ".git",
-    "_build",
-    "deps",
-    "node_modules",
-    ".venv",
-    "venv",
-    "__pycache__",
-    ".elixir_ls",
-    ".DS_Store"
-  ]
   alias Beamcore.Agent.Tools.PathSafety
 
   def name, do: "tree"
@@ -34,14 +23,6 @@ defmodule Beamcore.Agent.Tools.Tree do
             path: %{
               type: "string",
               description: "Workspace-relative directory. Defaults to root."
-            },
-            depth: %{
-              type: "integer",
-              description: "Maximum depth of the tree. Defaults to 2."
-            },
-            all: %{
-              type: "boolean",
-              description: "If true, include hidden and ignored files."
             }
           }
         }
@@ -50,12 +31,12 @@ defmodule Beamcore.Agent.Tools.Tree do
   end
 
   def execute(params) do
-    depth = Map.get(params, "depth", 2)
     show_all = Map.get(params, "all", false)
 
     with {:ok, path} <- PathSafety.resolve(Map.get(params, "path", ".")) do
       if File.dir?(path) do
-        do_tree(path, depth, "", show_all) |> truncate()
+        ignored = if show_all, do: MapSet.new(), else: PathSafety.gitignores_for_path(path)
+        do_tree(path, path, "", show_all, ignored) |> truncate()
       else
         "Error: '#{path}' is not a directory."
       end
@@ -64,12 +45,12 @@ defmodule Beamcore.Agent.Tools.Tree do
     end
   end
 
-  defp do_tree(path, depth, indent, show_all) do
+  defp do_tree(path, root_path, indent, show_all, ignored) do
     case File.ls(path) do
       {:ok, entries} ->
         entries =
           entries
-          |> filter_entries(path, show_all)
+          |> filter_entries(path, root_path, show_all, ignored)
           |> Enum.sort()
 
         {files, dirs} =
@@ -87,11 +68,9 @@ defmodule Beamcore.Agent.Tools.Tree do
               full_path = Path.join(path, name)
               line = "#{indent}#{name}/"
 
-              if depth > 1 do
-                line <> "\n" <> do_tree(full_path, depth - 1, indent <> "  ", show_all)
-              else
-                line
-              end
+              line <>
+                "\n" <>
+                do_tree(full_path, root_path, indent <> "  ", show_all, ignored)
 
             {:file, name} ->
               full_path = Path.join(path, name)
@@ -106,33 +85,13 @@ defmodule Beamcore.Agent.Tools.Tree do
     end
   end
 
-  defp filter_entries(entries, _path, true), do: entries
+  defp filter_entries(entries, _path, _root_path, true, _ignored), do: entries
 
-  defp filter_entries(entries, path, false) do
+  defp filter_entries(entries, path, root_path, false, ignored) do
     entries
-    |> Enum.reject(&(&1 in @ignored_names))
-    |> filter_git_ignored(path)
-  end
-
-  defp filter_git_ignored([], _path), do: []
-
-  defp filter_git_ignored(entries, path) do
-    case System.cmd("git", ["check-ignore" | entries], cd: path, stderr_to_stdout: true) do
-      {output, 0} ->
-        ignored = String.split(output, "\n", trim: true)
-
-        Enum.reject(entries, fn entry ->
-          entry in ignored or "#{entry}/" in ignored
-        end)
-
-      {_output, 1} ->
-        # exit code 1 means nothing was ignored
-        entries
-
-      _ ->
-        # git might not be available or not a repo
-        entries
-    end
+    |> Enum.reject(fn entry ->
+      PathSafety.ignored?(Path.join(path, entry), root_path, ignored)
+    end)
   end
 
   defp get_size(path) do

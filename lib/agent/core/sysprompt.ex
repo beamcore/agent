@@ -19,7 +19,6 @@ defmodule Beamcore.Agent.Core.SysPrompt do
   Generates the full system prompt.
   """
   def generate(project_nature \\ :unknown) do
-    cwd = File.cwd!()
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
 
     """
@@ -27,7 +26,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
 
     Your function is to follow the user instructions or intent.
 
-    Workspace: #{cwd}
+    Workspace: .
     #{project_nature_details(project_nature)}
 
     Available tools:

@@ -10,11 +10,26 @@ defmodule Beamcore.Agent.Tools.PathSafety do
 
   def resolve(path, opts) when is_binary(path) do
     allow_missing = Keyword.get(opts, :allow_missing, false)
+    root = workspace_root()
 
-    with :ok <- reject_absolute(path),
-         :ok <- reject_traversal(path) do
-      root = workspace_root()
-      candidate = Path.expand(path, root)
+    cleaned_path =
+      cond do
+        path == "/" or String.trim(path) == "" ->
+          "."
+
+        path == root ->
+          "."
+
+        String.starts_with?(path, root <> "/") ->
+          Path.relative_to(path, root)
+
+        true ->
+          path
+      end
+
+    with :ok <- reject_absolute(cleaned_path),
+         :ok <- reject_traversal(cleaned_path) do
+      candidate = Path.expand(cleaned_path, root)
 
       with :ok <- ensure_inside_workspace(candidate, root),
            :ok <- ensure_symlinks_inside(candidate, root, allow_missing) do
@@ -147,5 +162,104 @@ defmodule Beamcore.Agent.Tools.PathSafety do
 
   defp inside?(path, root) do
     path == root or String.starts_with?(path, root <> "/")
+  end
+
+  @default_ignored MapSet.new([
+                     ".git",
+                     "_build",
+                     "deps",
+                     "node_modules",
+                     ".venv",
+                     "venv",
+                     "__pycache__",
+                     ".elixir_ls",
+                     ".DS_Store"
+                   ])
+
+  @doc """
+  Gets all gitignore ignore patterns for the given directory and the workspace root.
+  """
+  def gitignores_for_path(path) do
+    root = workspace_root()
+    ignores = get_ignores_from_dir(root)
+
+    ignores =
+      if path != root do
+        MapSet.union(ignores, get_ignores_from_dir(path))
+      else
+        ignores
+      end
+
+    MapSet.union(ignores, @default_ignored)
+  end
+
+  @doc """
+  Checks if a file is ignored based on the provided ignore patterns relative to a directory.
+  """
+  def ignored?(file, path, ignored_patterns) do
+    rel_path = Path.relative_to(file, path)
+    components = Path.split(rel_path)
+
+    # First do a fast exact match of any individual component
+    if Enum.any?(components, &MapSet.member?(ignored_patterns, &1)) do
+      true
+    else
+      # Otherwise check wildcard patterns and full path matching
+      Enum.any?(ignored_patterns, fn pattern ->
+        match_pattern?(rel_path, components, pattern)
+      end)
+    end
+  end
+
+  defp match_pattern?(rel_path, components, pattern) do
+    cond do
+      (String.contains?(pattern, "*") or String.contains?(pattern, "?")) and
+          not String.contains?(pattern, "/") ->
+        regex_str =
+          pattern
+          |> Regex.escape()
+          |> String.replace("\\*", ".*")
+          |> String.replace("\\?", ".")
+
+        case Regex.compile("^" <> regex_str <> "$") do
+          {:ok, regex} -> Enum.any?(components, &Regex.match?(regex, &1))
+          _ -> false
+        end
+
+      String.contains?(pattern, "/") ->
+        regex_str =
+          pattern
+          |> Regex.escape()
+          |> String.replace("\\*", ".*")
+          |> String.replace("\\?", ".")
+          |> then(&(&1 <> "(?:/.*)?"))
+
+        case Regex.compile("^" <> regex_str <> "$") do
+          {:ok, regex} -> Regex.match?(regex, rel_path)
+          _ -> false
+        end
+
+      true ->
+        false
+    end
+  end
+
+  defp get_ignores_from_dir(dir) do
+    gitignore = Path.join(dir, ".gitignore")
+
+    if File.exists?(gitignore) do
+      gitignore
+      |> File.read!()
+      |> String.split("\n", trim: true)
+      |> Enum.reject(&(String.starts_with?(&1, "#") or String.trim(&1) == ""))
+      |> Enum.map(fn line ->
+        line
+        |> String.trim_trailing("/")
+        |> String.trim_leading("/")
+      end)
+      |> MapSet.new()
+    else
+      MapSet.new()
+    end
   end
 end

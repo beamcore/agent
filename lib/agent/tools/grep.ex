@@ -69,11 +69,19 @@ defmodule Beamcore.Agent.Tools.Grep do
 
   defp do_execute(pattern, path, include, show_all, offset, limit) do
     case rg_execute(pattern, path, include, show_all) do
-      {:ok, output} -> paginate_output(output, offset, limit)
-      {:nomatch, output} when output != "" -> paginate_output(output, offset, limit)
-      {:nomatch, _output} -> "No matches found."
-      {:unavailable, _reason} -> fallback_execute(pattern, path, include, show_all, offset, limit)
-      {:error, output} -> "Error running grep: #{truncate(output)}"
+      {:ok, output} ->
+        output
+        |> relativize_output()
+        |> paginate_output(offset, limit)
+
+      {:nomatch, _} ->
+        "No matches found."
+
+      {:unavailable, _} ->
+        fallback_execute(pattern, path, include, show_all, offset, limit)
+
+      {:error, output} ->
+        "Error running grep: #{truncate(output)}"
     end
   end
 
@@ -92,12 +100,9 @@ defmodule Beamcore.Agent.Tools.Grep do
     args = if include, do: ["-g", include | common_args], else: common_args
 
     case safe_cmd("rg", args ++ [path], stderr_to_stdout: true) do
-      {:ok, output, 0} ->
-        output = filter_ignored_output(output, path, show_all)
-        if output == "", do: {:nomatch, output}, else: {:ok, output}
-
-      {:ok, output, 1} ->
-        {:nomatch, filter_ignored_output(output, path, show_all)}
+      {:ok, output, exit_code} when exit_code in [0, 1] ->
+        filtered = filter_ignored_output(output, path, show_all)
+        if filtered == "", do: {:nomatch, ""}, else: {:ok, filtered}
 
       {:ok, output, _exit_code} ->
         {:error, output}
@@ -110,7 +115,7 @@ defmodule Beamcore.Agent.Tools.Grep do
   defp filter_ignored_output(output, _path, true), do: output
 
   defp filter_ignored_output(output, path, false) do
-    ignored = ignored_names(path)
+    ignored = PathSafety.gitignores_for_path(path)
 
     if MapSet.size(ignored) == 0 do
       output
@@ -123,7 +128,7 @@ defmodule Beamcore.Agent.Tools.Grep do
           |> String.split(":", parts: 2)
           |> List.first()
 
-        MapSet.member?(ignored, Path.basename(file))
+        PathSafety.ignored?(file, path, ignored)
       end)
       |> Enum.join("\n")
     end
@@ -132,17 +137,12 @@ defmodule Beamcore.Agent.Tools.Grep do
   defp fallback_execute(pattern, path, include, show_all, offset, limit) do
     regex = Regex.compile!(pattern)
 
-    output =
-      path
-      |> candidate_files(include, show_all)
-      |> Enum.flat_map(&grep_file(&1, regex))
-      |> Enum.join("\n")
-
-    if output == "" do
-      "No matches found."
-    else
-      paginate_output(output, offset, limit)
-    end
+    path
+    |> candidate_files(include, show_all)
+    |> Enum.flat_map(&grep_file(&1, regex))
+    |> Enum.join("\n")
+    |> relativize_output()
+    |> paginate_output(offset, limit)
   rescue
     e -> "Error running grep fallback: #{Exception.message(e)}"
   end
@@ -153,13 +153,13 @@ defmodule Beamcore.Agent.Tools.Grep do
         [path]
 
       File.dir?(path) ->
-        ignored = if show_all, do: MapSet.new(), else: ignored_names(path)
+        ignored = if show_all, do: MapSet.new(), else: PathSafety.gitignores_for_path(path)
 
         path
         |> Path.join("**/*")
         |> Path.wildcard(match_dot: show_all)
         |> Enum.filter(&File.regular?/1)
-        |> Enum.reject(&(Path.basename(&1) in ignored))
+        |> Enum.reject(&PathSafety.ignored?(&1, path, ignored))
         |> filter_include(include)
 
       true ->
@@ -172,20 +172,6 @@ defmodule Beamcore.Agent.Tools.Grep do
   defp filter_include(files, include) do
     regex = glob_regex(include)
     Enum.filter(files, &(Regex.match?(regex, Path.basename(&1)) or Regex.match?(regex, &1)))
-  end
-
-  defp ignored_names(path) do
-    gitignore = Path.join(path, ".gitignore")
-
-    if File.exists?(gitignore) do
-      gitignore
-      |> File.read!()
-      |> String.split("\n", trim: true)
-      |> Enum.reject(&(String.starts_with?(&1, "#") or String.trim(&1) == ""))
-      |> MapSet.new()
-    else
-      MapSet.new()
-    end
   end
 
   defp grep_file(path, regex) do
@@ -205,13 +191,28 @@ defmodule Beamcore.Agent.Tools.Grep do
     _ -> []
   end
 
+  defp relativize_output(output) do
+    root = PathSafety.workspace_root() <> "/"
+    root_len = String.length(root)
+
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.map_join("\n", fn line ->
+      if String.starts_with?(line, root) do
+        String.slice(line, root_len..-1//1)
+      else
+        line
+      end
+    end)
+  end
+
   defp paginate_output(output, offset, limit) do
     lines = String.split(output, "\n", trim: true)
     total_lines = length(lines)
     start_idx = max(0, offset - 1)
     sliced_lines = Enum.slice(lines, start_idx, limit)
     shown_count = length(sliced_lines)
-    left_count = total_lines - (start_idx + shown_count)
+    left_count = max(0, total_lines - (start_idx + shown_count))
 
     result = Enum.join(sliced_lines, "\n")
 
@@ -221,10 +222,12 @@ defmodule Beamcore.Agent.Tools.Grep do
 
       left_count > 0 ->
         last = offset + shown_count - 1
-        next = last + 1
 
         result <>
-          "\n\n(Showing matches #{offset}-#{last}. #{left_count} matches left. Use offset=#{next} to continue.)"
+          "\n\n(Showing matches #{offset}-#{last}. #{left_count} matches left. Use offset=#{last + 1} to continue.)"
+
+      result == "" ->
+        "(Offset #{offset} is out of range. #{total_lines} matches found.)"
 
       true ->
         result <> "\n\n(#{total_lines} matches found. End of matches.)"
