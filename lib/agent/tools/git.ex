@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Tools.Git do
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Run explicit git operations inside the workspace. Log returns two commits.
+  Run explicit git operations inside the workspace. Log returns up to limit commits.
   """
 
   def name, do: "git"
@@ -43,6 +43,14 @@ defmodule Beamcore.Agent.Tools.Git do
             staged: %{
               type: "boolean",
               description: "If true, show staged changes for diff."
+            },
+            limit: %{
+              type: "integer",
+              description: "Max commits to return for log. Defaults to 5."
+            },
+            base: %{
+              type: "string",
+              description: "Base revision/branch to compare or log against (e.g. origin/main)."
             }
           },
           required: ["operation"]
@@ -106,16 +114,29 @@ defmodule Beamcore.Agent.Tools.Git do
         end
 
       "log" ->
-        run_git(["log", "-n", "2"], workdir)
+        limit = Map.get(params, "limit", 5)
+        base = Map.get(params, "base")
+
+        with :ok <- validate_revision(base) do
+          args = ["log", "-n", to_string(limit)]
+          args = if base, do: args ++ [base], else: args
+          run_git(args, workdir)
+        else
+          {:error, reason} -> PathSafety.error(reason)
+        end
 
       "diff" ->
         staged = Map.get(params, "staged", false)
+        base = Map.get(params, "base")
         path = Map.get(params, "path")
-        args = ["diff"]
-        args = if staged, do: args ++ ["--staged"], else: args
 
-        with :ok <- validate_optional_path(path) do
-          args = if path, do: args ++ [path], else: args
+        with :ok <- validate_revision(base),
+             :ok <- validate_optional_path(path) do
+          args = ["diff"]
+          args = if staged, do: args ++ ["--staged"], else: args
+          args = if base, do: args ++ [base], else: args
+          args = if path, do: args ++ ["--", path], else: args
+
           run_git(args, workdir)
         else
           {:error, reason} -> PathSafety.error(reason)
@@ -148,6 +169,18 @@ defmodule Beamcore.Agent.Tools.Git do
 
   defp validate_optional_path(nil), do: :ok
   defp validate_optional_path(path), do: PathSafety.validate_pattern(path)
+
+  defp validate_revision(nil), do: :ok
+
+  defp validate_revision(rev) when is_binary(rev) do
+    if String.starts_with?(rev, "-") do
+      {:error, "revision cannot start with '-'"}
+    else
+      :ok
+    end
+  end
+
+  defp validate_revision(_), do: {:error, "revision must be a string"}
 
   defp run_git(args, workdir) do
     case System.find_executable("git") do
@@ -183,7 +216,7 @@ defmodule Beamcore.Agent.Tools.Git do
     end
   end
 
-  defp truncate(output, max \\ 10_000) do
+  defp truncate(output, max \\ 100_000) do
     if byte_size(output) > max,
       do: String.slice(output, 0, max) <> "\n... (truncated)",
       else: output
