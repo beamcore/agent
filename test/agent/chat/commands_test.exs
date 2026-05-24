@@ -167,4 +167,21 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert result.policy_override != nil
     assert result.policy_override.mode == :unrestricted
   end
+
+  test "unknown command keeps plain CLI error rendering" do
+    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+    output = capture_io(fn -> assert Commands.execute("missing", session) == session end)
+
+    assert output =~ "Unknown command: /missing"
+  end
+
+  test "unknown command can be captured by TUI output callback" do
+    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+    assert Commands.execute("missing", session, output: fn message -> send(self(), message) end) ==
+             session
+
+    assert_received "Error: Unknown command: /missing"
+  end
 end
