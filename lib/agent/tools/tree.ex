@@ -23,14 +23,6 @@ defmodule Beamcore.Agent.Tools.Tree do
             path: %{
               type: "string",
               description: "Workspace-relative directory. Defaults to root."
-            },
-            depth: %{
-              type: "integer",
-              description: "Maximum depth of the tree. Defaults to 2."
-            },
-            all: %{
-              type: "boolean",
-              description: "If true, include hidden and ignored files."
             }
           }
         }
@@ -39,13 +31,12 @@ defmodule Beamcore.Agent.Tools.Tree do
   end
 
   def execute(params) do
-    depth = Map.get(params, "depth", 2)
     show_all = Map.get(params, "all", false)
 
     with {:ok, path} <- PathSafety.resolve(Map.get(params, "path", ".")) do
       if File.dir?(path) do
         ignored = if show_all, do: MapSet.new(), else: PathSafety.gitignores_for_path(path)
-        do_tree(path, path, depth, "", show_all, ignored) |> truncate()
+        do_tree(path, path, "", show_all, ignored) |> truncate()
       else
         "Error: '#{path}' is not a directory."
       end
@@ -54,7 +45,7 @@ defmodule Beamcore.Agent.Tools.Tree do
     end
   end
 
-  defp do_tree(path, root_path, depth, indent, show_all, ignored) do
+  defp do_tree(path, root_path, indent, show_all, ignored) do
     case File.ls(path) do
       {:ok, entries} ->
         entries =
@@ -77,13 +68,9 @@ defmodule Beamcore.Agent.Tools.Tree do
               full_path = Path.join(path, name)
               line = "#{indent}#{name}/"
 
-              if depth > 1 do
-                line <>
-                  "\n" <>
-                  do_tree(full_path, root_path, depth - 1, indent <> "  ", show_all, ignored)
-              else
-                line
-              end
+              line <>
+                "\n" <>
+                do_tree(full_path, root_path, indent <> "  ", show_all, ignored)
 
             {:file, name} ->
               full_path = Path.join(path, name)

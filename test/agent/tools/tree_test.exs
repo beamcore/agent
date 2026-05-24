@@ -46,20 +46,6 @@ defmodule Beamcore.Agent.Tools.TreeTest do
     assert String.contains?(output, "deps/")
   end
 
-  test "tree respects depth parameter", %{dir: dir} do
-    File.mkdir_p!(Path.join(dir, "src"))
-    File.write!(Path.join([dir, "src", "main.ex"]), "main")
-    File.write!(Path.join(dir, "README.md"), "readme")
-
-    # Depth 1 should show src/ but not its contents
-    params = %{"path" => dir, "depth" => 1}
-    output = Tree.execute(params)
-
-    assert String.contains?(output, "src/")
-    refute String.contains?(output, "main.ex")
-    assert String.contains?(output, "README.md")
-  end
-
   test "tree respects .gitignore", %{dir: dir} do
     # Initialize a git repo in the temp dir
     System.cmd("git", ["init"], cd: dir)
@@ -94,5 +80,20 @@ defmodule Beamcore.Agent.Tools.TreeTest do
     output = Tree.execute(%{"path" => "../"})
 
     assert output =~ "path traversal is not allowed"
+  end
+
+  test "tree does fully recursive search", %{dir: dir} do
+    # Create a deep nested directory structure
+    File.mkdir_p!(Path.join([dir, "level1", "level2", "level3"]))
+    File.write!(Path.join([dir, "level1", "level2", "level3", "deepest.txt"]), "deep")
+
+    params = %{"path" => dir}
+    output = Tree.execute(params)
+
+    # By default, it should list all levels
+    assert String.contains?(output, "level1/")
+    assert String.contains?(output, "level2/")
+    assert String.contains?(output, "level3/")
+    assert String.contains?(output, "deepest.txt")
   end
 end
