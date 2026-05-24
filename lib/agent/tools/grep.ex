@@ -115,7 +115,7 @@ defmodule Beamcore.Agent.Tools.Grep do
   defp filter_ignored_output(output, _path, true), do: output
 
   defp filter_ignored_output(output, path, false) do
-    ignored = ignored_names(path)
+    ignored = PathSafety.gitignores_for_path(path)
 
     if MapSet.size(ignored) == 0 do
       output
@@ -128,7 +128,7 @@ defmodule Beamcore.Agent.Tools.Grep do
           |> String.split(":", parts: 2)
           |> List.first()
 
-        ignored?(file, path, ignored)
+        PathSafety.ignored?(file, path, ignored)
       end)
       |> Enum.join("\n")
     end
@@ -153,13 +153,13 @@ defmodule Beamcore.Agent.Tools.Grep do
         [path]
 
       File.dir?(path) ->
-        ignored = if show_all, do: MapSet.new(), else: ignored_names(path)
+        ignored = if show_all, do: MapSet.new(), else: PathSafety.gitignores_for_path(path)
 
         path
         |> Path.join("**/*")
         |> Path.wildcard(match_dot: show_all)
         |> Enum.filter(&File.regular?/1)
-        |> Enum.reject(&ignored?(&1, path, ignored))
+        |> Enum.reject(&PathSafety.ignored?(&1, path, ignored))
         |> filter_include(include)
 
       true ->
@@ -172,44 +172,6 @@ defmodule Beamcore.Agent.Tools.Grep do
   defp filter_include(files, include) do
     regex = glob_regex(include)
     Enum.filter(files, &(Regex.match?(regex, Path.basename(&1)) or Regex.match?(regex, &1)))
-  end
-
-  defp ignored_names(path) do
-    root = PathSafety.workspace_root()
-    ignores = get_ignores_from_dir(root)
-
-    if path != root do
-      MapSet.union(ignores, get_ignores_from_dir(path))
-    else
-      ignores
-    end
-  end
-
-  defp get_ignores_from_dir(dir) do
-    gitignore = Path.join(dir, ".gitignore")
-
-    if File.exists?(gitignore) do
-      gitignore
-      |> File.read!()
-      |> String.split("\n", trim: true)
-      |> Enum.reject(&(String.starts_with?(&1, "#") or String.trim(&1) == ""))
-      |> Enum.map(fn line ->
-        line
-        |> String.trim_trailing("/")
-        |> String.trim_leading("/")
-      end)
-      |> MapSet.new()
-    else
-      MapSet.new()
-    end
-  end
-
-  defp ignored?(file, path, ignored) do
-    rel_path = Path.relative_to(file, path)
-
-    rel_path
-    |> Path.split()
-    |> Enum.any?(&MapSet.member?(ignored, &1))
   end
 
   defp grep_file(path, regex) do
@@ -260,7 +222,9 @@ defmodule Beamcore.Agent.Tools.Grep do
 
       left_count > 0 ->
         last = offset + shown_count - 1
-        result <> "\n\n(Showing matches #{offset}-#{last}. #{left_count} matches left. Use offset=#{last + 1} to continue.)"
+
+        result <>
+          "\n\n(Showing matches #{offset}-#{last}. #{left_count} matches left. Use offset=#{last + 1} to continue.)"
 
       result == "" ->
         "(Offset #{offset} is out of range. #{total_lines} matches found.)"

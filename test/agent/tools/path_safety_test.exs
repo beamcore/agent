@@ -11,6 +11,18 @@ defmodule Beamcore.Agent.Tools.PathSafetyTest do
     assert nested_path == Path.expand("lib/agent/openai.ex")
   end
 
+  test "tolerates leading slash and absolute workspace root paths" do
+    root = PathSafety.workspace_root()
+    assert {:ok, path1} = PathSafety.resolve("/")
+    assert path1 == root
+
+    assert {:ok, path2} = PathSafety.resolve(root)
+    assert path2 == root
+
+    assert {:ok, path3} = PathSafety.resolve(Path.join(root, "README.md"))
+    assert path3 == Path.expand("README.md")
+  end
+
   test "rejects absolute paths" do
     assert {:error, reason} = PathSafety.resolve("/etc/passwd")
     assert reason =~ "absolute paths are not allowed"
@@ -59,5 +71,43 @@ defmodule Beamcore.Agent.Tools.PathSafetyTest do
       File.rm_rf!(workspace_link)
       File.rm_rf!(outside_dir)
     end
+  end
+
+  test "gitignores_for_path and ignored? work correctly" do
+    dir = "test/tmp_path_safety_test"
+    File.rm_rf!(dir)
+    File.mkdir_p!(dir)
+
+    on_exit(fn -> File.rm_rf!(dir) end)
+
+    # Create dummy gitignore
+    File.write!(Path.join(dir, ".gitignore"), "# Comment\nignored_file.ex\nignored_dir/\n")
+
+    ignores = PathSafety.gitignores_for_path(dir)
+
+    assert MapSet.member?(ignores, "ignored_file.ex")
+    assert MapSet.member?(ignores, "ignored_dir")
+
+    assert PathSafety.ignored?(Path.join(dir, "ignored_file.ex"), dir, ignores)
+    assert PathSafety.ignored?(Path.join(dir, "ignored_dir/some_file.ex"), dir, ignores)
+    refute PathSafety.ignored?(Path.join(dir, "visible_file.ex"), dir, ignores)
+  end
+
+  test "gitignores_for_path and ignored? with wildcards" do
+    dir = "test/tmp_path_safety_wildcard_test"
+    File.rm_rf!(dir)
+    File.mkdir_p!(dir)
+
+    on_exit(fn -> File.rm_rf!(dir) end)
+
+    File.write!(Path.join(dir, ".gitignore"), "*.log\nsrc/secret_*.ex\n")
+
+    ignores = PathSafety.gitignores_for_path(dir)
+
+    assert PathSafety.ignored?(Path.join(dir, "test.log"), dir, ignores)
+    assert PathSafety.ignored?(Path.join(dir, "nested/test.log"), dir, ignores)
+    assert PathSafety.ignored?(Path.join(dir, "src/secret_code.ex"), dir, ignores)
+    assert PathSafety.ignored?(Path.join(dir, "src/secret_code.ex/nested.txt"), dir, ignores)
+    refute PathSafety.ignored?(Path.join(dir, "src/normal.ex"), dir, ignores)
   end
 end
