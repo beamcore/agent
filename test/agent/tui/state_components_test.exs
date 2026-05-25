@@ -42,6 +42,19 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     refute widget.text =~ "%{"
   end
 
+  test "status bar restores compact BeamCore state indicator only", %{state: state} do
+    content = state |> StatusBar.widget(:wide) |> paragraph_text()
+
+    assert content =~ "◢▣◣"
+    assert content =~ "▱▱▱"
+
+    empty_source = File.read!("lib/agent/tui/components/empty_state.ex")
+    header_source = File.read!("lib/agent/tui/render.ex")
+
+    refute empty_source =~ "Mascot"
+    refute header_source =~ "Mascot"
+  end
+
   test "animation ticks are throttled and mark state dirty", %{state: state} do
     refute State.animation_due?(state, 100)
     assert State.animation_due?(state, 600)
@@ -240,24 +253,14 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
 
   test "status bar reflects autonomous yolo default", %{state: state} do
     widget = StatusBar.widget(state, :wide)
-    text = widget.text
-
-    content =
-      if is_binary(text),
-        do: text,
-        else: text |> List.first() |> Map.get(:spans, []) |> Enum.map(& &1.content) |> Enum.join()
+    content = paragraph_text(widget)
 
     assert content =~ "YOLO"
   end
 
   test "status bar includes project policy indicator", %{state: state} do
     widget = StatusBar.widget(state, :wide)
-    text = widget.text
-
-    content =
-      if is_binary(text),
-        do: text,
-        else: text |> List.first() |> Map.get(:spans, []) |> Enum.map(& &1.content) |> Enum.join()
+    content = paragraph_text(widget)
 
     assert content =~ "policy:"
   end
@@ -415,5 +418,13 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
       _ ->
         :ok
     end
+  end
+
+  defp paragraph_text(%{text: text}) when is_binary(text), do: text
+
+  defp paragraph_text(%{text: lines}) when is_list(lines) do
+    lines
+    |> Enum.flat_map(&Map.get(&1, :spans, []))
+    |> Enum.map_join(& &1.content)
   end
 end
