@@ -144,14 +144,17 @@ defmodule Beamcore.Agent.Tools.Python do
     if command == "venv" do
       run_venv_command(args, venv, name)
     else
+      # Resolve the virtual environment path
+      venv_path = get_venv_path(venv)
+
       # Resolve the actual command to run
       actual_command = resolve_command(command, args)
 
-      # Build the full command list
-      {base_cmd, cmd_args} = build_command(actual_command, venv)
+      # Build the full command list using the resolved venv path
+      {base_cmd, cmd_args} = build_command(actual_command, venv_path)
 
-      # Set up environment variables
-      env = build_environment(venv)
+      # Set up environment variables using the resolved venv path
+      env = build_environment(venv_path)
 
       # Execute the command
       {output, exit_code} = runner().(base_cmd, cmd_args, stderr_to_stdout: true, env: env)
@@ -213,35 +216,71 @@ defmodule Beamcore.Agent.Tools.Python do
     end
   end
 
-  defp build_command(command_string, venv) do
-    # Split the command string into parts
-    parts = String.split(command_string, " ", trim: true)
-
-    # If we have a venv, prepend the venv's Python executable
-    if venv != "" do
-      case resolve_venv_path(venv) do
-        nil ->
-          {python_executable(), parts}
-
-        venv_path ->
-          venv_python = if File.exists?(venv_path), do: "#{venv_path}/bin/python", else: "python3"
-          {venv_python, parts}
-      end
-    else
-      # Use the system python executable
-      {python_executable(), parts}
+  defp get_venv_path("") do
+    cond do
+      File.exists?(".venv") -> ".venv"
+      File.exists?("venv") -> "venv"
+      true -> nil
     end
   end
 
-  defp build_environment(venv) do
+  defp get_venv_path(venv) do
+    resolve_venv_path(venv) || venv
+  end
+
+  defp build_command(command_string, venv_path) do
+    parts = String.split(command_string, " ", trim: true)
+
+    if venv_path do
+      build_venv_command(parts, venv_path)
+    else
+      build_system_command(parts)
+    end
+  end
+
+  defp build_venv_command([first | rest], venv_path) do
+    cond do
+      first in ["python", "python3"] ->
+        {"#{venv_path}/bin/python", rest}
+
+      first == "pip" ->
+        pip_path = "#{venv_path}/bin/pip"
+
+        if File.exists?(pip_path) do
+          {pip_path, rest}
+        else
+          {"#{venv_path}/bin/python", ["-m", "pip" | rest]}
+        end
+
+      true ->
+        tool_path = "#{venv_path}/bin/#{first}"
+
+        if File.exists?(tool_path) do
+          {tool_path, rest}
+        else
+          {"#{venv_path}/bin/python", ["-m", first | rest]}
+        end
+    end
+  end
+
+  defp build_system_command([first | rest]) do
+    cond do
+      first in ["python", "python3"] ->
+        {python_executable(), rest}
+
+      first == "pip" ->
+        {python_executable(), ["-m", "pip" | rest]}
+
+      true ->
+        {python_executable(), ["-m", first | rest]}
+    end
+  end
+
+  defp build_environment(venv_path) do
     env = [{"PYTHONPATH", System.get_env("PYTHONPATH") || ""}]
 
-    # If using a venv, add VIRTUAL_ENV
-    if venv != "" do
-      case resolve_venv_path(venv) do
-        nil -> env
-        venv_path -> [{"VIRTUAL_ENV", venv_path} | env]
-      end
+    if venv_path do
+      [{"VIRTUAL_ENV", Path.expand(venv_path)} | env]
     else
       env
     end
@@ -250,18 +289,15 @@ defmodule Beamcore.Agent.Tools.Python do
   defp resolve_venv_path(""), do: nil
 
   defp resolve_venv_path(venv) do
-    # Check if it's a path
     if String.starts_with?(venv, "/") || String.starts_with?(venv, "./") do
       if File.exists?(venv), do: venv, else: nil
     else
-      # Look in common locations
       locations = [
+        venv,
         ".venv",
         "venv",
         "env",
-        ".python-venv",
-        "~/venvs/#{venv}",
-        "/opt/venvs/#{venv}"
+        ".python-venv"
       ]
 
       Enum.find_value(locations, fn path ->

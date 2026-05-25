@@ -16,7 +16,7 @@ defmodule Beamcore.Agent.Tools.PythonTest do
         Python.execute(%{"command" => "build"}) |> decode!()
       end)
 
-    assert_receive {:python_called, ["python", "-m", "build"], _opts}
+    assert_receive {:python_called, ["-m", "build"], _opts}
     assert result["ok"] == true
     assert result["command"] == "build"
     assert result["args"] == ""
@@ -77,10 +77,10 @@ defmodule Beamcore.Agent.Tools.PythonTest do
     assert Enum.map(result["steps"], & &1["name"]) == ["format", "lint", "type-check", "test"]
     assert Enum.all?(result["steps"], & &1["ok"])
 
-    assert_receive {:python_called, ["black", "--check"], _format_opts}
-    assert_receive {:python_called, ["ruff", "check"], _lint_opts}
-    assert_receive {:python_called, ["mypy"], _type_check_opts}
-    assert_receive {:python_called, ["pytest"], _test_opts}
+    assert_receive {:python_called, ["-m", "black", "--check"], _format_opts}
+    assert_receive {:python_called, ["-m", "ruff", "check"], _lint_opts}
+    assert_receive {:python_called, ["-m", "mypy"], _type_check_opts}
+    assert_receive {:python_called, ["-m", "pytest"], _test_opts}
   end
 
   test "includes a compact diagnostic tail for long output" do
@@ -89,7 +89,7 @@ defmodule Beamcore.Agent.Tools.PythonTest do
       |> Enum.map(&"line #{&1}")
       |> Enum.join("\n")
 
-    runner = fn "python3", ["pytest"], _opts ->
+    runner = fn "python3", ["-m", "pytest"], _opts ->
       {output, 0}
     end
 
@@ -108,7 +108,7 @@ defmodule Beamcore.Agent.Tools.PythonTest do
   end
 
   test "failed commands point the agent to output_tail" do
-    runner = fn "python3", ["pytest"], _opts ->
+    runner = fn "python3", ["-m", "pytest"], _opts ->
       {"line 1\nfailure details", 2}
     end
 
@@ -129,19 +129,19 @@ defmodule Beamcore.Agent.Tools.PythonTest do
     parent = self()
 
     runner = fn
-      "python3", ["black", "--check"], _opts ->
+      "python3", ["-m", "black", "--check"], _opts ->
         send(parent, {:python_called, "format"})
         {"formatted", 0}
 
-      "python3", ["ruff", "check"], _opts ->
+      "python3", ["-m", "ruff", "check"], _opts ->
         send(parent, {:python_called, "lint"})
         {"lint failed", 1}
 
-      "python3", ["mypy"], _opts ->
+      "python3", ["-m", "mypy"], _opts ->
         send(parent, {:python_called, "type-check"})
         {"type-check should not run", 0}
 
-      "python3", ["pytest"], _opts ->
+      "python3", ["-m", "pytest"], _opts ->
         send(parent, {:python_called, "test"})
         {"test should not run", 0}
     end
@@ -183,7 +183,7 @@ defmodule Beamcore.Agent.Tools.PythonTest do
     assert result["ok"] == true
     assert result["command"] == "test"
     assert result["args"] == "--verbose --coverage"
-    assert result["stdout"] == "ran with: pytest --verbose --coverage"
+    assert result["stdout"] == "ran with: -m pytest --verbose --coverage"
     assert result["summary"] == "python test --verbose --coverage completed successfully."
   end
 
@@ -203,7 +203,7 @@ defmodule Beamcore.Agent.Tools.PythonTest do
       end)
 
     assert result["ok"] == true
-    assert_receive {:python_called, ["pytest"]}
+    assert_receive {:python_called, ["-m", "pytest"]}
   end
 
   defp decode!(json) do
