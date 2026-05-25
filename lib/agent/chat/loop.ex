@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   Handles the chat loop and user input.
   """
 
-  alias Beamcore.Agent.Chat.{API, Commands, Context, MultilineInput, Session, ToolPolicy}
+  alias Beamcore.Agent.Chat.{API, Commands, Context, CorrectionCatch, MultilineInput, Session, ToolPolicy}
   alias Beamcore.Agent.Core.{Pretty, StatusBar}
   alias Beamcore.Agent.Tools.Dispatcher
 
@@ -175,7 +175,21 @@ defmodule Beamcore.Agent.Chat.Loop do
           compacted_message = Session.compact_for_api(message)
           new_messages = messages ++ [compacted_message]
 
-          if has_tool_calls?(message) do
+          if CorrectionCatch.stuck?(new_messages) do
+            maybe_print(opts, fn ->
+              Pretty.print_warning("⚠️ Repetitive loop detected! Initiating self-correction...")
+            end)
+
+            rolled_session = CorrectionCatch.correct_and_rollover(session, new_messages, pid)
+
+            continue_prompt =
+              "⚠️ SYSTEM INTERRUPT: The assistant was stuck in a repetitive loop. " <>
+                "The session has been compacted and rolled over. " <>
+                "Please analyze the diagnosis and follow the corrected actions to continue with the task."
+
+            send_message(rolled_session, continue_prompt, pid, nil, opts)
+          else
+            if has_tool_calls?(message) do
             # Agent has more work to do — continue the tool chain.
             # Even if needs_compaction is true, we let it finish.
             {tool_responses, session} =
@@ -227,6 +241,7 @@ defmodule Beamcore.Agent.Chat.Loop do
             end
           end
         end
+      end
 
       {:error, %OpenaiEx.Error{kind: :rate_limit}} ->
         maybe_print(opts, &Pretty.print_rate_limit_error/0)
