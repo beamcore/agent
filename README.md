@@ -328,6 +328,55 @@ mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
 
 Also verify that `.env`, `scratch/`, `eval/`, temporary files, and generated artifacts are not staged unless intentionally requested.
 
+## Developer console (IEx)
+
+You can start an interactive Elixir console to test functions and tools directly:
+
+```bash
+iex -S mix
+```
+
+Once in the console, you can call any public function from the Beamcore.Agent modules.
+For example, to test the Mix tool validation:
+
+```elixir
+Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
+```
+
+Or to inspect available tools:
+
+```elixir
+Beamcore.Agent.Tools.Dispatcher.list_tools()
+```
+
+To search for files using glob patterns:
+
+```elixir
+Beamcore.Agent.Tools.Glob.execute(%{"pattern" => "**/*.ex", "limit" => 10})
+```
+
+To search file contents with grep:
+
+```elixir
+Beamcore.Agent.Tools.Grep.execute(%{"pattern" => "defmodule", "include" => "*.ex"})
+```
+
+To read a file directly:
+
+```elixir
+Beamcore.Agent.Tools.Read.execute(%{"filePath" => "README.md", "limit" => 50})
+```
+
+To fetch a web resource (note: requires explicit policy permission):
+
+```elixir
+Beamcore.Agent.Tools.WebGet.execute(%{"url" => "https://example.com"})
+```
+
+The full workspace context is available, so you can also read files, compile modules,
+and run tests directly from the console. This is useful for rapid iteration and
+debugging during development.
+
 ## License
 
 Beamcore.Agent is licensed under the MIT License. See `LICENSE` for details.
