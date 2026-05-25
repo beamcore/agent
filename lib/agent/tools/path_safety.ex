@@ -3,6 +3,9 @@ defmodule Beamcore.Agent.Tools.PathSafety do
   Resolves user-provided tool paths inside the current workspace.
   """
 
+  # Stop Dialyzer from deconstructing MapSet's internal structural representation
+  @dialyzer {:no_opaque, gitignores_for_path: 1, get_ignores_from_dir: 1}
+
   @doc """
   Resolve a relative path to an absolute path inside the workspace.
   """
@@ -43,6 +46,7 @@ defmodule Beamcore.Agent.Tools.PathSafety do
   @doc """
   Validates glob-style patterns used by file tools.
   """
+  @spec validate_pattern(String.t()) :: :ok | {:error, String.t()}
   def validate_pattern(pattern) when is_binary(pattern) do
     with :ok <- reject_absolute(pattern),
          :ok <- reject_traversal(pattern) do
@@ -106,10 +110,13 @@ defmodule Beamcore.Agent.Tools.PathSafety do
     |> Enum.reduce_while(:ok, fn prefix, :ok ->
       case File.lstat(prefix) do
         {:ok, %File.Stat{type: :symlink}} ->
-          with {:ok, link_target} <- File.read_link(prefix),
-               target_path <- resolve_link_target(prefix, link_target),
-               :ok <- ensure_inside_workspace(target_path, root) do
-            {:cont, :ok}
+          with {:ok, link_target} <- File.read_link(prefix) do
+            target_path = resolve_link_target(prefix, link_target)
+
+            case ensure_inside_workspace(target_path, root) do
+              :ok -> {:cont, :ok}
+              {:error, reason} -> {:halt, {:error, reason}}
+            end
           else
             {:error, reason} -> {:halt, {:error, reason}}
           end
@@ -164,17 +171,19 @@ defmodule Beamcore.Agent.Tools.PathSafety do
     path == root or String.starts_with?(path, root <> "/")
   end
 
-  @default_ignored MapSet.new([
-                     ".git",
-                     "_build",
-                     "deps",
-                     "node_modules",
-                     ".venv",
-                     "venv",
-                     "__pycache__",
-                     ".elixir_ls",
-                     ".DS_Store"
-                   ])
+  defp default_ignored do
+    MapSet.new([
+      ".git",
+      "_build",
+      "deps",
+      "node_modules",
+      ".venv",
+      "venv",
+      "__pycache__",
+      ".elixir_ls",
+      ".DS_Store"
+    ])
+  end
 
   @doc """
   Gets all gitignore ignore patterns for the given directory and the workspace root.
@@ -190,7 +199,7 @@ defmodule Beamcore.Agent.Tools.PathSafety do
         ignores
       end
 
-    MapSet.union(ignores, @default_ignored)
+    MapSet.union(ignores, default_ignored())
   end
 
   @doc """
@@ -200,11 +209,9 @@ defmodule Beamcore.Agent.Tools.PathSafety do
     rel_path = Path.relative_to(file, path)
     components = Path.split(rel_path)
 
-    # First do a fast exact match of any individual component
     if Enum.any?(components, &MapSet.member?(ignored_patterns, &1)) do
       true
     else
-      # Otherwise check wildcard patterns and full path matching
       Enum.any?(ignored_patterns, fn pattern ->
         match_pattern?(rel_path, components, pattern)
       end)

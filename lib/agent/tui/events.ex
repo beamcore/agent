@@ -126,8 +126,7 @@ defmodule Beamcore.Agent.TUI.Events do
     {:noreply, refresh_commands(state)}
   end
 
-  defp ctrl?(mods) when is_list(mods), do: "ctrl" in mods
-  defp ctrl?(_mods), do: false
+  defp ctrl?(mods), do: "ctrl" in mods
 
   defp maybe_submit_or_newline(state, mods) do
     if "shift" in mods do
