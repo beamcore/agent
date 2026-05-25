@@ -2,6 +2,7 @@ defmodule Beamcore.Agent.Tools.Write do
   @moduledoc """
   Tool to write content to a file.
   """
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -37,7 +38,8 @@ defmodule Beamcore.Agent.Tools.Write do
     file_path = fetch_path!(params)
     content = Map.fetch!(params, "content")
 
-    with {:ok, expanded_path} <- PathSafety.resolve(file_path, allow_missing: true) do
+    with :ok <- ProjectPolicy.allowed_write_path?(file_path),
+         {:ok, expanded_path} <- PathSafety.resolve(file_path, allow_missing: true) do
       expanded_path |> Path.dirname() |> File.mkdir_p!()
 
       case File.write(expanded_path, content) do

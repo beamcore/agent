@@ -3,6 +3,7 @@ defmodule Beamcore.Agent.Tools.Grep do
   Workspace-bounded content search tool.
   """
 
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -59,7 +60,8 @@ defmodule Beamcore.Agent.Tools.Grep do
     offset = Map.get(params, "offset", 1)
     limit = Map.get(params, "limit", 50)
 
-    with :ok <- PathSafety.validate_pattern(include || "*"),
+    with :ok <- ProjectPolicy.allowed_read_path?(path),
+         :ok <- PathSafety.validate_pattern(include || "*"),
          {:ok, safe_path} <- PathSafety.resolve(path) do
       do_execute(pattern, safe_path, include, show_all, offset, limit)
     else
@@ -112,26 +114,36 @@ defmodule Beamcore.Agent.Tools.Grep do
     end
   end
 
-  defp filter_ignored_output(output, _path, true), do: output
+  defp filter_ignored_output(output, path, true), do: filter_policy_denied_output(output, path)
 
   defp filter_ignored_output(output, path, false) do
     ignored = PathSafety.gitignores_for_path(path)
 
-    if MapSet.size(ignored) == 0 do
-      output
-    else
-      output
-      |> String.split("\n", trim: true)
-      |> Enum.reject(fn line ->
-        file =
-          line
-          |> String.split(":", parts: 2)
-          |> List.first()
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.reject(fn line ->
+      file =
+        line
+        |> String.split(":", parts: 2)
+        |> List.first()
 
-        PathSafety.ignored?(file, path, ignored)
-      end)
-      |> Enum.join("\n")
-    end
+      PathSafety.ignored?(file, path, ignored) or ProjectPolicy.denied_path?(file)
+    end)
+    |> Enum.join("\n")
+  end
+
+  defp filter_policy_denied_output(output, _path) do
+    output
+    |> String.split("\n", trim: true)
+    |> Enum.reject(fn line ->
+      file =
+        line
+        |> String.split(":", parts: 2)
+        |> List.first()
+
+      ProjectPolicy.denied_path?(file)
+    end)
+    |> Enum.join("\n")
   end
 
   defp fallback_execute(pattern, path, include, show_all, offset, limit) do
@@ -159,7 +171,9 @@ defmodule Beamcore.Agent.Tools.Grep do
         |> Path.join("**/*")
         |> Path.wildcard(match_dot: show_all)
         |> Enum.filter(&File.regular?/1)
-        |> Enum.reject(&PathSafety.ignored?(&1, path, ignored))
+        |> Enum.reject(
+          &(PathSafety.ignored?(&1, path, ignored) or ProjectPolicy.denied_path?(&1))
+        )
         |> filter_include(include)
 
       true ->

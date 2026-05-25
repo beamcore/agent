@@ -53,7 +53,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     assert Context.summary(context) =~ "Last validation: mix validate passed"
   end
 
-  test "stores pending action from plan tool without file content" do
+  test "plan tool remains informational and does not create pending action" do
     result =
       Beamcore.Agent.Tools.Plan.execute(%{
         "summary" => "Create a scratch module",
@@ -64,22 +64,8 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
     context = Context.new(:elixir) |> Context.update_from_tool("plan", %{}, result)
 
-    assert context.pending_action.summary == "Create a scratch module"
-    assert context.pending_action.allowed_write_paths == ["scratch/policy_test.ex"]
-    assert context.pending_action.policy.mode == :restricted_write
-
-    assert :ok ==
-             ToolPolicy.allow_tool_call(context.pending_action.policy, "write", %{
-               "filePath" => "scratch/policy_test.ex"
-             })
-
-    assert {:error, message} =
-             ToolPolicy.allow_tool_call(context.pending_action.policy, "write", %{
-               "filePath" => "scratch/other.ex"
-             })
-
-    assert message =~ "scratch/other.ex is not in allowed_write_paths"
-    assert Context.summary(context) =~ "Pending action"
+    assert context.pending_action == nil
+    refute Context.summary(context) =~ "Pending action"
     refute Context.summary(context) =~ "defmodule"
   end
 

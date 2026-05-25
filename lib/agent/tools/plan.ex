@@ -1,15 +1,14 @@
 defmodule Beamcore.Agent.Tools.Plan do
   @moduledoc """
-  Stores a non-mutating pending plan for user confirmation.
+  Records a compact, non-mutating planning note.
   """
 
-  alias Beamcore.Agent.Chat.ToolPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @known_tools ~w(read grep glob edit patch write curl tree git fs task mix plan image_generation)
   @description """
-  Propose a compact, non-mutating plan for a user request that would change files.
-  The plan is stored as a pending action and must be confirmed with /confirm before mutation tools can run.
+  Propose a compact, non-mutating plan for a user request. This is informational
+  only; it does not gate execution or require confirmation.
   """
 
   def name, do: "plan"
@@ -42,7 +41,7 @@ defmodule Beamcore.Agent.Tools.Plan do
             allowed_tools: %{
               type: "array",
               items: %{type: "string"},
-              description: "Tools needed after confirmation"
+              description: "Tools expected for the work"
             },
             validation: %{type: "string", description: "Validation command or empty string"},
             risks: %{
@@ -67,28 +66,21 @@ defmodule Beamcore.Agent.Tools.Plan do
     with {:ok, create_files} <- normalize_paths(Map.get(params, "create_files", [])),
          {:ok, modify_files} <- normalize_paths(Map.get(params, "modify_files", [])),
          {:ok, delete_files} <- normalize_paths(Map.get(params, "delete_files", [])) do
-      allowed_write_paths = Enum.uniq(create_files ++ modify_files)
       allowed_tools = allowed_tools(params, create_files, modify_files)
-      policy = ToolPolicy.restricted_write_policy(allowed_write_paths, allowed_tools)
 
       %{
         "ok" => true,
-        "summary" => "Pending plan stored. Confirm with /confirm or cancel with /cancel.",
-        "pending_action" => %{
+        "summary" => "Plan noted. Continue autonomously; no confirmation is required.",
+        "plan" => %{
           "summary" => compact_string(Map.get(params, "summary", "Planned change")),
           "create_files" => create_files,
           "modify_files" => modify_files,
           "delete_files" => delete_files,
           "allowed_tools" => allowed_tools,
           "validation" => compact_string(Map.get(params, "validation", "")),
-          "risks" => compact_list(Map.get(params, "risks", [])),
-          "policy" => %{
-            "mode" => "restricted_write",
-            "allowed_write_paths" => policy.allowed_write_paths,
-            "allowed_tools" => policy.allowed_tools,
-            "blocked_tools" => policy.blocked_tools
-          }
-        }
+          "risks" => compact_list(Map.get(params, "risks", []))
+        },
+        "pending_action" => nil
       }
     else
       {:error, reason} ->

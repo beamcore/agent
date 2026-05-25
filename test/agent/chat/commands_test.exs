@@ -2,7 +2,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   use ExUnit.Case
   import ExUnit.CaptureIO
 
-  alias Beamcore.Agent.Chat.{Commands, Context, Session}
+  alias Beamcore.Agent.Chat.{Commands, Context, Session, ToolPolicy}
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
@@ -74,21 +74,25 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert output =~ "No pending action to confirm."
   end
 
-  test "/cancel clears pending action" do
+  test "/help does not present confirm as the normal workflow" do
+    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+    output = capture_io(fn -> assert Commands.execute("help", session) == session end)
+
+    refute output =~ "/confirm"
+    refute output =~ "pending plan"
+    assert output =~ "/policy"
+    assert output =~ "/yolo"
+  end
+
+  test "/cancel clears legacy pending action" do
+    pending_action = pending_action()
+
     session =
       Beamcore.Agent.OpenAI.client()
       |> Session.new()
       |> Map.put(:pending_user_message, "Create scratch/policy_test.ex")
-      |> Map.update!(:context, fn context ->
-        result =
-          Beamcore.Agent.Tools.Plan.execute(%{
-            "summary" => "Create a scratch module",
-            "create_files" => ["scratch/policy_test.ex"],
-            "allowed_tools" => ["write"]
-          })
-
-        Context.update_from_tool(context, "plan", %{}, result)
-      end)
+      |> Map.update!(:context, &Context.put_pending_action(&1, pending_action))
 
     output =
       capture_io(fn ->
@@ -102,21 +106,14 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert result.context.pending_action == nil
   end
 
-  test "/confirm activates pending policy for one turn" do
+  test "/confirm keeps legacy pending policy compatibility" do
+    pending_action = pending_action()
+
     session =
       Beamcore.Agent.OpenAI.client()
       |> Session.new()
       |> Map.put(:pending_user_message, "Create scratch/policy_test.ex")
-      |> Map.update!(:context, fn context ->
-        result =
-          Beamcore.Agent.Tools.Plan.execute(%{
-            "summary" => "Create a scratch module",
-            "create_files" => ["scratch/policy_test.ex"],
-            "allowed_tools" => ["write"]
-          })
-
-        Context.update_from_tool(context, "plan", %{}, result)
-      end)
+      |> Map.update!(:context, &Context.put_pending_action(&1, pending_action))
 
     output =
       capture_io(fn ->
@@ -153,6 +150,22 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert cleared.context.pending_action == nil
   end
 
+  defp pending_action do
+    policy = ToolPolicy.restricted_write_policy(["scratch/policy_test.ex"], ["write"])
+
+    %{
+      summary: "Create a scratch module",
+      create_files: ["scratch/policy_test.ex"],
+      modify_files: [],
+      delete_files: [],
+      allowed_tools: ["write"],
+      validation: "",
+      risks: [],
+      allowed_write_paths: ["scratch/policy_test.ex"],
+      policy: policy
+    }
+  end
+
   test "/yolo sets policy override to unrestricted" do
     session = Beamcore.Agent.OpenAI.client() |> Session.new()
 
@@ -183,5 +196,123 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
              session
 
     assert_received "Error: Unknown command: /missing"
+  end
+
+  test "/policy shows summary and initializes config" do
+    with_tmp_cwd(fn ->
+      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+      output = capture_io(fn -> assert Commands.execute("policy", session) == session end)
+      assert output =~ "Project policy: not loaded"
+
+      init_output =
+        capture_io(fn -> assert Commands.execute("policy init", session) == session end)
+
+      assert init_output =~ "Project policy initialized"
+      assert File.exists?(".beamcore/policy.json")
+
+      show_output =
+        capture_io(fn -> assert Commands.execute("policy show", session) == session end)
+
+      assert show_output =~ "\"deny_paths\""
+    end)
+  end
+
+  test "/policy updates strict settings immediately" do
+    with_tmp_cwd(fn ->
+      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+      output =
+        capture_io(fn ->
+          assert Commands.execute("policy deny path secrets/**", session) == session
+          assert Commands.execute("policy tool curl deny", session) == session
+        end)
+
+      decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
+
+      assert output =~ "policy deny secrets/**"
+      assert output =~ "policy tool curl deny"
+      assert "secrets/**" in decoded["deny_paths"]
+      assert decoded["tool_permissions"]["curl"] == "deny"
+    end)
+  end
+
+  test "/policy weaker changes require --confirm" do
+    with_tmp_cwd(fn ->
+      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+      capture_io(fn ->
+        Commands.execute("policy deny path secrets/**", session)
+        Commands.execute("policy tool curl deny", session)
+      end)
+
+      blocked =
+        capture_io(fn ->
+          assert Commands.execute("policy remove deny path secrets/**", session) == session
+          assert Commands.execute("policy tool curl allow", session) == session
+        end)
+
+      assert blocked =~ "weakens project policy"
+
+      allowed =
+        capture_io(fn ->
+          assert Commands.execute("policy remove deny path secrets/** --confirm", session) ==
+                   session
+
+          assert Commands.execute("policy tool curl allow --confirm", session) == session
+        end)
+
+      decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
+
+      assert allowed =~ "Project policy updated"
+      refute "secrets/**" in decoded["deny_paths"]
+      assert decoded["tool_permissions"]["curl"] == "allow"
+    end)
+  end
+
+  test "/policy reset requires --confirm and malformed commands are helpful" do
+    with_tmp_cwd(fn ->
+      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+      capture_io(fn -> Commands.execute("policy deny path secrets/**", session) end)
+      assert File.exists?(".beamcore/policy.json")
+
+      output =
+        capture_io(fn ->
+          assert Commands.execute("policy reset", session) == session
+          assert Commands.execute("policy banana", session) == session
+        end)
+
+      assert output =~ "weakens policy"
+      assert output =~ "Malformed /policy command"
+      assert File.exists?(".beamcore/policy.json")
+
+      reset =
+        capture_io(fn ->
+          assert Commands.execute("policy reset --confirm", session) == session
+        end)
+
+      assert reset =~ "Project policy reset"
+      refute File.exists?(".beamcore/policy.json")
+    end)
+  end
+
+  defp with_tmp_cwd(fun) do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_policy_command_#{System.unique_integer([:positive])}"
+      )
+
+    previous = File.cwd!()
+    File.mkdir_p!(tmp)
+    File.cd!(tmp)
+
+    try do
+      fun.()
+    after
+      File.cd!(previous)
+      File.rm_rf!(tmp)
+    end
   end
 end

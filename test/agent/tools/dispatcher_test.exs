@@ -9,20 +9,20 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert result == "Function not implemented"
   end
 
-  test "tool_specs returns safe planning specifications without mutation tools by default" do
+  test "tool_specs returns autonomous specifications by default" do
     specs = Dispatcher.tool_specs()
     names = Enum.map(specs, fn spec -> spec.function.name end)
 
     assert "read" in names
     assert "plan" in names
-    refute "mix" in names
-    refute "write" in names
-    refute "edit" in names
-    refute "patch" in names
-    refute "fs" in names
-    refute "task" in names
-    refute "curl" in names
-    refute "image_generation" in names
+    assert "mix" in names
+    assert "write" in names
+    assert "edit" in names
+    assert "patch" in names
+    assert "fs" in names
+    assert "task" in names
+    assert "curl" in names
+    assert "image_generation" in names
   end
 
   test "tool_specs includes task only when policy allows explicit delegation" do
@@ -121,10 +121,14 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert result =~ "read-only policy"
   end
 
-  test "execute blocks mutating tools without explicit Policy or confirmed plan" do
-    result = Dispatcher.execute("write", %{"filePath" => "tmp.txt", "content" => "bad"})
+  test "execute allows autonomous mutating tools by default" do
+    path = "scratch/dispatcher_autonomous_write.txt"
+    on_exit(fn -> File.rm_rf!("scratch/dispatcher_autonomous_write.txt") end)
 
-    assert result =~ "Mutation requires a confirmed plan or explicit Policy block."
+    result = Dispatcher.execute("write", %{"filePath" => path, "content" => "ok"})
+
+    assert result =~ "Successfully wrote"
+    assert File.read!(path) == "ok"
   end
 
   test "execute allows read tools without confirmation" do
@@ -149,7 +153,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert result =~ "eval/a.ex is not in allowed_write_paths"
   end
 
-  test "plan tool stores a non-mutating pending action payload" do
+  test "plan tool records an informational non-mutating payload" do
     result =
       Dispatcher.execute("plan", %{
         "summary" => "Create a scratch module",
@@ -160,13 +164,9 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     assert {:ok, decoded} = Jason.decode(result)
     assert decoded["ok"]
-    assert decoded["pending_action"]["create_files"] == ["scratch/policy_test.ex"]
-
-    assert decoded["pending_action"]["policy"]["allowed_write_paths"] == [
-             "scratch/policy_test.ex"
-           ]
-
-    assert decoded["summary"] =~ "Confirm with /confirm"
+    assert decoded["plan"]["create_files"] == ["scratch/policy_test.ex"]
+    assert decoded["pending_action"] == nil
+    assert decoded["summary"] =~ "no confirmation is required"
   end
 
   test "plan tool rejects unsafe planned paths" do

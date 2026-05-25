@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "deny_paths": [
+    ".env",
+    ".env.*",
+    "secrets/**",
+    "private/**",
+    "_build/**",
+    "deps/**",
+    ".git/**"
+  ],
+  "read_only_paths": [
+    "mix.lock",
+    "config/prod.exs"
+  ],
+  "allow_write_paths": [
+    "lib/**",
+    "test/**",
+    "README.md",
+    "generated/**"
+  ],
+  "tool_permissions": {
+    "read": "allow",
+    "grep": "allow",
+    "glob": "allow",
+    "tree": "allow",
+    "write": "confirm",
+    "edit": "confirm",
+    "patch": "confirm",
+    "fs": "confirm",
+    "git": "confirm",
+    "mix": "allow",
+    "image_generation": "confirm",
+    "task": "deny",
+    "curl": "deny"
+  }
+}

@@ -3,18 +3,18 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
 
   alias Beamcore.Agent.Chat.ToolPolicy
 
-  test "defaults to unconfirmed mode without mutation tools when no Policy block exists" do
+  test "defaults to autonomous yolo mode when no Policy block exists" do
     policy = ToolPolicy.from_user_message("Implement the requested change.")
 
-    assert policy.mode == :unconfirmed
-    assert policy.allowed_write_paths == []
+    assert policy.mode == :unrestricted
+    assert policy.allowed_write_paths == ["**/*"]
     assert "plan" in ToolPolicy.allowed_tool_names(policy)
-    refute "write" in ToolPolicy.allowed_tool_names(policy)
-    refute "edit" in ToolPolicy.allowed_tool_names(policy)
-    refute "patch" in ToolPolicy.allowed_tool_names(policy)
-    refute "fs" in ToolPolicy.allowed_tool_names(policy)
-    refute "task" in ToolPolicy.allowed_tool_names(policy)
-    refute "curl" in ToolPolicy.allowed_tool_names(policy)
+    assert "write" in ToolPolicy.allowed_tool_names(policy)
+    assert "edit" in ToolPolicy.allowed_tool_names(policy)
+    assert "patch" in ToolPolicy.allowed_tool_names(policy)
+    assert "fs" in ToolPolicy.allowed_tool_names(policy)
+    assert "task" in ToolPolicy.allowed_tool_names(policy)
+    assert "curl" in ToolPolicy.allowed_tool_names(policy)
   end
 
   test "natural-language read-only examples do not drive policy without a Policy block" do
@@ -24,15 +24,14 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       Then implement the task normally.
       """)
 
-    assert policy.mode == :unconfirmed
+    assert policy.mode == :unrestricted
   end
 
-  test "mutation without explicit Policy or confirmed plan is blocked" do
+  test "default autonomous policy allows mutation tools subject to hard guards" do
     policy = ToolPolicy.from_user_message("Create scratch/a.ex.")
 
     for tool <- ~w(write edit patch fs) do
-      assert {:error, message} = ToolPolicy.allow_tool_call(policy, tool, %{})
-      assert message =~ "Mutation requires a confirmed plan or explicit Policy block."
+      assert :ok == ToolPolicy.allow_tool_call(policy, tool, %{})
     end
   end
 
@@ -355,17 +354,15 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert message =~ "restricted-write policy"
   end
 
-  test "unconfirmed policy does not expose image generation" do
+  test "default autonomous policy exposes image generation subject to path policy" do
     policy = ToolPolicy.from_user_message("Generate an image for the project.")
 
-    refute "image_generation" in ToolPolicy.allowed_tool_names(policy)
+    assert "image_generation" in ToolPolicy.allowed_tool_names(policy)
 
-    assert {:error, message} =
+    assert :ok =
              ToolPolicy.allow_tool_call(policy, "image_generation", %{
                "output_path" => "generated/image.png"
              })
-
-    assert message =~ "Mutation requires a confirmed plan or explicit Policy block"
   end
 
   test "default policy allows git by default" do
@@ -375,6 +372,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
 
   test "yolo policy allows all tools and unrestricted paths" do
     policy = ToolPolicy.yolo()
+    assert ToolPolicy.default() == policy
     assert policy.mode == :unrestricted
 
     allowed = ToolPolicy.allowed_tool_names(policy)

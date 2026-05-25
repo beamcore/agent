@@ -4,13 +4,20 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
 
   Natural-language task text is intentionally not used for mutation or network
   intent detection. If a Policy block is present, it is the source of truth.
-  Without a Policy block, the safe default is development mode without task or
-  curl.
+  Without a Policy block, the default is autonomous mode. Hard path safety and
+  project policy still apply at runtime.
   """
 
   alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.Policy.ProjectPolicy
 
-  @type mode :: :unconfirmed | :development | :read_only | :restricted_write | :invalid_policy
+  @type mode ::
+          :unrestricted
+          | :unconfirmed
+          | :development
+          | :read_only
+          | :restricted_write
+          | :invalid_policy
   @type t :: %{
           mode: mode(),
           allow_task: boolean(),
@@ -58,19 +65,10 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   end
 
   @doc """
-  Default policy for non-interactive direct tool calls.
+  Default policy for fresh interactive sessions and direct tool calls.
   """
   @spec default() :: t()
-  def default do
-    %{
-      mode: :unconfirmed,
-      allow_task: false,
-      allow_network: false,
-      allowed_write_paths: [],
-      allowed_tools: nil,
-      blocked_tools: []
-    }
-  end
+  def default, do: yolo()
 
   @doc """
   Policy used inside sub-agents. Nested task delegation is always disabled.
@@ -80,47 +78,29 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     prompt
     |> from_user_message()
     |> Map.put(:allow_task, false)
+    |> Map.update(:blocked_tools, ["task"], &Enum.uniq(["task" | &1]))
   end
 
   @doc """
   Returns the allowed tool names for the given policy.
   """
   @spec allowed_tool_names(t()) :: [binary()]
-  def allowed_tool_names(%{mode: :unrestricted} = _policy), do: @all_tool_names
-
-  def allowed_tool_names(%{mode: :unconfirmed} = policy),
-    do: apply_tool_filters(@unconfirmed_tools, policy)
-
-  def allowed_tool_names(%{mode: :invalid_policy} = policy),
-    do: apply_tool_filters(@read_only_tools, policy)
-
-  def allowed_tool_names(%{mode: :read_only} = policy),
-    do: apply_tool_filters(@read_only_tools, policy)
-
-  def allowed_tool_names(%{mode: :restricted_write} = policy) do
-    @restricted_write_tools
-    |> maybe_add("task", Map.get(policy, :allow_task, false))
-    |> maybe_add("curl", Map.get(policy, :allow_network, false))
-    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
-    |> apply_tool_filters(policy)
-  end
-
-  def allowed_tool_names(%{mode: :development} = policy) do
-    @development_tools
-    |> maybe_add("task", Map.get(policy, :allow_task, false))
-    |> maybe_add("curl", Map.get(policy, :allow_network, false))
-    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
-    |> apply_tool_filters(policy)
-  end
+  def allowed_tool_names(policy),
+    do: policy |> base_allowed_tool_names() |> apply_project_tool_filters(policy)
 
   @doc """
   Enforce the policy for a concrete tool call.
   """
   @spec allow_tool_call(t(), binary(), map()) :: :ok | {:error, binary()}
   def allow_tool_call(policy, name, args \\ %{}) do
+    project_policy = ProjectPolicy.load()
+
     cond do
-      name not in allowed_tool_names(policy) ->
+      name not in base_allowed_tool_names(policy) ->
         {:error, blocked_message(policy, name)}
+
+      project_blocked?(project_policy, policy, name, args) ->
+        project_blocked_message(project_policy, policy, name, args)
 
       confirmation_required?(policy) and name in @mutation_tools ->
         {:error, mutation_confirmation_message()}
@@ -159,7 +139,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     do: read_only?(policy) or invalid_policy?(policy) or confirmation_required?(policy)
 
   @doc """
-  Build a one-turn restricted-write policy from a confirmed plan.
+  Build a one-turn restricted-write policy for legacy compatibility and tests.
   """
   @spec restricted_write_policy([binary()], [binary()]) :: t()
   def restricted_write_policy(allowed_write_paths, allowed_tools) do
@@ -284,6 +264,38 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     tools
     |> filter_allowed_tools(Map.get(policy, :allowed_tools))
     |> Enum.reject(&(&1 in Map.get(policy, :blocked_tools, [])))
+  end
+
+  defp apply_project_tool_filters(tools, policy) do
+    ProjectPolicy.allowed_tool_names(tools, policy, ProjectPolicy.load())
+  end
+
+  defp base_allowed_tool_names(%{mode: :unrestricted} = policy),
+    do: apply_tool_filters(@all_tool_names, policy)
+
+  defp base_allowed_tool_names(%{mode: :unconfirmed} = policy),
+    do: apply_tool_filters(@unconfirmed_tools, policy)
+
+  defp base_allowed_tool_names(%{mode: :invalid_policy} = policy),
+    do: apply_tool_filters(@read_only_tools, policy)
+
+  defp base_allowed_tool_names(%{mode: :read_only} = policy),
+    do: apply_tool_filters(@read_only_tools, policy)
+
+  defp base_allowed_tool_names(%{mode: :restricted_write} = policy) do
+    @restricted_write_tools
+    |> maybe_add("task", Map.get(policy, :allow_task, false))
+    |> maybe_add("curl", Map.get(policy, :allow_network, false))
+    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
+    |> apply_tool_filters(policy)
+  end
+
+  defp base_allowed_tool_names(%{mode: :development} = policy) do
+    @development_tools
+    |> maybe_add("task", Map.get(policy, :allow_task, false))
+    |> maybe_add("curl", Map.get(policy, :allow_network, false))
+    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
+    |> apply_tool_filters(policy)
   end
 
   defp filter_allowed_tools(tools, nil), do: tools
@@ -413,7 +425,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   end
 
   defp blocked_message(%{mode: :unconfirmed}, name) do
-    "Tool call blocked by unconfirmed policy: #{name}. Mutation requires a confirmed plan or explicit Policy block."
+    "Tool call blocked by legacy unconfirmed policy: #{name}. Mutation tools are unavailable in this mode."
   end
 
   defp blocked_message(%{mode: :invalid_policy}, name) do
@@ -426,12 +438,26 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
 
   defp blocked_message(_policy, name), do: "Tool call blocked by policy: #{name}."
 
+  defp project_blocked?(project_policy, policy, name, args) do
+    case ProjectPolicy.allow_tool_call(project_policy, policy, name, args) do
+      :ok -> false
+      {:error, _message} -> true
+    end
+  end
+
+  defp project_blocked_message(project_policy, policy, name, args) do
+    case ProjectPolicy.allow_tool_call(project_policy, policy, name, args) do
+      {:error, message} -> {:error, message}
+      :ok -> {:error, "Tool call blocked by project policy: #{name}."}
+    end
+  end
+
   defp restricted_path_message(policy, path) do
     "Tool call blocked by restricted-write policy: #{path} is not in allowed_write_paths. Allowed write paths: #{Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")}."
   end
 
   defp mutation_confirmation_message do
-    "Mutation requires a confirmed plan or explicit Policy block."
+    "Mutation tools are unavailable in legacy unconfirmed policy."
   end
 
   defp normalize_candidate_path(path) do

@@ -23,7 +23,7 @@ defmodule Beamcore.Agent.TUI.Components.Confirmation do
       "Allowed tools: #{allowed_tools(action)}",
       "Validation: #{blank(Map.get(action, :validation))}",
       "Risks: #{list(action, :risks)}",
-      "Use /confirm to execute once or /cancel to clear."
+      "Legacy pending action. Use /cancel to clear it."
     ]
     |> Enum.join("\n")
   end

@@ -28,7 +28,7 @@ defmodule Beamcore.Agent.TUI.Components.Chat do
     }
   end
 
-  defp title(%{status: :waiting_for_confirmation}), do: "Chat · confirm plan"
+  defp title(%{status: :waiting_for_confirmation}), do: "Chat · legacy pending"
   defp title(%{status: :thinking}), do: "Chat · thinking"
   defp title(%{status: :tool_running}), do: "Chat · tool running"
   defp title(_state), do: "Chat · workspace"

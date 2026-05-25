@@ -9,7 +9,7 @@ defmodule Beamcore.Agent.TUI.Components.Input do
 
     title =
       if pending? do
-        "Command deck  /confirm launch  /cancel abort"
+        "Command deck  legacy pending action  /cancel clears"
       else
         "Command deck  Enter send  Shift+Enter newline  / commands"
       end

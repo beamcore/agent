@@ -16,11 +16,12 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
     text =
       case mode do
         :narrow ->
-          "#{mascot} #{status(state.status)}#{yolo}  #{session_id}  tok #{usage.last_prompt_tokens}/#{usage.total_tokens}"
+          "#{mascot} #{status(state.status)}#{yolo}  #{State.policy_status()}  #{session_id}  tok #{usage.last_prompt_tokens}/#{usage.total_tokens}"
 
         _ ->
           [
             "#{mascot} #{status(state.status)}#{yolo}",
+            State.policy_status(),
             model,
             provider,
             "session #{session_id}",
