@@ -1,11 +1,12 @@
 defmodule Beamcore.Agent.TUI.Components.StatusBar do
   @moduledoc false
-
+  
   alias Beamcore.Agent.TUI.Components.{Activity, Mascot}
   alias Beamcore.Agent.TUI.{State, Theme, Wrap}
+  alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
   alias Number.SI
-
+  
   def widget(state, mode) do
     usage = State.usage(state.session)
     session_id = if state.session, do: state.session.session_id, else: "starting"
@@ -13,6 +14,7 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
     model = State.model(state.session)
     provider = State.provider()
+    yolo? = State.yolo?(state.session)
 
     text =
       case mode do
@@ -32,11 +34,33 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
       end
       |> Wrap.truncate_line(220)
 
-    %Paragraph{text: text, style: style(state)}
+    if yolo? do
+      mascot_length = String.length(mascot)
+      %Paragraph{
+        text: styled_text(text, mascot_length),
+        style: Theme.style(:status)
+      }
+    else
+      %Paragraph{text: text, style: Theme.style(:status)}
+    end
   end
-
-  defp style(state) do
-    if State.yolo?(state.session), do: Theme.style(:yolo), else: Theme.style(:status)
+  
+  defp styled_text(text, mascot_length) do
+    if String.length(text) <= mascot_length do
+      [%Line{spans: [%Span{content: text, style: Theme.style(:yolo)}]}]
+    else
+      mascot_part = String.slice(text, 0, mascot_length)
+      rest_part = String.slice(text, mascot_length, String.length(text) - mascot_length)
+      
+      [
+        %Line{
+          spans: [
+            %Span{content: mascot_part, style: Theme.style(:yolo)},
+            %Span{content: rest_part}
+          ]
+        }
+      ]
+    end
   end
 
   defp status(:idle), do: "idle"

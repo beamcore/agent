@@ -240,8 +240,10 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
   test "status bar reflects baseline yolo state", %{state: state, session: session} do
     state = %{state | session: %{session | policy_override: ToolPolicy.yolo()}}
 
-    assert StatusBar.widget(state, :wide).text =~ "YOLO"
-  end
+    as    widget = StatusBar.widget(state, :wide)
+    text = widget.text
+    content = if is_binary(text), do: text, else: text |> List.first() |> Map.get(:spans, []) |> Enum.map(& &1.content) |> Enum.join()
+    assert content =~ "YOLO"
 
   test "runtime policy is not bypassed before confirmation" do
     assert {:error, reason} =
