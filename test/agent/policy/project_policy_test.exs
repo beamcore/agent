@@ -48,7 +48,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
     assert decoded["deny_paths"] == policy.deny_paths
     assert decoded["tool_permissions"]["write"] == "allow"
-    assert decoded["tool_permissions"]["curl"] == "deny"
+    assert decoded["tool_permissions"]["web_get"] == "deny"
 
     updated = ProjectPolicy.add_deny_path(policy, "tmp/**")
     assert {:ok, saved} = ProjectPolicy.save(updated)
@@ -98,24 +98,24 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       |> ProjectPolicy.add_deny_path("secrets/**")
       |> ProjectPolicy.add_read_only_path("mix.lock")
       |> ProjectPolicy.add_allow_write_path("lib/**")
-      |> ProjectPolicy.set_tool_permission("curl", "deny")
+      |> ProjectPolicy.set_tool_permission("web_get", "deny")
 
     assert "secrets/**" in policy.deny_paths
     assert "mix.lock" in policy.read_only_paths
     assert "lib/**" in policy.allow_write_paths
-    assert policy.tool_permissions["curl"] == "deny"
+    assert policy.tool_permissions["web_get"] == "deny"
 
     policy =
       policy
       |> ProjectPolicy.remove_deny_path("secrets/**")
       |> ProjectPolicy.remove_read_only_path("mix.lock")
       |> ProjectPolicy.remove_allow_write_path("lib/**")
-      |> ProjectPolicy.remove_tool_permission("curl")
+      |> ProjectPolicy.remove_tool_permission("web_get")
 
     refute "secrets/**" in policy.deny_paths
     refute "mix.lock" in policy.read_only_paths
     refute "lib/**" in policy.allow_write_paths
-    refute Map.has_key?(policy.tool_permissions, "curl")
+    refute Map.has_key?(policy.tool_permissions, "web_get")
   end
 
   test "weakening change detection identifies loosened policy" do
@@ -124,7 +124,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       |> ProjectPolicy.add_deny_path("secrets/**")
       |> ProjectPolicy.add_read_only_path("mix.lock")
       |> ProjectPolicy.add_allow_write_path("lib/**")
-      |> ProjectPolicy.set_tool_permission("curl", "deny")
+      |> ProjectPolicy.set_tool_permission("web_get", "deny")
 
     assert ProjectPolicy.weakening_change?(old, ProjectPolicy.remove_deny_path(old, "secrets/**"))
 
@@ -140,7 +140,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     assert ProjectPolicy.weakening_change?(
              old,
-             ProjectPolicy.set_tool_permission(old, "curl", "allow")
+             ProjectPolicy.set_tool_permission(old, "web_get", "allow")
            )
 
     refute ProjectPolicy.weakening_change?(
@@ -172,7 +172,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
   end
 
   test "denied tools are hidden and blocked at execution" do
-    write_policy!(%{version: 1, tool_permissions: %{task: "deny", curl: "deny"}})
+    write_policy!(%{version: 1, tool_permissions: %{task: "deny", web_get: "deny"}})
 
     policy =
       ToolPolicy.from_user_message("""
@@ -180,14 +180,14 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       mode: development
       allowed_tools:
       - task
-      - curl
+      - web_get
       - read
       """)
 
     names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
     refute "task" in names
-    refute "curl" in names
+    refute "web_get" in names
     assert "read" in names
 
     assert Dispatcher.execute("task", %{"name" => "x", "prompt" => "do it"}, policy) =~

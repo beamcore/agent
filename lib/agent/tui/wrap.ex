@@ -92,7 +92,7 @@ defmodule Beamcore.Agent.TUI.Wrap do
     marks = trimmed |> String.graphemes() |> Enum.take_while(&(&1 == "#")) |> length()
 
     cond do
-      marks in 1..6 and String.starts_with?(String.slice(trimmed, marks, 1) || "", " ") ->
+      marks in 1..6 and String.starts_with?(String.slice(trimmed, marks, 1), " ") ->
         "◆ " <> (String.slice(trimmed, marks, String.length(trimmed) - marks) |> String.trim())
 
       true ->
@@ -237,7 +237,7 @@ defmodule Beamcore.Agent.TUI.Wrap do
   defp split_word(word, width) do
     width = max(width - 1, 1)
     chunk = String.slice(word, 0, width) <> @ellipsis
-    remainder = String.slice(word, width, String.length(word) - width) || ""
+    remainder = String.slice(word, width, String.length(word) - width)
     {chunk, remainder}
   end
 end

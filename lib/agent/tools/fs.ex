@@ -180,7 +180,7 @@ defmodule Beamcore.Agent.Tools.Fs do
       true ->
         case File.cp_r(source, target) do
           {:ok, _} -> "Successfully copied '#{source}' to '#{target}'"
-          {:error, reason} -> "Error copying '#{source}' to '#{target}': #{reason}"
+          {:error, reason, _} -> "Error copying '#{source}' to '#{target}': #{reason}"
         end
     end
   end

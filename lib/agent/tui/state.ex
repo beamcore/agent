@@ -26,17 +26,24 @@ defmodule Beamcore.Agent.TUI.State do
             last_animation_tick_ms: 0,
             render_dirty?: true,
             worker: nil,
-            unicode?: true
+            unicode?: true,
+            history: [],
+            history_index: nil,
+            history_draft: ""
 
   def new(terminal, textarea, opts \\ []) do
     client = Keyword.get(opts, :client, Beamcore.Agent.OpenAI.client())
+    history = Keyword.get(opts, :history, Beamcore.Agent.TUI.History.load())
 
     %__MODULE__{
       terminal: terminal,
       textarea: textarea,
       session: Session.new(client),
       last_animation_tick_ms: System.monotonic_time(:millisecond),
-      unicode?: Beamcore.Agent.TUI.Capability.unicode?(opts)
+      unicode?: Beamcore.Agent.TUI.Capability.unicode?(opts),
+      history: history,
+      history_index: nil,
+      history_draft: ""
     }
   end
 
@@ -113,8 +120,9 @@ defmodule Beamcore.Agent.TUI.State do
     |> min(max_value)
   end
 
+  # Intentionally unlimited backscroll to allow reading the full history.
   def scroll_up(state, amount \\ 1),
-    do: %{state | scroll_offset: min(state.scroll_offset + amount, 120)} |> mark_dirty()
+    do: %{state | scroll_offset: state.scroll_offset + amount} |> mark_dirty()
 
   def scroll_down(state, amount \\ 1),
     do: %{state | scroll_offset: max(state.scroll_offset - amount, 0)} |> mark_dirty()

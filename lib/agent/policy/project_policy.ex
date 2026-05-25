@@ -12,7 +12,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   @config_path ".beamcore/policy.json"
   @example_path ".beamcore/policy.example.json"
   @protected_paths [@config_path]
-  @known_tools ~w(read grep glob edit patch write curl tree git fs task mix plan image_generation)
+  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation)
   @write_tools ~w(write edit patch fs image_generation)
   @read_tools ~w(read grep glob tree)
 
@@ -572,7 +572,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
         "mix" => "allow",
         "image_generation" => "allow",
         "task" => "deny",
-        "curl" => "deny"
+        "web_get" => "deny"
       }
     }
   end
