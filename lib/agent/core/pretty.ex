@@ -3,6 +3,8 @@ defmodule Beamcore.Agent.Core.Pretty do
   Module for pretty-printing and formatting chat responses, tool calls, and errors.
   Supports colored output, structured formatting, and customizable themes.
     "
+  alias Beamcore.Agent.Core.ToolDisplay
+
   defmodule Colors do
     @moduledoc "ANSI color codes for terminal output."
 
@@ -241,36 +243,36 @@ defmodule Beamcore.Agent.Core.Pretty do
          %{"path" => path, "old_string" => old, "new_string" => new},
          _context
        ) do
+    summary = ToolDisplay.edit_summary(%{"old_string" => old, "new_string" => new})
+
     IO.puts(
       colorize("path: ", &Colors.dim/0) <>
         colorize(path, &Colors.bright_white/0) <>
-        colorize(
-          " (old: #{String.length(old)} chars, new: #{String.length(new)} chars)",
-          &Colors.dim/0
-        )
+        colorize(" (#{String.replace(summary, " · ", ", ")})", &Colors.dim/0)
     )
   end
 
   defp format_tool_args("read", args, _context)
        when is_map(args) and (is_map_key(args, "filePath") or is_map_key(args, "path")) do
     path = Map.get(args, "filePath") || Map.get(args, "path")
-    offset = Map.get(args, "offset", 1)
-    limit = Map.get(args, "limit", 200)
+    offset = Map.get(args, "offset")
+    limit = Map.get(args, "limit")
 
     IO.puts(
       colorize("path: ", &Colors.dim/0) <>
         colorize(path, &Colors.bright_white/0) <>
-        colorize(" (offset: #{offset}, limit: #{limit})", &Colors.dim/0)
+        colorize(" (offset: #{offset || 1}, limit: #{limit || 200})", &Colors.dim/0)
     )
   end
 
   defp format_tool_args("write", %{"content" => content} = args, _context) do
     path = Map.get(args, "filePath") || Map.get(args, "path", "unknown")
+    badge = ToolDisplay.byte_badge(%{"content" => content}) || "(0 bytes)"
 
     IO.puts(
       colorize("path: ", &Colors.dim/0) <>
         colorize(path, &Colors.bright_white/0) <>
-        colorize(" (#{byte_size(content)} bytes)", &Colors.dim/0)
+        colorize(" #{badge}", &Colors.dim/0)
     )
   end
 
@@ -322,7 +324,7 @@ defmodule Beamcore.Agent.Core.Pretty do
   end
 
   defp format_tool_args("patch", %{"patch_content" => patch}, _context) do
-    paths = patch_paths(patch)
+    paths = ToolDisplay.patch_paths(patch)
     line_count = patch |> String.split("\n") |> length()
 
     label =
@@ -375,6 +377,7 @@ defmodule Beamcore.Agent.Core.Pretty do
 
   defp format_tool_args("task", %{"name" => name, "prompt" => prompt} = args, _context) do
     model = Map.get(args, "model", "default")
+    prompt = ToolDisplay.compact_text(prompt, 60) <> "..."
 
     IO.puts(
       colorize("name: ", &Colors.dim/0) <>
@@ -382,7 +385,7 @@ defmodule Beamcore.Agent.Core.Pretty do
         colorize(" model: ", &Colors.dim/0) <>
         colorize(model, &Colors.bright_blue/0) <>
         colorize(" prompt: ", &Colors.dim/0) <>
-        colorize(String.slice(prompt, 0, 60) <> "...", &Colors.bright_magenta/0)
+        colorize(prompt, &Colors.bright_magenta/0)
     )
   end
 
@@ -438,26 +441,6 @@ defmodule Beamcore.Agent.Core.Pretty do
   defp maybe_format_arg(label, val) do
     colorize("#{label}: ", &Colors.dim/0) <> colorize(to_string(val), &Colors.bright_white/0)
   end
-
-  defp patch_paths(patch) do
-    patch
-    |> String.split("\n")
-    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
-    |> Enum.map(&patch_line_path/1)
-    |> Enum.reject(&(&1 in [nil, "/dev/null"]))
-    |> Enum.map(&strip_patch_prefix/1)
-    |> Enum.uniq()
-  end
-
-  defp patch_line_path(line) do
-    line
-    |> String.split(~r/\s+/, parts: 3, trim: true)
-    |> Enum.at(1)
-  end
-
-  defp strip_patch_prefix("a/" <> path), do: path
-  defp strip_patch_prefix("b/" <> path), do: path
-  defp strip_patch_prefix(path), do: path
 
   @doc "
   Print a tool response.
