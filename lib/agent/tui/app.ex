@@ -9,10 +9,18 @@ defmodule Beamcore.Agent.TUI.App do
 
   def run(opts \\ []) do
     ExRatatui.run(fn terminal ->
-      terminal
-      |> State.new(ExRatatui.textarea_new(), opts)
-      |> State.mark_dirty()
-      |> loop()
+      # Enable native terminal mouse scroll and click capture
+      IO.write("\e[?1000h\e[?1002h\e[?1006h")
+
+      try do
+        terminal
+        |> State.new(ExRatatui.textarea_new(), opts)
+        |> State.mark_dirty()
+        |> loop()
+      after
+        # Restore terminal mouse settings on exit
+        IO.write("\e[?1000l\e[?1002l\e[?1006l")
+      end
     end)
   end
 

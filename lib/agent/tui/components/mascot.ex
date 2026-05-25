@@ -56,9 +56,9 @@ defmodule Beamcore.Agent.TUI.Components.Mascot do
   @unicode_runners %{
     idle: [
       "ᕕ(◢▣◣)ᕗ ▱▱▱",
-      "ᕙ(◢▣◣)ᕗ ▱▱▱",
       "ᕕ(◢▣◣)ᕗ ▱▱▱",
-      "ᕙ(◢▣◣)ᕘ ▱▱▱"
+      "ᕕ(◢▣◣)ᕗ ▱▱▱",
+      "ᕕ(◢▣◣)ᕗ ▱▱▱"
     ],
     thinking: [
       "  ◢▣◣  ·   ",
