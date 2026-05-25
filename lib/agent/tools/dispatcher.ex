@@ -12,7 +12,7 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     Beamcore.Agent.Tools.Edit,
     Beamcore.Agent.Tools.Patch,
     Beamcore.Agent.Tools.Write,
-    Beamcore.Agent.Tools.Curl,
+    Beamcore.Agent.Tools.WebGet,
     Beamcore.Agent.Tools.Tree,
     Beamcore.Agent.Tools.Git,
     Beamcore.Agent.Tools.Fs,

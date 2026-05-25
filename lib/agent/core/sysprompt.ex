@@ -12,7 +12,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     "mix: safe validation: validate, test, compile, format --check-formatted.",
     "plan: non-mutating pending plan for normal file-change requests.",
     "image_generation: Mistral image_generation agent tool.",
-    "curl/task: network and system execution tasks."
+    "web_get/task: network fetch and system execution tasks."
   ]
 
   @doc """

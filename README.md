@@ -203,7 +203,7 @@ allowed_tools:
 - mix
 blocked_tools:
 - task
-- curl
+- web_get
 - git
 
 Task:
@@ -235,7 +235,7 @@ If a `Policy:` block has an invalid mode, the runtime fails closed and disables 
 | `git` | Performs bounded git operations inside the workspace. |
 | `mix` | Runs safe Mix commands such as `format --check-formatted`, `compile`, `test`, and `validate`. |
 | `image_generation` | Uses Mistral Agents with the built-in `image_generation` tool, downloads generated files, and saves them to allowed workspace paths. |
-| `curl` | Fetches external URLs only when explicitly enabled. |
+| `web_get` | Fetches external URLs using HTTP GET only when explicitly enabled, using a token-efficient HTML cleaning pipeline. |
 | `task` | Delegates to sub-agents only when explicitly enabled. |
 
 ## Image generation
@@ -254,7 +254,7 @@ allowed_tools:
 - image_generation
 blocked_tools:
 - task
-- curl
+- web_get
 - git
 - write
 - edit
@@ -298,7 +298,7 @@ mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
 - Tool calls are authorized before execution.
 - Blocked tool calls are printed as blocked, not as successful execution.
 - Mutation tool arguments and outputs are compacted in active API history.
-- `task` and `curl` are hidden unless explicitly enabled.
+- `task` and `web_get` are hidden unless explicitly enabled.
 - `image_generation` is hidden unless explicitly enabled and must write to an allowed output path.
 
 ## Architecture
