@@ -11,8 +11,9 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     "git: repository operations inside the workspace.",
     "mix: safe validation: validate, test, compile, format --check-formatted.",
     "plan: non-mutating pending plan for normal file-change requests.",
-    "image_generation: Mistral image_generation agent tool.",
-    "web_get/task: network fetch and system execution tasks."
+    "web_get: network fetch and system execution tasks.",
+    "task: start sub agents to do parallel work.",
+    "image_generation: Mistral image_generation agent tool."
   ]
 
   @doc """
@@ -24,7 +25,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     """
     You are Beamcore.Agent: a general-purpose coding agent.
 
-    Your function is to follow the user instructions or intent.
+    Your function is to follow the user instruction.
 
     Workspace: .
     #{project_nature_details(project_nature)}
@@ -32,7 +33,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     Available tools:
     - #{formatted_tools}
 
-    Response style: concise, factual, and professional.
+    Response style: concise, factual, robotic professional.
     """
   end
 

@@ -104,7 +104,7 @@ defmodule Beamcore.Agent.TUI.State do
       state.status in [:thinking, :tool_running] -> clamp_poll(until_animation, 18, 42)
       state.show_commands -> 24
       state.worker != nil -> clamp_poll(until_animation, 24, 48)
-      true -> clamp_poll(until_animation, 32, 64)
+      true -> clamp_poll(until_animation, 10, 16)
     end
   end
 
