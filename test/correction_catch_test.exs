@@ -9,69 +9,297 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
     })
   end
 
-  describe "CorrectionCatch.stuck?/1" do
+  # ----- Helper: build an assistant message with tool_calls -----
+
+  defp tool_call_msg(name, args) do
+    %{
+      "role" => "assistant",
+      "content" => "",
+      "tool_calls" => [
+        %{
+          "id" => "call_#{:rand.uniform(100_000)}",
+          "function" => %{
+            "name" => name,
+            "arguments" => Jason.encode!(args)
+          }
+        }
+      ]
+    }
+  end
+
+  defp tool_response_msg(name) do
+    %{
+      "role" => "tool",
+      "tool_call_id" => "call_#{:rand.uniform(100_000)}",
+      "name" => name,
+      "content" => "ok"
+    }
+  end
+
+  defp plain_assistant_msg(content) do
+    %{"role" => "assistant", "content" => content}
+  end
+
+  # ===== stuck?/1 =====
+
+  describe "stuck?/1 — no false positives" do
     test "returns false for empty list" do
-      refute CorrectionCatch.stuck?([])
+      assert CorrectionCatch.stuck?([]) == false
     end
 
-    test "returns false if there are fewer than 5 assistant messages" do
-      messages = [
-        %{role: "user", content: "hello"},
-        %{role: "assistant", content: "Actually, let me see..."},
-        %{role: "assistant", content: "Oops, mistake."},
-        %{role: "assistant", content: "Apologies, let me try again."},
-        %{role: "assistant", content: "Actually, that was wrong."}
-      ]
-
-      refute CorrectionCatch.stuck?(messages)
+    test "returns false for non-list input" do
+      assert CorrectionCatch.stuck?(nil) == false
     end
 
-    test "returns true when last 5 assistant messages contain triggers" do
+    test "returns false for assistant messages with trigger-like text (text is not a signal)" do
       messages = [
-        %{role: "assistant", content: "Actually, let me try this..."},
-        %{role: "user", content: "Wait, that's wrong"},
-        %{role: "assistant", content: "This is too complicated, let me think."},
-        %{role: "assistant", content: "Apologies, I made a mistake."},
-        %{role: "assistant", content: "Actually, let me try again..."},
-        %{role: "tool", content: "error output"},
-        %{role: "assistant", content: "I apologize, let me fix it."}
+        plain_assistant_msg("Actually, let me try a different approach."),
+        plain_assistant_msg("I apologize, that was wrong."),
+        plain_assistant_msg("This is too complicated, let me think."),
+        plain_assistant_msg("Let me try again with a simpler method."),
+        plain_assistant_msg("Actually, I made a mistake earlier.")
       ]
 
-      assert CorrectionCatch.stuck?(messages)
+      assert CorrectionCatch.stuck?(messages) == false
     end
 
-    test "returns false if one of the last 5 assistant messages does not contain a trigger" do
+    test "returns false when different tools are called on different files" do
       messages = [
-        %{role: "assistant", content: "Actually, let me try this..."},
-        %{role: "assistant", content: "This is too complicated, let me think."},
-        %{role: "assistant", content: "Apologies, I made a mistake."},
-        # No triggers in this assistant message:
-        %{role: "assistant", content: "Creating a plan now..."},
-        %{role: "assistant", content: "I apologize, let me fix it."}
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "lib/app.ex"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "mix.exs"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "test/app_test.exs"}),
+        tool_response_msg("read_file")
       ]
 
-      refute CorrectionCatch.stuck?(messages)
+      assert CorrectionCatch.stuck?(messages) == false
+    end
+
+    test "returns false for a normal productive tool chain" do
+      messages = [
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("edit_file", %{"path" => "lib/app.ex", "content" => "new code"}),
+        tool_response_msg("edit_file"),
+        tool_call_msg("run_command", %{"command" => "mix test"}),
+        tool_response_msg("run_command"),
+        tool_call_msg("read_file", %{"path" => "test/app_test.exs"}),
+        tool_response_msg("read_file")
+      ]
+
+      assert CorrectionCatch.stuck?(messages) == false
+    end
+
+    test "returns false for 2 identical tool calls (under threshold)" do
+      messages = [
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file")
+      ]
+
+      assert CorrectionCatch.stuck?(messages) == false
     end
   end
 
-  describe "CorrectionCatch.correct_and_rollover/3" do
-    test "compacts session history and injects diagnosis & corrected actions into system prompt" do
+  describe "stuck?/1 — exact tool repetition" do
+    test "detects same tool called 3 times with identical args" do
+      messages = [
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file")
+      ]
+
+      assert {true, reason} = CorrectionCatch.stuck?(messages)
+      assert reason =~ "read_file"
+      assert reason =~ "3 times"
+    end
+
+    test "detects same tool called 5 times with identical args" do
+      messages =
+        Enum.flat_map(1..5, fn _i ->
+          [
+            tool_call_msg("read_file", %{"path" => "README.md"}),
+            tool_response_msg("read_file")
+          ]
+        end)
+
+      assert {true, reason} = CorrectionCatch.stuck?(messages)
+      assert reason =~ "read_file"
+      assert reason =~ "5 times"
+    end
+
+    test "detects same edit_file with identical args" do
+      messages =
+        Enum.flat_map(1..3, fn _i ->
+          [
+            tool_call_msg("edit_file", %{
+              "path" => "lib/app.ex",
+              "old" => "foo",
+              "new" => "bar"
+            }),
+            tool_response_msg("edit_file")
+          ]
+        end)
+
+      assert {true, reason} = CorrectionCatch.stuck?(messages)
+      assert reason =~ "edit_file"
+    end
+
+    test "does NOT trigger when args differ" do
+      messages = [
+        tool_call_msg("edit_file", %{"path" => "lib/app.ex", "old" => "foo", "new" => "bar"}),
+        tool_response_msg("edit_file"),
+        tool_call_msg("edit_file", %{"path" => "lib/app.ex", "old" => "bar", "new" => "baz"}),
+        tool_response_msg("edit_file"),
+        tool_call_msg("edit_file", %{"path" => "lib/app.ex", "old" => "baz", "new" => "qux"}),
+        tool_response_msg("edit_file")
+      ]
+
+      assert CorrectionCatch.stuck?(messages) == false
+    end
+  end
+
+  describe "stuck?/1 — tool oscillation" do
+    test "detects A-B-A-B-A-B oscillation" do
+      messages =
+        Enum.flat_map(1..3, fn i ->
+          [
+            tool_call_msg("edit_file", %{"path" => "lib/app.ex", "content" => "v#{i}"}),
+            tool_response_msg("edit_file"),
+            tool_call_msg("run_command", %{"command" => "mix test attempt #{i}"}),
+            tool_response_msg("run_command")
+          ]
+        end)
+
+      assert {true, reason} = CorrectionCatch.stuck?(messages)
+      assert reason =~ "oscillating"
+      assert reason =~ "edit_file"
+      assert reason =~ "run_command"
+    end
+
+    test "detects A-B-C-A-B-C-A-B-C oscillation" do
+      messages =
+        Enum.flat_map(1..3, fn i ->
+          [
+            tool_call_msg("read_file", %{"path" => "lib/app_v#{i}.ex"}),
+            tool_response_msg("read_file"),
+            tool_call_msg("edit_file", %{"path" => "lib/app_v#{i}.ex", "content" => "x#{i}"}),
+            tool_response_msg("edit_file"),
+            tool_call_msg("run_command", %{"command" => "mix test round #{i}"}),
+            tool_response_msg("run_command")
+          ]
+        end)
+
+      assert {true, reason} = CorrectionCatch.stuck?(messages)
+      assert reason =~ "oscillating"
+    end
+
+    test "does NOT trigger for non-repeating varied sequence" do
+      messages = [
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("edit_file", %{"path" => "lib/app.ex", "content" => "v1"}),
+        tool_response_msg("edit_file"),
+        tool_call_msg("run_command", %{"command" => "mix test"}),
+        tool_response_msg("run_command"),
+        tool_call_msg("read_file", %{"path" => "test/app_test.exs"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("edit_file", %{"path" => "test/app_test.exs", "content" => "v2"}),
+        tool_response_msg("edit_file")
+      ]
+
+      assert CorrectionCatch.stuck?(messages) == false
+    end
+  end
+
+  # ===== Fingerprinting =====
+
+  describe "extract_tool_fingerprints/1" do
+    test "extracts fingerprints from assistant tool_calls messages" do
+      messages = [
+        %{"role" => "user", "content" => "hello"},
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        plain_assistant_msg("Here's the content"),
+        tool_call_msg("edit_file", %{"path" => "lib/app.ex", "content" => "new"}),
+        tool_response_msg("edit_file")
+      ]
+
+      fps = CorrectionCatch.extract_tool_fingerprints(messages)
+      assert length(fps) == 2
+      assert [{"read_file", _}, {"edit_file", _}] = fps
+    end
+
+    test "handles string-encoded JSON arguments" do
+      messages = [
+        %{
+          "role" => "assistant",
+          "content" => "",
+          "tool_calls" => [
+            %{
+              "id" => "call_1",
+              "function" => %{
+                "name" => "read_file",
+                "arguments" => ~s({"path": "README.md"})
+              }
+            }
+          ]
+        }
+      ]
+
+      fps = CorrectionCatch.extract_tool_fingerprints(messages)
+      assert [{"read_file", %{"path" => "README.md"}}] = fps
+    end
+
+    test "normalizes whitespace in string arg values" do
+      messages = [
+        tool_call_msg("read_file", %{"path" => "  README.md  "})
+      ]
+
+      fps = CorrectionCatch.extract_tool_fingerprints(messages)
+      assert [{"read_file", %{"path" => "README.md"}}] = fps
+    end
+
+    test "skips messages without tool_calls" do
+      messages = [
+        plain_assistant_msg("no tools"),
+        %{"role" => "user", "content" => "question"}
+      ]
+
+      assert CorrectionCatch.extract_tool_fingerprints(messages) == []
+    end
+  end
+
+  # ===== correct_and_rollover/4 =====
+
+  describe "correct_and_rollover/4" do
+    test "performs correction and returns rolled-over session with diagnosis" do
       client = Beamcore.Agent.OpenAI.client()
       session = Session.new(client)
 
       messages = [
         %{role: "user", content: "fix the bug"},
-        %{role: "assistant", content: "Actually, let me try..."},
-        %{role: "assistant", content: "I apologize, let me try..."}
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file"),
+        tool_call_msg("read_file", %{"path" => "README.md"}),
+        tool_response_msg("read_file")
       ]
 
-      # Mock completions to return custom correction summary
       Process.put(:mock_completions_create, fn _client, params ->
         assert params.model == Beamcore.Agent.Chat.API.default_model()
 
         assert Enum.any?(params.messages, fn msg ->
                  content = msg[:content] || msg["content"] || ""
-                 String.contains?(content, "stuck in a repetitive loop")
+                 String.contains?(content, "mechanical loop")
                end)
 
         {:ok,
@@ -81,70 +309,101 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
                "message" => %{
                  "role" => "assistant",
                  "content" =>
-                   "Diagnosis: Repeating 'actually' and 'apologize'.\nCorrected Action: Do not apologize anymore. Do not use actually."
+                   "Diagnosis: Reading README.md repeatedly.\nCorrected: Read the file once and proceed."
                }
              }
            ]
          }}
       end)
 
-      rolled_session = CorrectionCatch.correct_and_rollover(session, messages, nil)
+      reason = "read_file called 3 times with identical arguments"
+      rolled_session = CorrectionCatch.correct_and_rollover(session, messages, reason, nil)
 
+      assert rolled_session.correction_count == 1
       assert rolled_session.compaction_count == 1
       assert length(rolled_session.messages) == 1
+
       system_msg = List.first(rolled_session.messages)
-      role = system_msg[:role] || system_msg["role"]
       content = system_msg[:content] || system_msg["content"]
-      assert role == "system"
       assert String.contains?(content, "SYSTEM INTERRUPT")
-      assert String.contains?(content, "Do not apologize anymore")
+      assert String.contains?(content, "read_file called 3 times")
+      assert String.contains?(content, "Read the file once and proceed")
     end
 
-    test "chat loop detects loop, self-corrects, and resumes execution seamlessly" do
+    test "skips correction when max corrections reached" do
+      client = Beamcore.Agent.OpenAI.client()
+      session = %{Session.new(client) | correction_count: 3}
+
+      messages = [
+        %{role: "user", content: "do something"},
+        tool_call_msg("read_file", %{"path" => "README.md"})
+      ]
+
+      # Should not call API at all
+      Process.put(:mock_completions_create, fn _client, _params ->
+        flunk("API should not be called when max corrections reached")
+      end)
+
+      result = CorrectionCatch.correct_and_rollover(session, messages, "some reason", nil)
+
+      # Returns session unchanged
+      assert result.correction_count == 3
+    end
+  end
+
+  # ===== Integration test =====
+
+  describe "loop integration" do
+    test "loop detects tool repetition, self-corrects, and resumes" do
       client = Beamcore.Agent.OpenAI.client()
       session = Session.new(client)
 
-      # Seed the session with 4 previous assistant messages that contain trigger phrases
-      seeded_messages = [
-        %{role: "system", content: "system prompt"},
-        %{role: "user", content: "step 1"},
-        %{role: "assistant", content: "Actually, let me try this first..."},
-        %{role: "user", content: "step 2"},
-        %{role: "assistant", content: "I apologize, I made a mistake."},
-        %{role: "user", content: "step 3"},
-        %{role: "assistant", content: "Oops, this is too complicated."},
-        %{role: "user", content: "step 4"},
-        %{role: "assistant", content: "Let's try one more time."}
-      ]
+      # Seed history with 2 prior identical read_file calls
+      seeded_messages =
+        [%{role: "system", content: "system prompt"}, %{role: "user", content: "help me"}] ++
+          Enum.flat_map(1..2, fn _i ->
+            [
+              tool_call_msg("read_file", %{"path" => "README.md"}),
+              %{role: "tool", tool_call_id: "tc", name: "read_file", content: "readme content"}
+            ]
+          end)
 
       session = %{session | messages: seeded_messages}
 
       parent = self()
       Process.put(:mock_completions_calls, 0)
 
-      Process.put(:mock_completions_create, fn _client, params ->
+      Process.put(:mock_completions_create, fn _client, _params ->
         call_num = Process.get(:mock_completions_calls) || 0
         Process.put(:mock_completions_calls, call_num + 1)
-
-        send(parent, {:completion_called, call_num, params})
+        send(parent, {:completion_called, call_num})
 
         case call_num do
           0 ->
-            # The agent is answering the user's "step 5" prompt, and loops again (5th consecutive triggers)
+            # 3rd identical read_file call — triggers loop detection
             {:ok,
              %{
                "choices" => [
                  %{
                    "message" => %{
                      "role" => "assistant",
-                     "content" => "Actually, let me try a different approach."
+                     "content" => "",
+                     "tool_calls" => [
+                       %{
+                         "id" => "call_loop",
+                         "function" => %{
+                           "name" => "read_file",
+                           "arguments" => Jason.encode!(%{"path" => "README.md"})
+                         }
+                       }
+                     ]
                    }
                  }
                ]
              }}
 
           1 ->
-            # The CorrectionCatch.correct_and_rollover call to diagnose and summarize
+            # Correction diagnosis call
             {:ok,
              %{
                "choices" => [
@@ -152,21 +411,21 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
                    "message" => %{
                      "role" => "assistant",
                      "content" =>
-                       "Diagnosis: Getting stuck using 'actually'.\nCorrected Action: Proceed directly without 'actually'."
+                       "Diagnosis: Repeatedly reading README.md.\nCorrected: Use cached content."
                    }
                  }
                ]
              }}
 
           2 ->
-            # The resume/continuation call after correction
+            # Resumed execution after correction
             {:ok,
              %{
                "choices" => [
                  %{
                    "message" => %{
                      "role" => "assistant",
-                     "content" => "Now executing without loop: successfully completed task!"
+                     "content" => "Task completed successfully using cached content."
                    }
                  }
                ]
@@ -174,29 +433,20 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
         end
       end)
 
-      # Send a message to run the turn
       updated_session =
-        Beamcore.Agent.Chat.Loop.send_message(session, "step 5", nil, nil, silent: true)
+        Beamcore.Agent.Chat.Loop.send_message(session, "continue", nil, nil, silent: true)
 
-      # Verify the sequence of calls and messages
-      # Main assistant call
-      assert_receive {:completion_called, 0, _}
-      # Correction call
-      assert_receive {:completion_called, 1, _}
-      # Resumed execution call
-      assert_receive {:completion_called, 2, _}
+      assert_receive {:completion_called, 0}
+      assert_receive {:completion_called, 1}
+      assert_receive {:completion_called, 2}
 
-      # Verify the session got rolled over and has the successful final message
-      last_msg = List.last(updated_session.messages)
-      assert last_msg["role"] == "assistant" or last_msg[:role] == "assistant"
-      assert (last_msg["content"] || last_msg[:content]) =~ "successfully completed task!"
-
-      # Verify the system prompt in the rolled over session contains the diagnosis
+      # Session was corrected
       system_msg = List.first(updated_session.messages)
       assert (system_msg["content"] || system_msg[:content]) =~ "SYSTEM INTERRUPT"
 
-      assert (system_msg["content"] || system_msg[:content]) =~
-               "Diagnosis: Getting stuck using 'actually'"
+      # Final message is the successful completion
+      last_msg = List.last(updated_session.messages)
+      assert (last_msg["content"] || last_msg[:content]) =~ "Task completed successfully"
     end
   end
 end
