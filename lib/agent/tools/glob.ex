@@ -3,6 +3,7 @@ defmodule Beamcore.Agent.Tools.Glob do
   Workspace-bounded file globbing tool.
   """
 
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -54,7 +55,8 @@ defmodule Beamcore.Agent.Tools.Glob do
     offset = Map.get(params, "offset", 1)
     limit = Map.get(params, "limit", 100)
 
-    with :ok <- PathSafety.validate_pattern(pattern),
+    with :ok <- ProjectPolicy.allowed_read_path?(path),
+         :ok <- PathSafety.validate_pattern(pattern),
          {:ok, safe_path} <- PathSafety.resolve(path) do
       do_execute(pattern, safe_path, show_all, offset, limit)
     else
@@ -86,6 +88,7 @@ defmodule Beamcore.Agent.Tools.Glob do
       {:ok, paths} ->
         paths
         |> relativize_paths(path)
+        |> Enum.reject(&ProjectPolicy.denied_path?/1)
         |> Enum.sort()
         |> paginate_output(pattern, path, offset, limit)
     end
@@ -135,7 +138,7 @@ defmodule Beamcore.Agent.Tools.Glob do
     |> Path.join(pattern)
     |> Path.wildcard(match_dot: show_all)
     |> Enum.filter(&File.regular?/1)
-    |> Enum.reject(&PathSafety.ignored?(&1, path, ignored))
+    |> Enum.reject(&(PathSafety.ignored?(&1, path, ignored) or ProjectPolicy.denied_path?(&1)))
   end
 
   defp no_files(pattern, path), do: "No files found matching pattern: #{pattern} in #{path}"

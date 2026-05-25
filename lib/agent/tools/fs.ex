@@ -11,6 +11,7 @@ defmodule Beamcore.Agent.Tools.Fs do
   All paths are resolved relative to the current workspace.
   A safe programmatic alternative to using shell commands for manipulating files.
   """
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @doc """
@@ -79,7 +80,9 @@ defmodule Beamcore.Agent.Tools.Fs do
 
     case operation do
       "move" ->
-        with {:ok, expanded_path} <- PathSafety.resolve(path),
+        with :ok <- ProjectPolicy.allowed_write_path?(path),
+             :ok <- ProjectPolicy.allowed_write_path?(target),
+             {:ok, expanded_path} <- PathSafety.resolve(path),
              {:ok, expanded_target} <- resolve_target(target) do
           move_file(expanded_path, expanded_target, force)
         else
@@ -87,7 +90,9 @@ defmodule Beamcore.Agent.Tools.Fs do
         end
 
       "copy" ->
-        with {:ok, expanded_path} <- PathSafety.resolve(path),
+        with :ok <- ProjectPolicy.allowed_read_path?(path),
+             :ok <- ProjectPolicy.allowed_write_path?(target),
+             {:ok, expanded_path} <- PathSafety.resolve(path),
              {:ok, expanded_target} <- resolve_target(target) do
           copy_file(expanded_path, expanded_target, recursive, force)
         else
@@ -96,6 +101,7 @@ defmodule Beamcore.Agent.Tools.Fs do
 
       "remove" ->
         with :ok <- confirm_destructive(confirm),
+             :ok <- ProjectPolicy.allowed_write_path?(path),
              {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
           remove_path(expanded_path, recursive, force)
         else
@@ -103,28 +109,32 @@ defmodule Beamcore.Agent.Tools.Fs do
         end
 
       "touch" ->
-        with {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
+        with :ok <- ProjectPolicy.allowed_write_path?(path),
+             {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
           touch_file(expanded_path)
         else
           {:error, reason} -> PathSafety.error(reason)
         end
 
       "stat" ->
-        with {:ok, expanded_path} <- PathSafety.resolve(path) do
+        with :ok <- ProjectPolicy.allowed_read_path?(path),
+             {:ok, expanded_path} <- PathSafety.resolve(path) do
           stat_path(expanded_path)
         else
           {:error, reason} -> PathSafety.error(reason)
         end
 
       "exist" ->
-        with {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
+        with :ok <- ProjectPolicy.allowed_read_path?(path),
+             {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
           check_exists(expanded_path)
         else
           {:error, reason} -> PathSafety.error(reason)
         end
 
       "mkdir" ->
-        with {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
+        with :ok <- ProjectPolicy.allowed_write_path?(path),
+             {:ok, expanded_path} <- PathSafety.resolve(path, allow_missing: true) do
           mkdir_path(expanded_path)
         else
           {:error, reason} -> PathSafety.error(reason)

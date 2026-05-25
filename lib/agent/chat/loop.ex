@@ -382,7 +382,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     case Map.get(policy, :mode) do
       :unconfirmed ->
-        "Current turn policy: unconfirmed. Exposed tools: #{tool_names}. For file changes, call plan first. Do not call write, edit, patch, fs, image_generation, task, or curl before /confirm or an explicit Policy block."
+        "Current turn policy: legacy_unconfirmed. Exposed tools: #{tool_names}. Mutation tools are unavailable in this legacy compatibility mode."
 
       :restricted_write ->
         allowed_paths = Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")
@@ -396,7 +396,7 @@ defmodule Beamcore.Agent.Chat.Loop do
         "Current turn policy: invalid_policy. Exposed tools: #{tool_names}. Mutation tools are disabled."
 
       _ ->
-        "Current turn policy: development. Exposed tools: #{tool_names}. Follow runtime safety constraints."
+        "Current turn policy: autonomous. Exposed tools: #{tool_names}. Act directly, self-correct from tool errors, and obey runtime safety constraints and project policy."
     end
   end
 

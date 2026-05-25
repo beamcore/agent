@@ -14,8 +14,14 @@ defmodule Beamcore.Agent.TUI.Events do
     %Command{name: "new", description: "Start a fresh session"},
     %Command{name: "context", description: "Show compact session context"},
     %Command{name: "context clear", description: "Clear compact session context"},
-    %Command{name: "confirm", description: "Execute the pending plan once"},
-    %Command{name: "cancel", description: "Cancel the pending plan"},
+    %Command{name: "policy", description: "Show project policy summary"},
+    %Command{name: "policy show", description: "Show normalized project policy config"},
+    %Command{name: "policy init", description: "Create the local policy config"},
+    %Command{name: "policy reload", description: "Reload project policy"},
+    %Command{name: "policy deny path ", description: "Add a denied path pattern"},
+    %Command{name: "policy allow-write ", description: "Add an allowed write path"},
+    %Command{name: "policy read-only ", description: "Add a read-only path"},
+    %Command{name: "policy tool ", description: "Set tool permission"},
     %Command{name: "yolo", description: "Enable all tools with unrestricted access"},
     %Command{name: "quit", description: "Exit", aliases: ["exit", "q"]}
   ]
@@ -187,7 +193,7 @@ defmodule Beamcore.Agent.TUI.Events do
     |> State.set_session(session)
     |> State.add_message(
       :system,
-      "Confirmed pending plan. Executing once with its restricted policy."
+      "Executing legacy pending action once with its restricted policy."
     )
     |> start_turn(content, policy)
   end
@@ -197,7 +203,23 @@ defmodule Beamcore.Agent.TUI.Events do
     |> State.add_message(:system, "Started a fresh session.")
   end
 
+  defp apply_command_result(session, state, "policy" <> _ = command) do
+    state
+    |> State.set_session(session)
+    |> State.add_activity("policy", policy_activity_args(command), :done)
+  end
+
   defp apply_command_result(session, state, _command), do: State.set_session(state, session)
+
+  defp policy_activity_args(command) do
+    command
+    |> String.split(" ", trim: true)
+    |> case do
+      ["policy"] -> %{"action" => "show"}
+      ["policy", action | rest] -> %{"action" => action, "target" => Enum.join(rest, " ")}
+      _other -> %{"action" => "updated"}
+    end
+  end
 
   defp start_turn(state, content, policy) do
     parent = self()

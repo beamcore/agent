@@ -2,6 +2,7 @@ defmodule Beamcore.Agent.Tools.Patch do
   @moduledoc """
   Tool to apply a unified diff patch to a file.
   """
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -41,6 +42,7 @@ defmodule Beamcore.Agent.Tools.Patch do
     workdir = Map.get(params, "workdir", ".")
 
     with :ok <- validate_patch_paths(patch_content),
+         :ok <- validate_project_policy_paths(patch_content),
          {:ok, expanded_workdir} <- PathSafety.resolve(workdir) do
       patch_file =
         Path.join(System.tmp_dir!(), "agent_patch_#{System.unique_integer([:positive])}.diff")
@@ -78,6 +80,27 @@ defmodule Beamcore.Agent.Tools.Patch do
         {:error, reason} -> {:halt, {:error, reason}}
       end
     end)
+  end
+
+  defp validate_project_policy_paths(patch_content) do
+    patch_content
+    |> patch_paths()
+    |> Enum.reduce_while(:ok, fn path, :ok ->
+      case ProjectPolicy.allowed_write_path?(path) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, reason}}
+      end
+    end)
+  end
+
+  defp patch_paths(patch_content) do
+    patch_content
+    |> String.split("\n")
+    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
+    |> Enum.map(&patch_path/1)
+    |> Enum.reject(&(&1 in [nil, "/dev/null"]))
+    |> Enum.map(&strip_patch_prefix/1)
+    |> Enum.uniq()
   end
 
   defp patch_path(line) do

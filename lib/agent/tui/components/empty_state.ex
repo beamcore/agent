@@ -30,8 +30,8 @@ defmodule Beamcore.Agent.TUI.Components.EmptyState do
     │  Generate diagram    Explain a module  │
     ╰────────────────────────────────────────╯
 
-    /help commands    Tab activity details    /confirm planned edits
-    Tool calls and plans appear in Activity.
+    /help commands    Tab activity details    autonomous tools
+    Tool calls, plans, and policy blocks appear in Activity.
 
     #{model} · #{State.provider()} · session #{session_id} · tok #{usage.last_prompt_tokens}/#{usage.total_tokens}
     """

@@ -5,6 +5,7 @@ defmodule Beamcore.Agent.TUI.State do
 
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.Core.ToolDisplay
+  alias Beamcore.Agent.Policy.ProjectPolicy
 
   @max_activity 80
 
@@ -128,6 +129,7 @@ defmodule Beamcore.Agent.TUI.State do
   def pending_action(%{context: %{pending_action: action}}), do: action
   def pending_action(_session), do: nil
 
+  def yolo?(%{policy_override: nil}), do: true
   def yolo?(%{policy_override: %{mode: :unrestricted}}), do: true
   def yolo?(_session), do: false
 
@@ -138,6 +140,14 @@ defmodule Beamcore.Agent.TUI.State do
 
   def provider do
     "mistral"
+  end
+
+  def policy_status do
+    case ProjectPolicy.load() do
+      %{loaded?: false} -> "policy: default"
+      %{valid?: false} -> "policy: invalid"
+      _policy -> "policy: loaded"
+    end
   end
 
   def add_activity(state, name, args, status \\ :queued) do

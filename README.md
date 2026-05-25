@@ -1,14 +1,14 @@
 # Beamcore.Agent
 
-Beamcore.Agent is a general-purpose CLI coding agent running inside an Elixir/Mix workspace. It can answer and write code in any language, while its self-development workflow is optimized for this Elixir project: bounded workspace tools, explicit mutation confirmation, compact session context, token-aware history, image generation, and repeatable Mix validation.
+Beamcore.Agent is a general-purpose CLI coding agent running inside an Elixir/Mix workspace. It can answer and write code in any language, while its self-development workflow is optimized for this Elixir project: bounded workspace tools, autonomous edits, compact session context, token-aware history, image generation, and repeatable Mix validation.
 
 ## Core ideas
 
 - **General coding help**: answer standalone Java, Python, C++, JavaScript, Go, Rust, Erlang, Elixir, and other coding questions directly in chat.
 - **Elixir-first workspace workflow**: when improving this repository, understand the Mix project, edit small, test focused, validate with Mix.
 - **Safe tool execution**: file and git paths are workspace-relative; absolute paths, traversal, and symlink escapes are rejected.
-- **Confirmed mutations**: normal write/edit/patch/fs requests create a pending plan first; mutations run only after `/confirm` or an explicit `Policy:` block.
-- **Compact context**: the agent remembers inspected files, modified files, validation state, and pending plans without storing full file contents.
+- **Autonomous by default**: fresh sessions can read, search, edit, write, patch, and validate immediately while runtime guards stay active.
+- **Compact context**: the agent remembers inspected files, modified files, validation state, and activity without storing full file contents.
 - **Token discipline**: tool outputs, mutation arguments, and history are compacted before they are sent back to Mistral.
 - **Image generation**: optional real image generation through Mistral Agents with the built-in `image_generation` tool.
 
@@ -64,8 +64,8 @@ make chat
 ```
 
 `make chat` starts the main terminal UI. The UI is the product experience: chat,
-tool activity, pending plans, confirmations, image generation status, and token
-state all live in one screen. If the TUI cannot start because the terminal is
+tool activity, autonomous edits, project policy status, image generation status,
+and token state all live in one screen. If the TUI cannot start because the terminal is
 not interactive or unsupported, the app prints a short reason and starts the
 plain emergency fallback.
 
@@ -77,8 +77,7 @@ mix run -e "Beamcore.Agent.chat(:plain)"
 ```
 
 The TUI and fallback use the same runtime: one session flow, one tool policy
-system, one dispatcher, one confirmation flow, one context model, and one image
-generation flow.
+system, one dispatcher, one context model, and one image generation flow.
 
 ## TUI keybindings
 
@@ -99,11 +98,19 @@ generation flow.
 | `/new` | Start a fresh chat session and reset context. |
 | `/paste` | Enter multi-line input mode; finish with `/end`. |
 | `<<<` | Alternative multi-line input mode; finish with `>>>`. |
-| `/confirm` | Confirm the pending mutation plan for one execution turn. |
-| `/cancel` | Cancel the pending mutation plan. |
 | `/context` | Print compact session context. |
 | `/context clear` | Clear compact session context. |
-| `/yolo` | Enable all tools with unrestricted access. |
+| `/policy` | Show project policy summary. |
+| `/policy show` | Show normalized project policy config. |
+| `/policy init` | Create `.beamcore/policy.json` from the example. |
+| `/policy deny path <pattern>` | Add a denied path pattern. |
+| `/policy allow-write <pattern>` | Add an allowed write path pattern. |
+| `/policy read-only <pattern>` | Add a read-only path pattern. |
+| `/policy tool <tool> allow\|confirm\|deny` | Set a tool permission. |
+| `/policy remove ...` | Remove a policy entry; weakening changes require `--confirm`. |
+| `/policy reset --confirm` | Delete the local policy config. |
+| `/policy reload` | Reload and summarize policy from disk. |
+| `/yolo` | Re-enable unrestricted autonomous mode for compatibility. |
 | `/help` | Show command help. |
 | `/quit`, `/exit`, `/q` | Exit the TUI. |
 
@@ -142,20 +149,12 @@ blocked write scratch/a.ex
 Tool states are `queued`, `running`, `done`, `blocked`, and `error`. The normal
 UI never dumps raw tool maps or full file payloads.
 
-## Confirmation UI
-
-Mutation plans show a dedicated confirmation panel with summary, files to
-create/modify/delete, allowed tools, validation command, risks, and `/confirm`
-or `/cancel` hints. Before `/confirm`, mutation tools remain hidden and
-runtime-blocked by policy. After `/confirm`, the confirmed restricted policy is
-used for exactly one execution turn.
-
 ## Image generation UI
 
-When `image_generation` is allowed by an explicit policy or confirmed plan, the
-activity timeline shows the prompt summary, output path, running/done/error
-status, saved file path, and an `open generated/file.png` hint after success.
-The TUI does not require external image viewers.
+When `image_generation` runs, the activity timeline shows the prompt summary,
+output path, running/done/error status, saved file path, and an
+`open generated/file.png` hint after success. The TUI does not require external
+image viewers.
 
 ## TUI troubleshooting
 
@@ -170,27 +169,21 @@ The TUI does not require external image viewers.
 
 The current workspace is Elixir/Mix, but the assistant is not Elixir-only. It should answer standalone programming questions in the requested language without refusing or forcing the answer back to this repository. For example, a question like `can you write something in Java?` should receive a Java example directly in chat.
 
-Workspace mutation rules still apply to every language: creating or editing Java, Python, C++, or any other files requires an explicit `Policy:` block or the normal `plan -> /confirm` flow. Mix validation only validates this Elixir project; the agent should not claim it compiled or ran non-Elixir code unless an appropriate project tool exists.
+Workspace mutation rules still apply to every language: creating or editing Java, Python, C++, or any other files stays inside workspace path safety and optional project policy. Mix validation only validates this Elixir project; the agent should not claim it compiled or ran non-Elixir code unless an appropriate project tool exists.
 
-## Normal mutation flow
+## Autonomous mutation flow
 
-For normal user text, the agent should not write immediately. It first creates a non-mutating plan:
+Fresh sessions are autonomous. For normal user text, the agent may inspect,
+write, edit, patch, and validate directly. If a runtime guard blocks a tool
+call, the agent receives the error and should self-correct by choosing an
+allowed path or tool when possible.
 
-```text
-> Create scratch/policy_test.ex with a tiny module. Do not touch anything else.
-
-Pending plan stored. Confirm with `/confirm` ...
-
-> /confirm
-
-File created: scratch/policy_test.ex
-```
-
-Before confirmation, mutation tools are hidden from the API schema and runtime-blocked as a second safety layer. After confirmation, the generated policy is active for exactly one turn and is then cleared.
+Use project policy when you want stricter control over what the autonomous agent
+can read, write, or execute.
 
 ## Explicit Policy blocks
 
-Advanced users and tests can bypass the planning step with an explicit machine-readable policy:
+Advanced users and tests can narrow a turn with an explicit machine-readable policy:
 
 ```text
 /paste
@@ -219,11 +212,52 @@ Supported modes:
 
 If a `Policy:` block has an invalid mode, the runtime fails closed and disables mutation tools.
 
+## Optional project policy
+
+Projects can add `.beamcore/policy.json` to make runtime permissions stricter. Missing config preserves the default autonomous behavior. Project policy is enforced in code, not only in the prompt, and cannot bypass workspace path safety.
+
+The local config is ignored by git. Use `.beamcore/policy.example.json` as the checked-in template.
+
+Example:
+
+```json
+{
+  "version": 1,
+  "deny_paths": [".env", ".env.*", "secrets/**", "private/**", "_build/**", "deps/**", ".git/**"],
+  "read_only_paths": ["config/prod.exs", "mix.lock"],
+  "allow_write_paths": ["lib/**", "test/**", "README.md", "generated/**"],
+  "tool_permissions": {
+    "read": "allow",
+    "grep": "allow",
+    "glob": "allow",
+    "tree": "allow",
+    "write": "confirm",
+    "edit": "confirm",
+    "patch": "confirm",
+    "fs": "confirm",
+    "git": "confirm",
+    "mix": "allow",
+    "image_generation": "confirm",
+    "task": "deny",
+    "curl": "deny"
+  }
+}
+```
+
+- `deny_paths` always wins, for reads and writes.
+- `read_only_paths` can be read/searched/listed but cannot be mutated.
+- `allow_write_paths` is optional; when present, writes must match one of these patterns.
+- `tool_permissions` is optional and supports `allow`, `confirm`, and `deny`.
+- `confirm` means the tool can run only when an existing restricted runtime policy already allows that mutation; it is not part of the normal autonomous flow.
+- Invalid JSON fails closed and blocks tools until the file is fixed.
+- Normal agent mutation tools cannot edit `.beamcore/policy.json`; policy changes must come from deterministic `/policy` commands or manual user edits.
+- Stricter `/policy` changes apply immediately. Weaker changes, such as removing a deny path or setting a denied tool to `allow`, require `--confirm`.
+
 ## Tools
 
 | Tool | Description |
 |---|---|
-| `plan` | Stores a non-mutating pending plan for `/confirm`. |
+| `plan` | Records an optional non-mutating planning note. |
 | `read` | Reads workspace-relative files/directories with offset/limit support. |
 | `grep` | Searches file content with workspace boundary checks and fallback if `rg` is unavailable. |
 | `glob` | Finds files by glob pattern with workspace boundary checks and fallback if `rg` is unavailable. |
@@ -296,6 +330,7 @@ mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
 - No shell/bash/sh/zsh tool exists.
 - Runtime code does not depend on `Mix.env/0` or test-only branches.
 - Tool calls are authorized before execution.
+- Optional `.beamcore/policy.json` can further restrict tools and paths at runtime.
 - Blocked tool calls are printed as blocked, not as successful execution.
 - Mutation tool arguments and outputs are compacted in active API history.
 - `task` and `curl` are hidden unless explicitly enabled.

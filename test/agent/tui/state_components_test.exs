@@ -21,14 +21,21 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     command_names = Enum.map(Events.commands(), & &1.name)
 
     assert "yolo" in command_names
+    assert "policy" in command_names
+    assert "policy show" in command_names
+    assert "policy init" in command_names
+    refute "confirm" in command_names
+    refute "cancel" in command_names
     assert Help.widget().content.text =~ "/yolo"
+    assert Help.widget().content.text =~ "/policy"
+    refute Help.widget().content.text =~ "/confirm"
   end
 
   test "empty state is product-facing and includes mascot hints", %{state: state} do
     widget = state |> EmptyState.text() |> EmptyState.widget()
 
     assert widget.text =~ "BEAMCORE.AGENT"
-    assert widget.text =~ "Tool calls and plans"
+    assert widget.text =~ "Tool calls, plans"
     assert widget.text =~ "/help"
     refute widget.text =~ "%{"
   end
@@ -62,22 +69,21 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     assert bottom.scroll_offset == 0
   end
 
-  test "pending confirmation panel renders plan details", %{session: session} do
-    result =
-      Beamcore.Agent.Tools.Plan.execute(%{
-        "summary" => "Create a module",
-        "create_files" => ["scratch/a.ex"],
-        "modify_files" => ["README.md"],
-        "delete_files" => ["scratch/old.ex"],
-        "allowed_tools" => ["write", "mix"],
-        "validation" => "mix test",
-        "risks" => ["Small scoped change"]
-      })
+  test "legacy pending panel renders action details", %{session: session} do
+    pending_action = %{
+      summary: "Create a module",
+      create_files: ["scratch/a.ex"],
+      modify_files: ["README.md"],
+      delete_files: ["scratch/old.ex"],
+      validation: "mix test",
+      risks: ["Small scoped change"],
+      policy: %{allowed_tools: ["write", "mix"]}
+    }
 
     session = %{
       session
       | pending_user_message: "Create a module",
-        context: Context.update_from_tool(session.context, "plan", %{}, result)
+        context: Context.put_pending_action(session.context, pending_action)
     }
 
     text = session |> State.pending_action() |> Confirmation.text()
@@ -86,7 +92,7 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     assert text =~ "scratch/a.ex"
     assert text =~ "README.md"
     assert text =~ "mix test"
-    assert text =~ "/confirm"
+    refute text =~ "/confirm"
     assert text =~ "/cancel"
   end
 
@@ -149,12 +155,12 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
         "write",
         %{"filePath" => "scratch/a.ex", "content" => "bad"},
         :blocked,
-        "Error: Mutation requires a confirmed plan."
+        "Error: Tool call blocked by project policy."
       )
 
     assert event.label == "blocked write scratch/a.ex (3 bytes)"
     assert event.status == :blocked
-    assert event.result =~ "Mutation requires"
+    assert event.result =~ "project policy"
     refute event.label =~ "%{"
     refute event.summary =~ "%{"
   end
@@ -237,18 +243,26 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     assert String.length(event.summary) < 260
   end
 
-  test "status bar reflects baseline yolo state", %{state: state, session: session} do
-    state = %{state | session: %{session | policy_override: ToolPolicy.yolo()}}
-
+  test "status bar reflects autonomous yolo default", %{state: state} do
     assert StatusBar.widget(state, :wide).text =~ "YOLO"
   end
 
-  test "runtime policy is not bypassed before confirmation" do
-    assert {:error, reason} =
+  test "status bar includes project policy indicator", %{state: state} do
+    assert StatusBar.widget(state, :wide).text =~ "policy:"
+  end
+
+  test "policy activity event is compact" do
+    event =
+      State.compact_activity("policy", %{"action" => "deny", "target" => "secrets/**"}, :done)
+
+    assert event.label == "policy deny secrets/**"
+    refute event.label =~ "%{"
+  end
+
+  test "default runtime policy is autonomous while project policy can still narrow it" do
+    assert :ok =
              ToolPolicy.allow_tool_call(ToolPolicy.default(), "write", %{
                "filePath" => "scratch/a.ex"
              })
-
-    assert reason =~ "Mutation requires"
   end
 end

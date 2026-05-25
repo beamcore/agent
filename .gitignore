@@ -6,6 +6,8 @@
 .env
 .env.*
 !.env.example
+/.beamcore/policy.json
+!/.beamcore/policy.example.json
 erl_crash.dump
 *.ez
 *.beam

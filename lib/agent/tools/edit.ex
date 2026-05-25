@@ -2,6 +2,7 @@ defmodule Beamcore.Agent.Tools.Edit do
   @moduledoc """
   Tool to replace exact string in a file.
   """
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -45,7 +46,8 @@ defmodule Beamcore.Agent.Tools.Edit do
     old_string = Map.fetch!(params, "old_string")
     new_string = Map.fetch!(params, "new_string")
 
-    with {:ok, expanded_path} <- PathSafety.resolve(path) do
+    with :ok <- ProjectPolicy.allowed_write_path?(path),
+         {:ok, expanded_path} <- PathSafety.resolve(path) do
       case File.read(expanded_path) do
         {:ok, content} ->
           if String.contains?(content, old_string) do

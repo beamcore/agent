@@ -7,6 +7,7 @@ defmodule Beamcore.Agent.Tools.Tree do
   Show a compact workspace directory tree with sizes. Rejects unsafe paths.
   """
 
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   def name, do: "tree"
@@ -33,7 +34,10 @@ defmodule Beamcore.Agent.Tools.Tree do
   def execute(params) do
     show_all = Map.get(params, "all", false)
 
-    with {:ok, path} <- PathSafety.resolve(Map.get(params, "path", ".")) do
+    requested_path = Map.get(params, "path", ".")
+
+    with :ok <- ProjectPolicy.allowed_read_path?(requested_path),
+         {:ok, path} <- PathSafety.resolve(requested_path) do
       if File.dir?(path) do
         ignored = if show_all, do: MapSet.new(), else: PathSafety.gitignores_for_path(path)
         do_tree(path, path, "", show_all, ignored) |> truncate()
@@ -85,12 +89,15 @@ defmodule Beamcore.Agent.Tools.Tree do
     end
   end
 
-  defp filter_entries(entries, _path, _root_path, true, _ignored), do: entries
+  defp filter_entries(entries, path, _root_path, true, _ignored) do
+    Enum.reject(entries, &ProjectPolicy.denied_path?(Path.join(path, &1)))
+  end
 
   defp filter_entries(entries, path, root_path, false, ignored) do
     entries
     |> Enum.reject(fn entry ->
-      PathSafety.ignored?(Path.join(path, entry), root_path, ignored)
+      full_path = Path.join(path, entry)
+      PathSafety.ignored?(full_path, root_path, ignored) or ProjectPolicy.denied_path?(full_path)
     end)
   end
 

@@ -4,13 +4,14 @@ defmodule Beamcore.Agent.Tools.ImageGeneration do
   """
 
   alias Beamcore.Agent.Providers
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
   Generate an image with the configured image provider and save it to a
   workspace-relative output path. The default provider is Mistral, using Agents
   with the built-in image_generation tool. This tool performs real API calls and
-  is available only after an explicit Policy or confirmed plan allows it.
+  remains subject to workspace path safety and project policy.
   """
 
   def name, do: "image_generation"
@@ -63,6 +64,7 @@ defmodule Beamcore.Agent.Tools.ImageGeneration do
   def execute(params) when is_map(params) do
     with {:ok, _prompt} <- required_string(params, "prompt"),
          {:ok, output_path} <- required_string(params, "output_path"),
+         :ok <- ProjectPolicy.allowed_write_path?(output_path),
          {:ok, absolute_output_path} <- PathSafety.resolve(output_path, allow_missing: true),
          {:ok, files} <- Providers.ImageGeneration.generate(params),
          {:ok, saved_paths} <- save_files(files, absolute_output_path) do

@@ -2,6 +2,7 @@ defmodule Beamcore.Agent.Tools.Git do
   @moduledoc """
   Tool to perform git operations within the workspace safely.
   """
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -63,7 +64,8 @@ defmodule Beamcore.Agent.Tools.Git do
     operation = Map.fetch!(params, "operation")
     workdir = Map.get(params, "workdir", ".")
 
-    with {:ok, safe_workdir} <- PathSafety.resolve(workdir) do
+    with :ok <- ProjectPolicy.allowed_read_path?(workdir),
+         {:ok, safe_workdir} <- PathSafety.resolve(workdir) do
       execute_operation(operation, params, safe_workdir)
     else
       {:error, reason} -> PathSafety.error(reason)
@@ -80,7 +82,8 @@ defmodule Beamcore.Agent.Tools.Git do
           url ->
             path = Map.get(params, "path")
 
-            with :ok <- validate_optional_path(path) do
+            with :ok <- ProjectPolicy.allowed_write_path?(path || "."),
+                 :ok <- validate_optional_path(path) do
               args = if path, do: ["clone", url, path], else: ["clone", url]
               run_git(args, workdir)
             else
@@ -91,7 +94,8 @@ defmodule Beamcore.Agent.Tools.Git do
       "add" ->
         path = Map.get(params, "path") || "."
 
-        with :ok <- PathSafety.validate_pattern(path) do
+        with :ok <- ProjectPolicy.allowed_write_path?(path),
+             :ok <- PathSafety.validate_pattern(path) do
           run_git(["add", path], workdir)
         else
           {:error, reason} -> PathSafety.error(reason)
@@ -106,7 +110,8 @@ defmodule Beamcore.Agent.Tools.Git do
             "Error: path is required for restore operation."
 
           path ->
-            with :ok <- PathSafety.validate_pattern(path) do
+            with :ok <- ProjectPolicy.allowed_write_path?(path),
+                 :ok <- PathSafety.validate_pattern(path) do
               run_git(["restore", path], workdir)
             else
               {:error, reason} -> PathSafety.error(reason)
@@ -131,6 +136,7 @@ defmodule Beamcore.Agent.Tools.Git do
         path = Map.get(params, "path")
 
         with :ok <- validate_revision(base),
+             :ok <- allow_optional_read_path(path),
              :ok <- validate_optional_path(path) do
           args = ["diff"]
           args = if staged, do: args ++ ["--staged"], else: args
@@ -169,6 +175,8 @@ defmodule Beamcore.Agent.Tools.Git do
 
   defp validate_optional_path(nil), do: :ok
   defp validate_optional_path(path), do: PathSafety.validate_pattern(path)
+  defp allow_optional_read_path(nil), do: :ok
+  defp allow_optional_read_path(path), do: ProjectPolicy.allowed_read_path?(path)
 
   defp validate_revision(nil), do: :ok
 

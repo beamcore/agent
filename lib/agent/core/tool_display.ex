@@ -29,6 +29,7 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   end
 
   def target("image_generation", args), do: Map.get(args, "output_path")
+  def target("policy", args), do: Map.get(args, "target") || Map.get(args, "action")
   def target("mix", args), do: compact_join([Map.get(args, "command"), Map.get(args, "args")])
   def target("git", args), do: Map.get(args, "operation") || Map.get(args, "command")
   def target("fs", args), do: Map.get(args, "path") || Map.get(args, "target")
@@ -41,6 +42,9 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
 
   def label("image_generation", _args, target, _status),
     do: compact_join(["image_generation ->", target]) || "image_generation"
+
+  def label("policy", args, target, _status),
+    do: compact_join(["policy", Map.get(args, "action"), target])
 
   def label("write", args, target, _status),
     do: compact_join(["write", target, byte_badge(args)])
@@ -98,7 +102,14 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
       |> Enum.take(5)
       |> Enum.join(", ")
 
-    compact_text((files == "" && Map.get(args, "summary", "pending plan")) || files)
+    compact_text((files == "" && Map.get(args, "summary", "plan")) || files)
+  end
+
+  def summary("policy", args, result) do
+    [Map.get(args, "message"), result_summary(result)]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" · ")
+    |> compact_text()
   end
 
   def summary("write", args, _result), do: byte_summary(args)

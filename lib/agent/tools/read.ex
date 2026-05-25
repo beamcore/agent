@@ -6,6 +6,7 @@ defmodule Beamcore.Agent.Tools.Read do
   @default_limit 200
   @max_line_length 200
   @small_file_threshold 250
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -44,38 +45,37 @@ defmodule Beamcore.Agent.Tools.Read do
     offset = Map.get(params, "offset", 1)
     limit = Map.get(params, "limit", @default_limit)
 
-    case PathSafety.resolve(file_path) do
-      {:ok, expanded_path} ->
-        case File.stat(expanded_path) do
-          {:ok, %File.Stat{type: :directory}} ->
-            read_directory(expanded_path, offset, limit)
+    with :ok <- ProjectPolicy.allowed_read_path?(file_path),
+         {:ok, expanded_path} <- PathSafety.resolve(file_path) do
+      case File.stat(expanded_path) do
+        {:ok, %File.Stat{type: :directory}} ->
+          read_directory(expanded_path, offset, limit)
 
-          {:ok, %File.Stat{type: :regular}} ->
-            # For small files, read in full if no custom offset/limit is provided
-            if offset == 1 && limit == @default_limit do
-              case File.stream!(expanded_path) |> Enum.count() do
-                total_lines when total_lines <= @small_file_threshold ->
-                  read_file(expanded_path, 1, total_lines)
+        {:ok, %File.Stat{type: :regular}} ->
+          # For small files, read in full if no custom offset/limit is provided
+          if offset == 1 && limit == @default_limit do
+            case File.stream!(expanded_path) |> Enum.count() do
+              total_lines when total_lines <= @small_file_threshold ->
+                read_file(expanded_path, 1, total_lines)
 
-                _ ->
-                  read_file(expanded_path, offset, limit)
-              end
-            else
-              read_file(expanded_path, offset, limit)
+              _ ->
+                read_file(expanded_path, offset, limit)
             end
+          else
+            read_file(expanded_path, offset, limit)
+          end
 
-          {:ok, _} ->
-            "Error: Path is not a regular file or directory: #{expanded_path}"
+        {:ok, _} ->
+          "Error: Path is not a regular file or directory: #{expanded_path}"
 
-          {:error, :enoent} ->
-            suggest_files(expanded_path)
+        {:error, :enoent} ->
+          suggest_files(expanded_path)
 
-          {:error, reason} ->
-            "Error reading path #{expanded_path}: #{reason}"
-        end
-
-      {:error, reason} ->
-        PathSafety.error(reason)
+        {:error, reason} ->
+          "Error reading path #{expanded_path}: #{reason}"
+      end
+    else
+      {:error, reason} -> PathSafety.error(reason)
     end
   end
 
@@ -86,8 +86,10 @@ defmodule Beamcore.Agent.Tools.Read do
   defp read_directory(path, offset, limit) do
     case File.ls(path) do
       {:ok, files} ->
-        # Sort files alphabetically
-        sorted_files = Enum.sort(files)
+        sorted_files =
+          files
+          |> Enum.reject(&ProjectPolicy.denied_path?(Path.join(path, &1)))
+          |> Enum.sort()
 
         # Add trailing slash for directories
         formatted_files =
