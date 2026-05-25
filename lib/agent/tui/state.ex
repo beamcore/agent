@@ -112,6 +112,7 @@ defmodule Beamcore.Agent.TUI.State do
     |> min(max_value)
   end
 
+  # Intentionally unlimited backscroll to allow reading the full history.
   def scroll_up(state, amount \\ 1),
     do: %{state | scroll_offset: state.scroll_offset + amount} |> mark_dirty()
 

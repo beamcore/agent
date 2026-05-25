@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
   alias Beamcore.Agent.TUI.Components.{Activity, Mascot}
   alias Beamcore.Agent.TUI.{State, Theme, Wrap}
   alias ExRatatui.Widgets.Paragraph
+  alias Number.SI
 
   def widget(state, mode) do
     usage = State.usage(state.session)
@@ -16,7 +17,7 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
     text =
       case mode do
         :narrow ->
-          "#{mascot} #{status(state.status)}#{yolo}  #{session_id}  tok #{usage.last_prompt_tokens}/#{usage.total_tokens}"
+          "#{mascot} #{status(state.status)}#{yolo}  #{session_id}  tok #{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
 
         _ ->
           [
@@ -24,7 +25,7 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
             model,
             provider,
             "session #{session_id}",
-            "tok #{usage.last_prompt_tokens}/#{usage.total_tokens}",
+            "tok #{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}",
             Activity.compact_text(state)
           ]
           |> Enum.join("  •  ")
