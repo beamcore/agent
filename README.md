@@ -120,7 +120,7 @@ line-based operation.
 ## TUI layout
 
 - **Wide**: chat transcript, right activity/tool sidebar, bottom input, clean
-  centered header, and compact status bar.
+  centered header, and compact status bar with a tiny state indicator.
 - **Medium**: chat transcript, compact activity strip, command bar, and status bar.
 - **Narrow**: single-column chat, command bar, compact status, and activity
   details via `Tab`.
@@ -128,8 +128,9 @@ line-based operation.
 
 The empty state is intentional: it shows the product title, a short
 description, example prompts, `/help`, autonomous-tool hints, and
-session/model/provider details. The header and status bar stay clean and
-professional; tool calls live in the activity rail instead of decorative UI.
+session/model/provider details. The header stays clean and professional; the
+compact status indicator shows agent state while tool calls live in the activity
+rail instead of decorative UI.
 
 ## Activity timeline
 
