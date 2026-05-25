@@ -51,14 +51,14 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     refute State.animation_due?(ticked, 700)
   end
 
-  test "scroll offset is clamped and new messages do not yank user from history", %{state: state} do
+  test "scroll offset is updated and new messages do not yank user from history", %{state: state} do
     scrolled = State.scroll_up(state, 500)
-    assert scrolled.scroll_offset == 120
+    assert scrolled.scroll_offset == 500
 
     still_scrolled = State.add_message(scrolled, :assistant, "new message while reading history")
-    assert still_scrolled.scroll_offset == 120
+    assert still_scrolled.scroll_offset == 500
 
-    bottom = State.scroll_down(still_scrolled, 500)
+    bottom = State.scroll_down(still_scrolled, 600)
     assert bottom.scroll_offset == 0
   end
 

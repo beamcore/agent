@@ -65,23 +65,47 @@ defmodule Beamcore.Agent.TUI.App do
     end
   end
 
-  defp drain_terminal_events(state, remaining) when remaining <= 0, do: state
+  defp drain_terminal_events(state, _remaining) do
+    # Poll all available events in the queue, up to 500 events
+    events = poll_available_events([], 500)
 
-  defp drain_terminal_events(state, remaining) do
+    # Determine if this batch of events constitutes a paste.
+    # We define a paste as having more than 1 key press event in a single batch.
+    key_press_count =
+      Enum.count(events, fn
+        %ExRatatui.Event.Key{} = event -> key_press?(event)
+        _ -> false
+      end)
+
+    paste? = key_press_count > 1
+
+    process_events(events, state, paste: paste?)
+  end
+
+  defp poll_available_events(acc, remaining) when remaining <= 0, do: Enum.reverse(acc)
+
+  defp poll_available_events(acc, remaining) do
     case ExRatatui.poll_event(0) do
       nil ->
-        state
+        Enum.reverse(acc)
 
       event ->
-        case Events.handle_event(event, state) do
-          {:stop, next_state} ->
-            %{next_state | status: :quit}
+        poll_available_events([event | acc], remaining - 1)
+    end
+  end
 
-          {:noreply, next_state} ->
-            next_state
-            |> State.mark_dirty()
-            |> drain_terminal_events(remaining - 1)
-        end
+  defp key_press?(%ExRatatui.Event.Key{kind: kind}), do: kind in [nil, "press", :press]
+  defp key_press?(_), do: false
+
+  defp process_events([], state, _opts), do: state
+
+  defp process_events([event | rest], state, opts) do
+    case Events.handle_event(event, state, opts) do
+      {:stop, next_state} ->
+        %{next_state | status: :quit}
+
+      {:noreply, next_state} ->
+        process_events(rest, State.mark_dirty(next_state), opts)
     end
   end
 end

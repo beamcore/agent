@@ -22,19 +22,25 @@ defmodule Beamcore.Agent.TUI.Events do
 
   def commands, do: @commands
 
-  def handle_event(%Event.Key{} = event, state) do
+  def handle_event(event, state, opts \\ [])
+
+  def handle_event(%Event.Key{} = event, state, opts) do
     code = normalize_code(event.code)
     mods = normalize_mods(event.modifiers)
 
     if key_press?(event) do
-      handle_key(code, mods, state)
+      if code == "enter" and Keyword.get(opts, :paste, false) do
+        {:noreply, insert_newline(state)}
+      else
+        handle_key(code, mods, state)
+      end
     else
       {:noreply, state}
     end
   end
 
-  def handle_event(%Event.Resize{}, state), do: {:noreply, State.mark_dirty(state)}
-  def handle_event(_event, state), do: {:noreply, state}
+  def handle_event(%Event.Resize{}, state, _opts), do: {:noreply, State.mark_dirty(state)}
+  def handle_event(_event, state, _opts), do: {:noreply, state}
 
   def handle_runtime_event({:status, status}, state), do: State.set_status(state, status)
   def handle_runtime_event({:session, session}, state), do: State.set_session(state, session)
@@ -125,11 +131,15 @@ defmodule Beamcore.Agent.TUI.Events do
 
   defp maybe_submit_or_newline(state, mods) do
     if "shift" in mods do
-      ExRatatui.textarea_handle_key(state.textarea, "enter", mods)
-      state
+      insert_newline(state)
     else
       submit(state)
     end
+  end
+
+  defp insert_newline(state) do
+    ExRatatui.textarea_handle_key(state.textarea, "enter", [])
+    state
   end
 
   defp submit(%{worker: worker} = state) when not is_nil(worker),
