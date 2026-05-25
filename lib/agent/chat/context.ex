@@ -241,7 +241,8 @@ defmodule Beamcore.Agent.Chat.Context do
 
   defp list_line(_label, nil), do: nil
 
-  defp list_line(label, %MapSet{} = set), do: list_line(label, MapSet.to_list(set))
+  defp list_line(label, set) when is_struct(set, MapSet),
+    do: list_line(label, MapSet.to_list(set))
 
   defp list_line(_label, []), do: nil
 
