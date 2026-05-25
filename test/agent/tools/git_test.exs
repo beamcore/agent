@@ -65,13 +65,30 @@ defmodule Beamcore.Agent.Tools.GitTest do
   end
 
   test "commit operation works or handles clean working tree gracefully" do
-    params = %{"operation" => "commit", "message" => "test commit"}
-    output = Git.execute(params)
-    # Since tests might run in clean working tree, assert it handles empty commit gracefully
-    assert String.contains?(output, "nothing to commit") ||
-             String.contains?(output, "nothing added to commit") ||
-             String.contains?(output, "no changes added to commit") ||
-             String.contains?(output, "Success")
+    workdir = "tmp/git_tool_commit_test_#{System.unique_integer([:positive])}"
+    File.mkdir_p!(workdir)
+
+    try do
+      System.cmd("git", ["init"], cd: workdir)
+      File.write!(Path.join(workdir, "tracked.txt"), "hello\n")
+      System.cmd("git", ["add", "tracked.txt"], cd: workdir)
+
+      params = %{
+        "operation" => "commit",
+        "message" => "test commit",
+        "workdir" => workdir
+      }
+
+      output = Git.execute(params)
+
+      assert String.contains?(output, "Success") ||
+               String.contains?(output, "test commit") ||
+               String.contains?(output, "nothing to commit") ||
+               String.contains?(output, "nothing added to commit") ||
+               String.contains?(output, "no changes added to commit")
+    after
+      File.rm_rf!(workdir)
+    end
   end
 
   test "unsupported operation returns error" do

@@ -21,7 +21,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert "patch" in names
     assert "fs" in names
     assert "task" in names
-    assert "curl" in names
+    assert "web_get" in names
     assert "image_generation" in names
   end
 
@@ -37,21 +37,21 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
     assert "task" in names
-    refute "curl" in names
+    refute "web_get" in names
   end
 
-  test "tool_specs includes curl only when policy allows explicit network access" do
+  test "tool_specs includes web_get only when policy allows explicit network access" do
     policy =
       ToolPolicy.from_user_message("""
       Policy:
       mode: development
       allowed_tools:
-      - curl
+      - web_get
       """)
 
     names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
-    assert "curl" in names
+    assert "web_get" in names
     refute "task" in names
   end
 
@@ -66,14 +66,14 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     assert Enum.sort(names) == Enum.sort(~w(read grep glob tree git mix))
     refute "task" in names
-    refute "curl" in names
+    refute "web_get" in names
     refute "write" in names
     refute "edit" in names
     refute "patch" in names
     refute "fs" in names
   end
 
-  test "tool_specs applies restricted-write policy without task, curl, tree, or git" do
+  test "tool_specs applies restricted-write policy without task, web_get, tree, or git" do
     policy =
       ToolPolicy.from_user_message("""
       Policy:
@@ -87,7 +87,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     assert Enum.sort(names) == Enum.sort(~w(read grep glob write edit patch fs mix))
     refute "task" in names
-    refute "curl" in names
+    refute "web_get" in names
     refute "tree" in names
     refute "git" in names
     refute "image_generation" in names

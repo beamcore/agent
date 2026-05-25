@@ -14,7 +14,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert "patch" in ToolPolicy.allowed_tool_names(policy)
     assert "fs" in ToolPolicy.allowed_tool_names(policy)
     assert "task" in ToolPolicy.allowed_tool_names(policy)
-    assert "curl" in ToolPolicy.allowed_tool_names(policy)
+    assert "web_get" in ToolPolicy.allowed_tool_names(policy)
   end
 
   test "natural-language read-only examples do not drive policy without a Policy block" do
@@ -59,7 +59,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert policy.mode == :development
     assert "write" in ToolPolicy.allowed_tool_names(policy)
     refute "task" in ToolPolicy.allowed_tool_names(policy)
-    refute "curl" in ToolPolicy.allowed_tool_names(policy)
+    refute "web_get" in ToolPolicy.allowed_tool_names(policy)
   end
 
   test "invalid Policy mode fails closed and does not expose mutation tools" do
@@ -127,7 +127,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - mix
       blocked_tools:
       - task
-      - curl
+      - web_get
       """)
 
     assert policy.mode == :restricted_write
@@ -378,7 +378,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     allowed = ToolPolicy.allowed_tool_names(policy)
     assert "write" in allowed
     assert "task" in allowed
-    assert "curl" in allowed
+    assert "web_get" in allowed
     assert "git" in allowed
     assert "image_generation" in allowed
 

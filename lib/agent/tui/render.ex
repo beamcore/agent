@@ -72,8 +72,7 @@ defmodule Beamcore.Agent.TUI.Render do
     yolo = if Beamcore.Agent.TUI.State.yolo?(state.session), do: "  YOLO", else: ""
 
     %Paragraph{
-      text:
-        "#{Mascot.header(state.status, state.spinner_step, state.unicode?)}  BEAMCORE.AGENT#{yolo}  // live tools  // /help",
+      text: "BEAMCORE.AGENT#{yolo}  // live tools  // /help",
       style: Theme.style(:title)
     }
   end

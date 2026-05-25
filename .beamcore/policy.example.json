@@ -32,6 +32,6 @@
     "mix": "allow",
     "image_generation": "allow",
     "task": "deny",
-    "curl": "deny"
+    "web_get": "deny"
   }
 }

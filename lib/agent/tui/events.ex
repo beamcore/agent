@@ -4,7 +4,7 @@ defmodule Beamcore.Agent.TUI.Events do
   """
 
   alias Beamcore.Agent.Chat.{Commands, Loop}
-  alias Beamcore.Agent.TUI.State
+  alias Beamcore.Agent.TUI.{History, State}
   alias ExRatatui.Event
   alias ExRatatui.Widgets.SlashCommands
   alias ExRatatui.Widgets.SlashCommands.Command
@@ -28,19 +28,71 @@ defmodule Beamcore.Agent.TUI.Events do
 
   def commands, do: @commands
 
-  def handle_event(%Event.Key{} = event, state) do
+  def handle_event(event, state, opts \\ [])
+
+  def handle_event(%Event.Key{} = event, state, opts) do
     code = normalize_code(event.code)
     mods = normalize_mods(event.modifiers)
 
     if key_press?(event) do
-      handle_key(code, mods, state)
+      if code == "enter" and Keyword.get(opts, :paste, false) do
+        {:noreply, insert_newline(state)}
+      else
+        handle_key(code, mods, state)
+      end
     else
       {:noreply, state}
     end
   end
 
-  def handle_event(%Event.Resize{}, state), do: {:noreply, State.mark_dirty(state)}
-  def handle_event(_event, state), do: {:noreply, state}
+  def handle_event(%Event.Resize{}, state, _opts), do: {:noreply, State.mark_dirty(state)}
+
+  def handle_event(%Event.Mouse{} = event, state, opts) do
+    {width, height} =
+      case Keyword.fetch(opts, :terminal_size) do
+        {:ok, size} -> size
+        :error -> ExRatatui.terminal_size()
+      end
+
+    areas =
+      Beamcore.Agent.TUI.Layout.areas(%ExRatatui.Layout.Rect{
+        x: 0,
+        y: 0,
+        width: width,
+        height: height
+      })
+
+    in_activity? =
+      case areas do
+        %{activity: %ExRatatui.Layout.Rect{} = rect} ->
+          event.x >= rect.x and event.x < rect.x + rect.width and
+            event.y >= rect.y and event.y < rect.y + rect.height
+
+        _ ->
+          false
+      end
+
+    case event.kind do
+      "scroll_up" ->
+        if in_activity? do
+          {:noreply, scroll_activity(state, :up)}
+        else
+          {:noreply, State.scroll_up(state, 3)}
+        end
+
+      "scroll_down" ->
+        if in_activity? do
+          {:noreply, scroll_activity(state, :down)}
+        else
+          {:noreply, State.scroll_down(state, 3)}
+        end
+
+      _ ->
+        {:noreply, state}
+    end
+  end
+
+  def handle_event(_event, state, _opts), do: {:noreply, state}
 
   def handle_runtime_event({:status, status}, state), do: State.set_status(state, status)
   def handle_runtime_event({:session, session}, state), do: State.set_session(state, session)
@@ -85,8 +137,16 @@ defmodule Beamcore.Agent.TUI.Events do
     end
   end
 
-  defp handle_key(code, _mods, state) when code in ["esc", "escape"],
-    do: {:noreply, close_panels(state)}
+  defp handle_key(code, _mods, state) when code in ["esc", "escape"] do
+    state =
+      state
+      |> Map.put(:show_commands, false)
+      |> Map.put(:command_matches, [])
+      |> Map.put(:history_index, nil)
+
+    ExRatatui.textarea_set_value(state.textarea, "")
+    {:noreply, state |> close_panels() |> State.mark_dirty()}
+  end
 
   defp handle_key("tab", _mods, state),
     do: {:noreply, %{state | show_activity_details: not state.show_activity_details}}
@@ -101,7 +161,7 @@ defmodule Beamcore.Agent.TUI.Events do
         {:noreply, %{state | selected_activity: min(state.selected_activity + 1, max_index)}}
 
       true ->
-        {:noreply, State.scroll_up(state)}
+        {:noreply, navigate_history(state, :up)}
     end
   end
 
@@ -115,7 +175,7 @@ defmodule Beamcore.Agent.TUI.Events do
         {:noreply, %{state | selected_activity: max(state.selected_activity - 1, 0)}}
 
       true ->
-        {:noreply, State.scroll_down(state)}
+        {:noreply, navigate_history(state, :down)}
     end
   end
 
@@ -123,19 +183,82 @@ defmodule Beamcore.Agent.TUI.Events do
 
   defp handle_text_key(code, mods, state) do
     ExRatatui.textarea_handle_key(state.textarea, code, mods)
+    state = %{state | history_index: nil}
     {:noreply, refresh_commands(state)}
   end
 
-  defp ctrl?(mods) when is_list(mods), do: "ctrl" in mods
-  defp ctrl?(_mods), do: false
+  defp navigate_history(state, :up) do
+    case state.history do
+      [] ->
+        state
+
+      history ->
+        case state.history_index do
+          nil ->
+            draft = ExRatatui.textarea_get_value(state.textarea)
+            index = length(history) - 1
+            value = Enum.at(history, index)
+            ExRatatui.textarea_set_value(state.textarea, value)
+            %{state | history_index: index, history_draft: draft} |> State.mark_dirty()
+
+          index ->
+            new_index = max(0, index - 1)
+            value = Enum.at(history, new_index)
+            ExRatatui.textarea_set_value(state.textarea, value)
+            %{state | history_index: new_index} |> State.mark_dirty()
+        end
+    end
+  end
+
+  defp navigate_history(state, :down) do
+    case state.history_index do
+      nil ->
+        state
+
+      index ->
+        history = state.history
+        new_index = index + 1
+
+        if new_index >= length(history) do
+          ExRatatui.textarea_set_value(state.textarea, state.history_draft)
+          %{state | history_index: nil} |> State.mark_dirty()
+        else
+          value = Enum.at(history, new_index)
+          ExRatatui.textarea_set_value(state.textarea, value)
+          %{state | history_index: new_index} |> State.mark_dirty()
+        end
+    end
+  end
+
+  defp scroll_activity(state, :up) do
+    max_index = max(length(state.activity) - 1, 0)
+
+    %{
+      state
+      | selected_activity: min(state.selected_activity + 1, max_index),
+        show_activity_details: true
+    }
+    |> State.mark_dirty()
+  end
+
+  defp scroll_activity(state, :down) do
+    %{state | selected_activity: max(state.selected_activity - 1, 0), show_activity_details: true}
+    |> State.mark_dirty()
+  end
+
+  defp ctrl?(mods), do: "ctrl" in mods
 
   defp maybe_submit_or_newline(state, mods) do
     if "shift" in mods do
-      ExRatatui.textarea_handle_key(state.textarea, "enter", mods)
-      state
+      insert_newline(state)
     else
       submit(state)
     end
+  end
+
+  defp insert_newline(state) do
+    ExRatatui.textarea_handle_key(state.textarea, "enter", [])
+    state
   end
 
   defp submit(%{worker: worker} = state) when not is_nil(worker),
@@ -150,10 +273,12 @@ defmodule Beamcore.Agent.TUI.Events do
 
       String.starts_with?(value, "/") ->
         ExRatatui.textarea_set_value(state.textarea, "")
+        state = record_history(state, value)
         run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
 
       true ->
         ExRatatui.textarea_set_value(state.textarea, "")
+        state = record_history(state, value)
 
         state
         |> State.add_message(:user, value)
@@ -169,7 +294,26 @@ defmodule Beamcore.Agent.TUI.Events do
 
       %Command{name: name} ->
         ExRatatui.textarea_set_value(state.textarea, "")
+        full_command = "/" <> name
+        state = record_history(state, full_command)
         run_command(%{state | show_commands: false}, name)
+    end
+  end
+
+  defp record_history(state, value) do
+    value = String.trim(value)
+
+    if value != "" do
+      last_entry = List.last(state.history)
+
+      if value != last_entry do
+        History.append(value)
+        %{state | history: state.history ++ [value], history_index: nil}
+      else
+        %{state | history_index: nil}
+      end
+    else
+      %{state | history_index: nil}
     end
   end
 
