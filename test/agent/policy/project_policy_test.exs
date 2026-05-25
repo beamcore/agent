@@ -47,6 +47,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
     assert decoded["deny_paths"] == policy.deny_paths
+    assert decoded["tool_permissions"]["write"] == "allow"
     assert decoded["tool_permissions"]["curl"] == "deny"
 
     updated = ProjectPolicy.add_deny_path(policy, "tmp/**")
@@ -193,7 +194,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
              "project policy"
   end
 
-  test "confirm tool permission requires restricted_write for mutation tools" do
+  test "legacy confirm tool permission requires restricted_write for mutation tools" do
     write_policy!(%{
       version: 1,
       allow_write_paths: ["lib/**"],

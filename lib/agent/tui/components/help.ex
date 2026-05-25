@@ -15,7 +15,7 @@ defmodule Beamcore.Agent.TUI.Components.Help do
     /policy show     Show normalized project policy config
     /policy init     Create .beamcore/policy.json
     /policy deny path <pattern>
-    /policy tool <tool> allow|confirm|deny
+    /policy tool <tool> allow|deny
     /policy reload   Reload project policy
     /yolo            Enable all tools with unrestricted access
     /quit /exit /q   Exit

@@ -106,7 +106,7 @@ system, one dispatcher, one context model, and one image generation flow.
 | `/policy deny path <pattern>` | Add a denied path pattern. |
 | `/policy allow-write <pattern>` | Add an allowed write path pattern. |
 | `/policy read-only <pattern>` | Add a read-only path pattern. |
-| `/policy tool <tool> allow\|confirm\|deny` | Set a tool permission. |
+| `/policy tool <tool> allow\|deny` | Set a tool permission. |
 | `/policy remove ...` | Remove a policy entry; weakening changes require `--confirm`. |
 | `/policy reset --confirm` | Delete the local policy config. |
 | `/policy reload` | Reload and summarize policy from disk. |
@@ -231,13 +231,13 @@ Example:
     "grep": "allow",
     "glob": "allow",
     "tree": "allow",
-    "write": "confirm",
-    "edit": "confirm",
-    "patch": "confirm",
-    "fs": "confirm",
-    "git": "confirm",
+    "write": "allow",
+    "edit": "allow",
+    "patch": "allow",
+    "fs": "allow",
+    "git": "allow",
     "mix": "allow",
-    "image_generation": "confirm",
+    "image_generation": "allow",
     "task": "deny",
     "curl": "deny"
   }
@@ -247,8 +247,7 @@ Example:
 - `deny_paths` always wins, for reads and writes.
 - `read_only_paths` can be read/searched/listed but cannot be mutated.
 - `allow_write_paths` is optional; when present, writes must match one of these patterns.
-- `tool_permissions` is optional and supports `allow`, `confirm`, and `deny`.
-- `confirm` means the tool can run only when an existing restricted runtime policy already allows that mutation; it is not part of the normal autonomous flow.
+- `tool_permissions` is optional and supports `allow` and `deny`.
 - Invalid JSON fails closed and blocks tools until the file is fixed.
 - Normal agent mutation tools cannot edit `.beamcore/policy.json`; policy changes must come from deterministic `/policy` commands or manual user edits.
 - Stricter `/policy` changes apply immediately. Weaker changes, such as removing a deny path or setting a denied tool to `allow`, require `--confirm`.
@@ -347,7 +346,7 @@ mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
 - `Beamcore.Agent.Providers.ImageGeneration` dispatches image requests to the configured provider.
 - `Beamcore.Agent.Providers.Mistral` implements Mistral Agents image generation through `Beamcore.Agent.OpenAI` REST helpers.
 - `Beamcore.Agent.OpenAI` is the single Mistral API boundary: OpenaiEx chat client plus binary-safe REST helpers for Agents, Conversations, and Files.
-- `Beamcore.Agent.Core.SysPrompt` defines the coding-agent behavior and safety rules.
+- `Beamcore.Agent.Core.SysPrompt` defines the coding-agent behavior and response style.
 
 ## Development checklist
 
