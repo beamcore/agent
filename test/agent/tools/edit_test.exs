@@ -233,4 +233,20 @@ defmodule Beamcore.Agent.Tools.EditTest do
     assert output =~ "similarity:"
     assert output =~ "=> 3:   def my_speclal_function do"
   end
+
+  test "does not double-indent new_string if it already has the correct target indentation" do
+    file_path = Path.join(@test_dir, "double_indent.txt")
+    File.write!(file_path, "def foo do\n    x  =  1\nend")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "x = 1",
+      "new_string" => "    y = 2\n    z = 3"
+    }
+
+    assert Beamcore.Agent.Tools.Edit.execute(params) ==
+             "Successfully updated #{Path.expand(file_path)}"
+
+    assert File.read!(file_path) == "def foo do\n    y = 2\n    z = 3\nend"
+  end
 end

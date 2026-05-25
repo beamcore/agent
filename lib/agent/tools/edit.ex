@@ -266,8 +266,14 @@ defmodule Beamcore.Agent.Tools.Edit do
     old_indent = get_indent(old_first)
     file_indent = get_indent(file_first)
 
+    new_first = List.first(new_lines) || ""
+    new_first_indent = get_indent(new_first)
+
     cond do
       old_indent == file_indent ->
+        new_lines
+
+      file_indent != "" and String.starts_with?(new_first_indent, file_indent) ->
         new_lines
 
       old_indent == "" ->
@@ -281,15 +287,30 @@ defmodule Beamcore.Agent.Tools.Edit do
         file_len = String.length(file_indent)
         diff = file_len - old_len
 
-        if diff > 0 do
-          indent_to_add = String.duplicate(String.slice(file_indent, 0, 1), diff)
+        cond do
+          diff > 0 ->
+            indent_to_add = String.slice(file_indent, old_len, diff)
 
-          Enum.map(new_lines, fn
-            "" -> ""
-            line -> indent_to_add <> line
-          end)
-        else
-          new_lines
+            Enum.map(new_lines, fn
+              "" -> ""
+              line -> indent_to_add <> line
+            end)
+
+          diff < 0 ->
+            strip_len = abs(diff)
+
+            Enum.map(new_lines, fn
+              "" -> ""
+              line ->
+                if String.starts_with?(line, old_indent) do
+                  String.slice(line, strip_len, String.length(line))
+                else
+                  line
+                end
+            end)
+
+          true ->
+            new_lines
         end
     end
   end
