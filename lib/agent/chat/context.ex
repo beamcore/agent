@@ -63,6 +63,30 @@ defmodule Beamcore.Agent.Chat.Context do
     %{context | pending_action: nil}
   end
 
+  def clear_policy_blocks(%__MODULE__{} = context) do
+    %{
+      context
+      | blocked_attempts: [],
+        active_constraints:
+          Enum.reject(context.active_constraints, fn constraint ->
+            String.starts_with?(constraint, "Current turn") or
+              String.starts_with?(constraint, "Restricted writes only") or
+              policy_block_text?(constraint)
+          end),
+        known_risks: Enum.reject(context.known_risks, &policy_block_text?/1)
+    }
+  end
+
+  defp policy_block_text?(value) when is_binary(value) do
+    value
+    |> String.downcase()
+    |> then(fn text ->
+      String.contains?(text, "project policy") or String.contains?(text, "blocked by policy")
+    end)
+  end
+
+  defp policy_block_text?(_value), do: false
+
   def update_from_tool(%__MODULE__{} = context, name, args, result) do
     context
     |> maybe_record_blocked_attempt(name, args, result)

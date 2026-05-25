@@ -24,7 +24,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           allow_network: boolean(),
           allowed_write_paths: [binary()],
           allowed_tools: [binary()] | nil,
-          blocked_tools: [binary()]
+          blocked_tools: [binary()],
+          project_policy_bypassed?: boolean()
         }
 
   @read_only_tools ~w(read grep glob tree git mix)
@@ -53,14 +54,16 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   Permissive policy for trusted sessions. Allows all tools and paths.
   """
   @spec yolo() :: t()
-  def yolo do
+  @spec yolo(keyword()) :: t()
+  def yolo(opts \\ []) do
     %{
       mode: :unrestricted,
       allow_task: true,
       allow_network: true,
       allowed_write_paths: ["**/*"],
       allowed_tools: nil,
-      blocked_tools: []
+      blocked_tools: [],
+      project_policy_bypassed?: Keyword.get(opts, :project_policy_bypassed?, false)
     }
   end
 
@@ -99,7 +102,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       name not in base_allowed_tool_names(policy) ->
         {:error, blocked_message(policy, name)}
 
-      project_blocked?(project_policy, policy, name, args) ->
+      not project_policy_bypassed?(policy) and
+          project_blocked?(project_policy, policy, name, args) ->
         project_blocked_message(project_policy, policy, name, args)
 
       confirmation_required?(policy) and name in @mutation_tools ->
@@ -135,6 +139,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   def restricted_write?(%{mode: :restricted_write}), do: true
   def restricted_write?(_policy), do: false
 
+  @spec project_policy_bypassed?(t()) :: boolean()
+  def project_policy_bypassed?(policy), do: Map.get(policy, :project_policy_bypassed?, false)
+
   defp fail_closed?(policy),
     do: read_only?(policy) or invalid_policy?(policy) or confirmation_required?(policy)
 
@@ -151,7 +158,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allow_network: false,
       allowed_write_paths: Enum.uniq(allowed_write_paths),
       allowed_tools: allowed_tools,
-      blocked_tools: ["task", "web_get", "git"]
+      blocked_tools: ["task", "web_get", "git"],
+      project_policy_bypassed?: false
     }
   end
 
@@ -169,7 +177,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allow_network: tool_enabled?("web_get", allowed_tools, blocked_tools),
       allowed_write_paths: allowed_write_paths,
       allowed_tools: allowed_tools,
-      blocked_tools: blocked_tools
+      blocked_tools: blocked_tools,
+      project_policy_bypassed?: false
     }
   end
 
@@ -267,7 +276,11 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   end
 
   defp apply_project_tool_filters(tools, policy) do
-    ProjectPolicy.allowed_tool_names(tools, policy, ProjectPolicy.load())
+    if project_policy_bypassed?(policy) do
+      tools
+    else
+      ProjectPolicy.allowed_tool_names(tools, policy, ProjectPolicy.load())
+    end
   end
 
   defp base_allowed_tool_names(%{mode: :unrestricted} = policy),

@@ -11,6 +11,7 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
     usage = State.usage(state.session)
     session_id = if state.session, do: state.session.session_id, else: "starting"
     yolo = if State.yolo?(state.session), do: " · YOLO", else: ""
+    freedom = if State.freedom?(state.session), do: " · FREEDOM", else: ""
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
     model = State.model(state.session)
     provider = State.provider()
@@ -18,12 +19,12 @@ defmodule Beamcore.Agent.TUI.Components.StatusBar do
     text =
       case mode do
         :narrow ->
-          "#{mascot} #{status(state.status)}#{yolo}  #{State.policy_status()}  #{session_id}  tok #{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
+          "#{mascot} #{status(state.status)}#{yolo}#{freedom}  #{State.policy_status(state.session)}  #{session_id}  tok #{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
 
         _ ->
           [
-            "#{mascot} #{status(state.status)}#{yolo}",
-            State.policy_status(),
+            "#{mascot} #{status(state.status)}#{yolo}#{freedom}",
+            State.policy_status(state.session),
             model,
             provider,
             "session #{session_id}",

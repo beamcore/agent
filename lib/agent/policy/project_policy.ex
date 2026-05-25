@@ -12,6 +12,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   @config_path ".beamcore/policy.json"
   @example_path ".beamcore/policy.example.json"
   @protected_paths [@config_path]
+  @process_bypass_key {__MODULE__, :bypassed}
   @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation)
   @write_tools ~w(write edit patch fs image_generation)
   @read_tools ~w(read grep glob tree)
@@ -48,6 +49,23 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   def example_path, do: @example_path
   def known_tools, do: @known_tools
   def permissions, do: ~w(allow confirm deny)
+
+  def bypassed?, do: Process.get(@process_bypass_key, false)
+
+  def with_bypass(fun) when is_function(fun, 0) do
+    previous = bypassed?()
+    Process.put(@process_bypass_key, true)
+
+    try do
+      fun.()
+    after
+      if previous do
+        Process.put(@process_bypass_key, previous)
+      else
+        Process.delete(@process_bypass_key)
+      end
+    end
+  end
 
   def default(root \\ nil) do
     root = root || PathSafety.workspace_root()
@@ -137,10 +155,15 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   Filter already-authorized tool names through project-level permissions.
   """
   def allowed_tool_names(tool_names, runtime_policy, %__MODULE__{} = project_policy) do
-    if fail_closed?(project_policy) do
-      []
-    else
-      Enum.filter(tool_names, &tool_exposed?(&1, runtime_policy, project_policy))
+    cond do
+      bypassed?() or Map.get(runtime_policy, :project_policy_bypassed?, false) ->
+        tool_names
+
+      fail_closed?(project_policy) ->
+        []
+
+      true ->
+        Enum.filter(tool_names, &tool_exposed?(&1, runtime_policy, project_policy))
     end
   end
 
@@ -150,6 +173,9 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   def allow_tool_call(%__MODULE__{} = project_policy, runtime_policy, name, args)
       when is_binary(name) and is_map(args) do
     cond do
+      bypassed?() or Map.get(runtime_policy, :project_policy_bypassed?, false) ->
+        :ok
+
       not project_policy.loaded? ->
         :ok
 
@@ -170,6 +196,9 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
 
   def allowed_read_path?(%__MODULE__{} = project_policy, path) do
     cond do
+      bypassed?() ->
+        :ok
+
       fail_closed?(project_policy) ->
         {:error, invalid_config_message(project_policy)}
 
@@ -184,6 +213,9 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
 
   def allowed_write_path?(%__MODULE__{} = project_policy, path) do
     cond do
+      bypassed?() ->
+        :ok
+
       fail_closed?(project_policy) ->
         {:error, invalid_config_message(project_policy)}
 
@@ -200,10 +232,14 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   def allowed_write_path?(path), do: load() |> allowed_write_path?(path)
 
   def denied_path?(%__MODULE__{} = project_policy, path) do
-    with {:ok, relative} <- normalize_path(path, allow_missing: true) do
-      matches_any?(relative, project_policy.deny_paths)
+    if bypassed?() do
+      false
     else
-      {:error, _reason} -> true
+      with {:ok, relative} <- normalize_path(path, allow_missing: true) do
+        matches_any?(relative, project_policy.deny_paths)
+      else
+        {:error, _reason} -> true
+      end
     end
   end
 
@@ -211,7 +247,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
 
   def ignored?(file, _root_path) do
     policy = load()
-    policy.loaded? and (not policy.valid? or denied_path?(policy, file))
+    not bypassed?() and policy.loaded? and (not policy.valid? or denied_path?(policy, file))
   end
 
   def explain_block({:error, reason}), do: reason

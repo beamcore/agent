@@ -15,6 +15,7 @@ defmodule Beamcore.Agent.Chat.Session do
     :needs_compaction,
     :compaction_count,
     :policy_override,
+    :project_policy_bypassed?,
     :project_nature,
     :context,
     :pending_user_message
@@ -64,6 +65,7 @@ defmodule Beamcore.Agent.Chat.Session do
       needs_compaction: false,
       compaction_count: 0,
       policy_override: nil,
+      project_policy_bypassed?: false,
       project_nature: project_nature,
       context: Beamcore.Agent.Chat.Context.new(project_nature),
       pending_user_message: nil
@@ -77,6 +79,34 @@ defmodule Beamcore.Agent.Chat.Session do
       | pending_user_message: nil,
         context: Beamcore.Agent.Chat.Context.clear_pending_action(session.context)
     }
+  end
+
+
+  @doc """
+  Removes stale model-facing ProjectPolicy block/refusal messages after freedom mode is enabled.
+
+  The TUI keeps its visible transcript separately, but the model payload should not
+  keep treating old ProjectPolicy denials as active constraints once the user has
+  explicitly enabled `/yolo`.
+  """
+  def clear_project_policy_block_history(%__MODULE__{} = session) do
+    %{
+      session
+      | messages: remove_project_policy_block_messages(session.messages),
+        context: Beamcore.Agent.Chat.Context.clear_policy_blocks(session.context)
+    }
+  end
+
+  def remove_project_policy_block_messages(messages) when is_list(messages) do
+    messages
+    |> Enum.reduce([], fn message, acc ->
+      if project_policy_block_message?(message) do
+        maybe_drop_previous_tool_call_assistant(acc, message)
+      else
+        [message | acc]
+      end
+    end)
+    |> Enum.reverse()
   end
 
   @doc """
@@ -293,6 +323,48 @@ defmodule Beamcore.Agent.Chat.Session do
             context: Beamcore.Agent.Chat.Context.compact(session.context)
         }
     end
+  end
+
+
+  defp project_policy_block_message?(message) do
+    role = message[:role] || message["role"]
+    content = message[:content] || message["content"] || ""
+
+    role in ["assistant", "tool"] and project_policy_block_text?(content)
+  end
+
+  defp project_policy_block_text?(content) when is_binary(content) do
+    normalized = String.downcase(content)
+
+    Enum.any?([
+      "blocked by project policy",
+      "project policy",
+      "tool call blocked by project policy",
+      "policy denies",
+      "policy denied",
+      "project policy can only be changed"
+    ], &String.contains?(normalized, &1))
+  end
+
+  defp project_policy_block_text?(_content), do: false
+
+  defp maybe_drop_previous_tool_call_assistant(acc, message) do
+    if (message[:role] || message["role"]) == "tool" do
+      case acc do
+        [previous | rest] ->
+          if assistant_tool_call_message?(previous), do: rest, else: acc
+
+        [] ->
+          acc
+      end
+    else
+      acc
+    end
+  end
+
+  defp assistant_tool_call_message?(message) do
+    (message[:role] || message["role"]) == "assistant" and
+      is_list(message[:tool_calls] || message["tool_calls"])
   end
 
   defp validate_summary(summary) do

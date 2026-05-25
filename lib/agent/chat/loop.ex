@@ -115,7 +115,19 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   def send_message(session, content, pid, policy_override \\ nil, opts \\ []) do
-    policy = policy_override || session.policy_override || ToolPolicy.from_user_message(content)
+    session =
+      if session.project_policy_bypassed? do
+        Session.clear_project_policy_block_history(session)
+      else
+        session
+      end
+
+    policy =
+      policy_override
+      |> Kernel.||(session.policy_override)
+      |> Kernel.||(ToolPolicy.from_user_message(content))
+      |> apply_session_project_policy_bypass(session)
+
     emit(opts, {:status, :thinking})
 
     session =
@@ -125,13 +137,26 @@ defmodule Beamcore.Agent.Chat.Loop do
         %{session | pending_user_message: nil}
       end
 
-    session = %{session | context: Context.from_user_request(session.context, content, policy)}
+    context =
+      if ToolPolicy.project_policy_bypassed?(policy) do
+        Context.clear_policy_blocks(session.context)
+      else
+        session.context
+      end
+
+    session = %{session | context: Context.from_user_request(context, content, policy)}
     user_message = %{role: "user", content: content}
     Session.log(session, user_message)
 
     messages = session.messages ++ [user_message]
     process_messages(session, messages, pid, 0, policy, opts)
   end
+
+  defp apply_session_project_policy_bypass(policy, %{project_policy_bypassed?: true}) do
+    Map.put(policy, :project_policy_bypassed?, true)
+  end
+
+  defp apply_session_project_policy_bypass(policy, _session), do: policy
 
   defp process_messages(session, messages, _pid, depth, _policy, opts)
        when depth >= @max_tool_depth do
@@ -404,23 +429,26 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(", ")
 
-    case Map.get(policy, :mode) do
-      :unconfirmed ->
+    cond do
+      ToolPolicy.project_policy_bypassed?(policy) ->
+        "Current turn policy: freedom. Exposed tools: #{tool_names}. Project policy is bypassed for this session. Previous project-policy block messages are obsolete; retry the requested tool action directly instead of asking to update policy. Hard runtime safety still applies."
+
+      Map.get(policy, :mode) == :unconfirmed ->
         "Current turn policy: legacy_unconfirmed. Exposed tools: #{tool_names}. Mutation tools are unavailable in this legacy compatibility mode."
 
-      :restricted_write ->
+      Map.get(policy, :mode) == :restricted_write ->
         allowed_paths = Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")
 
         "Current turn policy: restricted_write. Exposed tools: #{tool_names}. Allowed write paths: #{allowed_paths}. Do not call plan."
 
-      :read_only ->
+      Map.get(policy, :mode) == :read_only ->
         "Current turn policy: read_only. Exposed tools: #{tool_names}. Do not call mutation or network tools."
 
-      :invalid_policy ->
+      Map.get(policy, :mode) == :invalid_policy ->
         "Current turn policy: invalid_policy. Exposed tools: #{tool_names}. Mutation tools are disabled."
 
-      _ ->
-        "Current turn policy: autonomous. Exposed tools: #{tool_names}. Act directly, self-correct from tool errors, and obey runtime safety constraints and project policy."
+      true ->
+        "Current turn policy: autonomous. Exposed tools: #{tool_names}. Act directly and self-correct from tool errors."
     end
   end
 

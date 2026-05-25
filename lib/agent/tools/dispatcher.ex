@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   """
 
   alias Beamcore.Agent.Chat.ToolPolicy
+  alias Beamcore.Agent.Policy.ProjectPolicy
 
   @tools [
     Beamcore.Agent.Tools.Grep,
@@ -33,7 +34,11 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
       tool ->
         case ToolPolicy.allow_tool_call(policy, name, args) do
           :ok ->
-            execute_tool(tool, name, args)
+            if ToolPolicy.project_policy_bypassed?(policy) do
+              ProjectPolicy.with_bypass(fn -> execute_tool(tool, name, args) end)
+            else
+              execute_tool(tool, name, args)
+            end
 
           {:error, message} ->
             "Error: #{message}"

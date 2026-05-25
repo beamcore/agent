@@ -230,6 +230,54 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     refute File.exists?(".env")
   end
 
+  test "freedom mode bypasses project policy but not hard path safety" do
+    write_policy!(%{version: 1, deny_paths: ["scratch/**"], tool_permissions: %{web_get: "deny"}})
+
+    normal_policy = ToolPolicy.yolo()
+    freedom_policy = ToolPolicy.yolo(project_policy_bypassed?: true)
+    normal_names = Dispatcher.tool_specs(normal_policy) |> Enum.map(& &1.function.name)
+    freedom_names = Dispatcher.tool_specs(freedom_policy) |> Enum.map(& &1.function.name)
+
+    refute "web_get" in normal_names
+    assert "web_get" in freedom_names
+
+    assert Dispatcher.execute(
+             "write",
+             %{"filePath" => "scratch/freedom.ex", "content" => "ok"},
+             normal_policy
+           ) =~ "project policy"
+
+    assert Dispatcher.execute(
+             "write",
+             %{"filePath" => "scratch/freedom.ex", "content" => "ok"},
+             freedom_policy
+           ) =~ "Successfully wrote"
+
+    assert File.read!("scratch/freedom.ex") == "ok"
+
+    assert Dispatcher.execute(
+             "write",
+             %{"filePath" => "../outside.ex", "content" => "bad"},
+             freedom_policy
+           ) =~ "path traversal is not allowed"
+  end
+
+  test "freedom mode bypass is scoped to the wrapped tool execution only" do
+    write_policy!(%{version: 1, deny_paths: ["scratch/**"]})
+
+    freedom_policy = ToolPolicy.yolo(project_policy_bypassed?: true)
+
+    assert Dispatcher.execute(
+             "write",
+             %{"filePath" => "scratch/scoped.ex", "content" => "ok"},
+             freedom_policy
+           ) =~ "Successfully wrote"
+
+    policy = ProjectPolicy.load()
+    assert {:error, message} = ProjectPolicy.allowed_write_path?(policy, "scratch/blocked.ex")
+    assert message =~ "deny_paths"
+  end
+
   test "normal mutation tools cannot edit project policy file" do
     File.mkdir_p!(".beamcore")
     File.write!(".beamcore/policy.json", "{}")

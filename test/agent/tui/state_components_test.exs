@@ -21,12 +21,16 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     command_names = Enum.map(Events.commands(), & &1.name)
 
     assert "yolo" in command_names
+    assert "yolo on" in command_names
+    assert "yolo off" in command_names
     assert "policy" in command_names
     assert "policy show" in command_names
     assert "policy init" in command_names
     refute "confirm" in command_names
     refute "cancel" in command_names
     assert Help.widget().content.text =~ "/yolo"
+    assert Help.widget().content.text =~ "/yolo on"
+    assert Help.widget().content.text =~ "/yolo off"
     assert Help.widget().content.text =~ "/policy"
     refute Help.widget().content.text =~ "/confirm"
   end
@@ -263,6 +267,19 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     content = paragraph_text(widget)
 
     assert content =~ "policy:"
+  end
+
+  test "status bar shows policy bypass in freedom mode", %{state: state} do
+    session = %{
+      state.session
+      | project_policy_bypassed?: true,
+        policy_override: ToolPolicy.yolo(project_policy_bypassed?: true)
+    }
+
+    content = paragraph_text(StatusBar.widget(%{state | session: session}, :wide))
+
+    assert content =~ "FREEDOM"
+    assert content =~ "policy: bypassed"
   end
 
   test "policy activity event is compact" do
