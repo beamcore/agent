@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.TUI.State do
   """
 
   alias Beamcore.Agent.Chat.Session
+  alias Beamcore.Agent.Core.ToolDisplay
 
   @max_activity 80
 
@@ -145,7 +146,7 @@ defmodule Beamcore.Agent.TUI.State do
   end
 
   def update_activity(state, name, args, result) do
-    event = compact_activity(name, args, result_status(result), result)
+    event = compact_activity(name, args, ToolDisplay.result_status(result), result)
 
     activity =
       case state.activity do
@@ -160,120 +161,20 @@ defmodule Beamcore.Agent.TUI.State do
   end
 
   def compact_activity(name, args, status, result \\ nil) do
-    name = to_string(name)
-    target = target(name, args)
+    display = ToolDisplay.activity(name, args, status, result)
 
     %{
       id: System.unique_integer([:positive]),
-      name: name,
-      target: target,
-      status: status,
-      label: label(name, target, status),
-      summary: summary(name, args, result),
-      result: result_summary(result)
+      name: display.name,
+      target: display.target,
+      status: display.status,
+      label: display.label,
+      summary: display.summary,
+      result: display.result
     }
   end
 
-  defp target("image_generation", args), do: Map.get(args, "output_path")
-  defp target("mix", args), do: compact_join([Map.get(args, "command"), Map.get(args, "args")])
-  defp target("git", args), do: Map.get(args, "operation") || Map.get(args, "command")
-  defp target("fs", args), do: compact_join([Map.get(args, "operation"), Map.get(args, "path")])
-
-  defp target(_name, args),
-    do: Map.get(args, "filePath") || Map.get(args, "path") || Map.get(args, "pattern")
-
-  defp label(name, target, :blocked) when target in [nil, ""], do: "blocked #{name}"
-  defp label(name, target, :blocked), do: "blocked #{name} #{target}"
-  defp label(name, nil, _status), do: name
-  defp label(name, "", _status), do: name
-  defp label("image_generation", target, _status), do: "image_generation -> #{target}"
-  defp label(name, target, _status), do: "#{name} #{target}"
-
-  defp summary("image_generation", args, result) do
-    prompt = compact_text(Map.get(args, "prompt", ""), 90)
-    output = Map.get(args, "output_path")
-    saved = saved_path(result)
-
-    [prompt, output && "output #{output}", saved && "saved #{saved}", saved && "open #{saved}"]
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.join(" · ")
-  end
-
-  defp summary("plan", args, _result) do
-    files =
-      ["create_files", "modify_files", "delete_files"]
-      |> Enum.flat_map(&(Map.get(args, &1, []) || []))
-      |> Enum.take(5)
-      |> Enum.join(", ")
-
-    compact_text((files == "" && Map.get(args, "summary", "pending plan")) || files)
-  end
-
-  defp summary("write", args, _result), do: byte_summary(args)
-  defp summary("edit", args, _result), do: byte_summary(args)
-  defp summary("patch", args, _result), do: patch_summary(Map.get(args, "patch_content", ""))
-  defp summary(_name, _args, result), do: result_summary(result)
-
-  defp byte_summary(args) do
-    content = Map.get(args, "content") || Map.get(args, "new_string") || ""
-    if content == "", do: "", else: "#{byte_size(content)} bytes"
-  end
-
-  defp patch_summary(patch) do
-    "#{patch |> to_string() |> String.split("\n") |> length()} patch lines"
-  end
-
-  defp result_status("Error: Tool call blocked" <> _), do: :blocked
-  defp result_status("Error: Mutation requires" <> _), do: :blocked
-  defp result_status("Error: " <> _), do: :error
-  defp result_status(_result), do: :done
-
-  defp result_summary(nil), do: ""
-  defp result_summary("Error: " <> reason), do: compact_text(reason)
-
-  defp result_summary(result) when is_binary(result) do
-    case Jason.decode(result) do
-      {:ok, %{"summary" => summary}} ->
-        compact_text(summary)
-
-      {:ok, %{"ok" => true, "files" => files}} when is_list(files) ->
-        compact_text(Enum.join(files, ", "))
-
-      _ ->
-        compact_text(result)
-    end
-  end
-
-  defp result_summary(result), do: compact_text(inspect(result, limit: 4, printable_limit: 160))
-
-  defp saved_path(result) when is_binary(result) do
-    case Jason.decode(result) do
-      {:ok, %{"files" => [file | _]}} -> file
-      {:ok, %{"saved" => file}} -> file
-      _ -> nil
-    end
-  end
-
-  defp saved_path(_result), do: nil
-
-  defp compact_join(values) do
-    values
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.join(" ")
-    |> case do
-      "" -> nil
-      value -> value
-    end
-  end
-
   def compact_text(value, limit \\ 180) do
-    value
-    |> to_string()
-    |> String.replace(~r/\s+/, " ")
-    |> String.trim()
-    |> truncate(limit)
+    ToolDisplay.compact_text(value, limit)
   end
-
-  defp truncate(text, limit) when byte_size(text) <= limit, do: text
-  defp truncate(text, limit), do: String.slice(text, 0, max(limit - 3, 0)) <> "..."
 end

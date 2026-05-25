@@ -88,14 +88,18 @@ defmodule Beamcore.Agent.TUI.Components.Activity do
 
   defp details_text(event) do
     [
-      "Tool: #{event.name}",
-      "State: #{event.status}",
-      "Target: #{event.target || "none"}",
-      "Summary: #{event.summary || "none"}",
-      "Result: #{event.result || "none"}"
+      "#{status_prefix(event.status)} #{event.label}",
+      "",
+      field("tool", event.name),
+      field("state", event.status),
+      field("target", event.target || "none"),
+      field("summary", event.summary || "none"),
+      field("result", event.result || "none")
     ]
     |> Enum.join("\n")
   end
+
+  defp field(label, value), do: "#{label}: #{value}"
 
   defp title(:strip), do: "Activity rail · tools"
   defp title(_variant), do: "Activity · tools"

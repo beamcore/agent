@@ -108,10 +108,106 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
 
     [event] = state.activity
 
-    assert event.label == "write lib/foo.ex"
+    assert event.label == "write lib/foo.ex (3000 bytes)"
     assert event.status == :done
     refute event.summary =~ content
     refute inspect(event) =~ content
+  end
+
+  test "activity labels use very-pretty compact tool formatting" do
+    patch = """
+    --- a/lib/a.ex
+    +++ b/lib/a.ex
+    @@
+    -old
+    +new
+    """
+
+    cases = [
+      {"read", %{"filePath" => "README.md"}, "read README.md"},
+      {"write", %{"filePath" => "lib/foo.ex", "content" => "abc"}, "write lib/foo.ex (3 bytes)"},
+      {"edit", %{"path" => "lib/foo.ex", "new_string" => "updated"}, "edit lib/foo.ex (7 bytes)"},
+      {"patch", %{"patch_content" => patch}, "patch 1 files"},
+      {"mix", %{"command" => "test", "args" => "test/agent_test.exs"},
+       "mix test test/agent_test.exs"},
+      {"git", %{"operation" => "status"}, "git status"},
+      {"fs", %{"operation" => "mkdir", "path" => "lib/new_dir"}, "fs mkdir lib/new_dir"},
+      {"task", %{"name" => "sneezing_walrus", "model" => "mistral-small"},
+       "task sneezing_walrus (mistral-small)"},
+      {"image_generation", %{"output_path" => "generated/file.png"},
+       "image_generation -> generated/file.png"}
+    ]
+
+    for {name, args, expected_label} <- cases do
+      assert %{label: ^expected_label} = State.compact_activity(name, args, :queued)
+    end
+  end
+
+  test "blocked activity labels stay compact and clearly marked" do
+    event =
+      State.compact_activity(
+        "write",
+        %{"filePath" => "scratch/a.ex", "content" => "bad"},
+        :blocked,
+        "Error: Mutation requires a confirmed plan."
+      )
+
+    assert event.label == "blocked write scratch/a.ex (3 bytes)"
+    assert event.status == :blocked
+    assert event.result =~ "Mutation requires"
+    refute event.label =~ "%{"
+    refute event.summary =~ "%{"
+  end
+
+  test "very-pretty-inspired summaries avoid raw maps and long payloads" do
+    task =
+      State.compact_activity(
+        "task",
+        %{
+          "name" => "dusty_cat",
+          "model" => "mistral-medium",
+          "prompt" => String.duplicate("inspect the repo ", 30)
+        },
+        :running
+      )
+
+    git = State.compact_activity("git", %{"operation" => "diff", "base" => "origin/main"}, :done)
+
+    fs =
+      State.compact_activity(
+        "fs",
+        %{"operation" => "move", "path" => "a", "target" => "b"},
+        :done
+      )
+
+    assert task.summary =~ "name: dusty_cat"
+    assert task.summary =~ "model: mistral-medium"
+    assert String.length(task.summary) < 180
+    assert git.summary =~ "op: diff"
+    assert git.summary =~ "base: origin/main"
+    assert fs.summary =~ "op: move"
+    assert fs.summary =~ "target: b"
+    refute inspect([task, git, fs]) =~ String.duplicate("inspect the repo ", 30)
+  end
+
+  test "TUI activity uses shared display labels without Pretty renderer output" do
+    event =
+      State.compact_activity(
+        "mix",
+        %{"command" => "test", "args" => "test/agent/tui/state_components_test.exs"},
+        :running
+      )
+
+    assert event.label == "mix test test/agent/tui/state_components_test.exs"
+    refute event.label =~ "\e["
+
+    tui_sources =
+      "lib/agent/tui/**/*.ex"
+      |> Path.wildcard()
+      |> Enum.map(&File.read!/1)
+      |> Enum.join("\n")
+
+    refute tui_sources =~ "Pretty.print_"
   end
 
   test "image generation activity is represented compactly", %{state: state} do
