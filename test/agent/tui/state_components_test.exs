@@ -34,7 +34,7 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
   end
 
   test "mascot has terminal-safe animation frames" do
-    assert Mascot.frame(0, true) != Mascot.frame(1, true)
+    assert Mascot.frame(:running, 0, true) != Mascot.frame(:running, 1, true)
     assert Mascot.frame(0, false) =~ "b"
     assert Mascot.frame(:tool_running, 0, true) != Mascot.frame(:tool_running, 1, true)
     assert Mascot.portrait(:thinking, 2, true) =~ "◢▣◣"

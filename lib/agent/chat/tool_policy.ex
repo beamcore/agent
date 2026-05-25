@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   Natural-language task text is intentionally not used for mutation or network
   intent detection. If a Policy block is present, it is the source of truth.
   Without a Policy block, the safe default is development mode without task or
-  curl.
+  web_get.
   """
 
   alias Beamcore.Agent.Tools.PathSafety
@@ -24,7 +24,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   @unconfirmed_tools ~w(read grep glob tree plan git)
   @restricted_write_tools ~w(read grep glob write edit patch fs mix)
   @development_tools ~w(read grep glob edit patch write tree git fs mix)
-  @all_tool_names ~w(read grep glob edit patch write curl tree git fs task mix plan image_generation)
+  @all_tool_names ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation)
   @mutation_tools ~w(write edit patch fs image_generation)
   @read_only_git_operations ~w(status diff log)
   @read_only_mix_commands ~w(test compile validate)
@@ -100,7 +100,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   def allowed_tool_names(%{mode: :restricted_write} = policy) do
     @restricted_write_tools
     |> maybe_add("task", Map.get(policy, :allow_task, false))
-    |> maybe_add("curl", Map.get(policy, :allow_network, false))
+    |> maybe_add("web_get", Map.get(policy, :allow_network, false))
     |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
     |> apply_tool_filters(policy)
   end
@@ -108,7 +108,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   def allowed_tool_names(%{mode: :development} = policy) do
     @development_tools
     |> maybe_add("task", Map.get(policy, :allow_task, false))
-    |> maybe_add("curl", Map.get(policy, :allow_network, false))
+    |> maybe_add("web_get", Map.get(policy, :allow_network, false))
     |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
     |> apply_tool_filters(policy)
   end
@@ -171,7 +171,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allow_network: false,
       allowed_write_paths: Enum.uniq(allowed_write_paths),
       allowed_tools: allowed_tools,
-      blocked_tools: ["task", "curl", "git"]
+      blocked_tools: ["task", "web_get", "git"]
     }
   end
 
@@ -186,7 +186,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     %{
       mode: mode,
       allow_task: tool_enabled?("task", allowed_tools, blocked_tools),
-      allow_network: tool_enabled?("curl", allowed_tools, blocked_tools),
+      allow_network: tool_enabled?("web_get", allowed_tools, blocked_tools),
       allowed_write_paths: allowed_write_paths,
       allowed_tools: allowed_tools,
       blocked_tools: blocked_tools

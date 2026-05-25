@@ -6,7 +6,7 @@ defmodule Beamcore.Agent.Tools.Plan do
   alias Beamcore.Agent.Chat.ToolPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
-  @known_tools ~w(read grep glob edit patch write curl tree git fs task mix plan image_generation)
+  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation)
   @description """
   Propose a compact, non-mutating plan for a user request that would change files.
   The plan is stored as a pending action and must be confirmed with /confirm before mutation tools can run.
@@ -139,7 +139,7 @@ defmodule Beamcore.Agent.Tools.Plan do
 
     (["read"] ++ requested ++ inferred)
     |> Enum.filter(&(&1 in @known_tools))
-    |> Enum.reject(&(&1 in ["task", "curl", "git", "fs", "plan"]))
+    |> Enum.reject(&(&1 in ["task", "web_get", "git", "fs", "plan"]))
     |> Enum.uniq()
   end
 

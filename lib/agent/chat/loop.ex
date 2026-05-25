@@ -382,7 +382,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     case Map.get(policy, :mode) do
       :unconfirmed ->
-        "Current turn policy: unconfirmed. Exposed tools: #{tool_names}. For file changes, call plan first. Do not call write, edit, patch, fs, image_generation, task, or curl before /confirm or an explicit Policy block."
+        "Current turn policy: unconfirmed. Exposed tools: #{tool_names}. For file changes, call plan first. Do not call write, edit, patch, fs, image_generation, task, or web_get before /confirm or an explicit Policy block."
 
       :restricted_write ->
         allowed_paths = Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")

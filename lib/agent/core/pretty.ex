@@ -306,11 +306,9 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-  defp format_tool_args("curl", %{"url" => url} = args, _context) do
-    method = Map.get(args, "method", "GET")
-
+  defp format_tool_args("web_get", %{"url" => url} = _args, _context) do
     IO.puts(
-      colorize("#{method} ", &Colors.bright_magenta/0) <> colorize(url, &Colors.bright_white/0)
+      colorize("GET ", &Colors.bright_magenta/0) <> colorize(url, &Colors.bright_white/0)
     )
   end
 
