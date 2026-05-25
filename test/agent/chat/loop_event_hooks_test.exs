@@ -266,6 +266,168 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     assert content =~ "Compact summary."
   end
 
+
+
+  test "freedom mode removes stale policy-blocked history before next API request", %{
+    session: session
+  } do
+    File.mkdir_p!(".beamcore")
+    File.write!(".beamcore/policy.json", Jason.encode!(%{version: 1, deny_paths: ["scratch/**"]}))
+    File.rm_rf!("scratch")
+
+    on_exit(fn ->
+      File.rm_rf!("scratch")
+      File.rm(".beamcore/policy.json")
+    end)
+
+    write_args = %{
+      "filePath" => "scratch/yolo_test.ex",
+      "content" => "defmodule Scratch.YoloTest do\n  def hello, do: :ok\nend\n"
+    }
+
+    stale_messages = [
+      %{role: "user", content: "create scratch/yolo_test.ex"},
+      %{
+        role: "assistant",
+        content: "I will try to write it.",
+        tool_calls: [tool_call("stale_write", "write", write_args)]
+      },
+      %{
+        role: "tool",
+        tool_call_id: "stale_write",
+        name: "write",
+        content: "Error: Tool call blocked by project policy: scratch/yolo_test.ex is denied."
+      },
+      %{
+        role: "assistant",
+        content: "The file is blocked by project policy, so I cannot create it."
+      }
+    ]
+
+    session = %{
+      session
+      | messages: session.messages ++ stale_messages,
+        project_policy_bypassed?: true,
+        policy_override: nil
+    }
+
+    parent = self()
+    Process.put(:mock_completions_calls, 0)
+
+    Process.put(:mock_completions_create, fn _client, params ->
+      call = Process.get(:mock_completions_calls, 0) + 1
+      Process.put(:mock_completions_calls, call)
+
+      if call == 1 do
+        combined =
+          params.messages
+          |> Enum.map_join("\n", &to_string(&1[:content] || &1["content"] || ""))
+
+        send(parent, {:api_messages, params.messages, combined})
+      end
+
+      case call do
+        1 ->
+          {:ok,
+           %{
+             "choices" => [
+               %{
+                 "message" => %{
+                   "role" => "assistant",
+                   "content" => "Writing file.",
+                   "tool_calls" => [tool_call("call_write", "write", write_args)]
+                 }
+               }
+             ]
+           }}
+
+        2 ->
+          {:ok,
+           %{
+             "choices" => [
+               %{"message" => %{"role" => "assistant", "content" => "Done."}}
+             ]
+           }}
+      end
+    end)
+
+    updated =
+      Loop.send_message(session, "create scratch/yolo_test.ex", nil, nil,
+        silent: true,
+        event_handler: fn event -> send(parent, {:event, event}) end
+      )
+
+    assert_receive {:api_messages, api_messages, combined}
+    refute combined =~ "blocked by project policy"
+    refute Enum.any?(api_messages, &(is_list(&1[:tool_calls] || &1["tool_calls"])))
+
+    assert File.exists?("scratch/yolo_test.ex")
+    assert_receive {:event, {:tool_finished, "write", ^write_args, result}}
+    assert result =~ "Successfully wrote"
+    assert updated.project_policy_bypassed?
+  end
+
+  test "session freedom flag bypasses project policy even without policy_override", %{session: session} do
+    File.mkdir_p!(".beamcore")
+    File.write!(".beamcore/policy.json", Jason.encode!(%{version: 1, deny_paths: ["scratch/**"]}))
+    File.rm_rf!("scratch")
+
+    on_exit(fn ->
+      File.rm_rf!("scratch")
+      File.rm(".beamcore/policy.json")
+    end)
+
+    args = %{
+      "filePath" => "scratch/yolo_test.ex",
+      "content" => "defmodule Scratch.YoloTest do\n  def hello, do: :ok\nend\n"
+    }
+
+    session = %{session | project_policy_bypassed?: true, policy_override: nil}
+    parent = self()
+    Process.put(:mock_completions_calls, 0)
+
+    Process.put(:mock_completions_create, fn _client, _params ->
+      call = Process.get(:mock_completions_calls, 0) + 1
+      Process.put(:mock_completions_calls, call)
+
+      case call do
+        1 ->
+          {:ok,
+           %{
+             "choices" => [
+               %{
+                 "message" => %{
+                   "role" => "assistant",
+                   "content" => "Writing file.",
+                   "tool_calls" => [tool_call("call_write", "write", args)]
+                 }
+               }
+             ]
+           }}
+
+        2 ->
+          {:ok,
+           %{
+             "choices" => [
+               %{"message" => %{"role" => "assistant", "content" => "Done."}}
+             ]
+           }}
+      end
+    end)
+
+    updated =
+      Loop.send_message(session, "create scratch/yolo_test.ex", nil, nil,
+        silent: true,
+        event_handler: fn event -> send(parent, {:event, event}) end
+      )
+
+    assert File.exists?("scratch/yolo_test.ex")
+    assert File.read!("scratch/yolo_test.ex") =~ "def hello, do: :ok"
+    assert_receive {:event, {:tool_finished, "write", ^args, result}}
+    assert result =~ "Successfully wrote"
+    assert updated.project_policy_bypassed?
+  end
+
   defp tool_call(id, name, args) do
     %{
       "id" => id,

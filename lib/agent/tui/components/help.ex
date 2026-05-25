@@ -17,7 +17,9 @@ defmodule Beamcore.Agent.TUI.Components.Help do
     /policy deny path <pattern>
     /policy tool <tool> allow|deny
     /policy reload   Reload project policy
-    /yolo            Enable all tools with unrestricted access
+    /yolo            Toggle session freedom mode
+    /yolo on         Bypass project policy for this session
+    /yolo off        Restore project policy
     /quit /exit /q   Exit
 
     Keys

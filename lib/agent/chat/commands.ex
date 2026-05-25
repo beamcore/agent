@@ -20,6 +20,8 @@ defmodule Beamcore.Agent.Chat.Commands do
       "context" -> handle_context(session, output)
       "context clear" -> handle_context_clear(session, output)
       "yolo" -> handle_yolo(session, output)
+      "yolo on" -> enable_yolo(session, output)
+      "yolo off" -> disable_yolo(session, output)
       "help" -> handle_help(session, output)
       "policy" -> handle_policy([], session, output)
       "policy " <> args -> handle_policy(String.split(args, " ", trim: true), session, output)
@@ -36,8 +38,28 @@ defmodule Beamcore.Agent.Chat.Commands do
   end
 
   defp handle_yolo(session, output) do
-    output.("🚀 YOLO mode enabled! All tools are now active and unrestricted.")
-    %{session | policy_override: Beamcore.Agent.Chat.ToolPolicy.yolo()}
+    if session.project_policy_bypassed? do
+      disable_yolo(session, output)
+    else
+      enable_yolo(session, output)
+    end
+  end
+
+  defp enable_yolo(session, output) do
+    output.("Freedom mode enabled: project policy bypassed for this session.")
+
+    session = Session.clear_project_policy_block_history(session)
+
+    %{
+      session
+      | policy_override: Beamcore.Agent.Chat.ToolPolicy.yolo(project_policy_bypassed?: true),
+        project_policy_bypassed?: true
+    }
+  end
+
+  defp disable_yolo(session, output) do
+    output.("Freedom mode disabled: project policy restored.")
+    %{session | policy_override: nil, project_policy_bypassed?: false}
   end
 
   defp handle_help(session, output) do
@@ -54,7 +76,9 @@ defmodule Beamcore.Agent.Chat.Commands do
       /policy read-only <pattern> - Add a read-only path pattern
       /policy tool <tool> allow|deny - Set tool permission
       /policy reload - Reload and summarize project policy
-      /yolo - Enable all tools with unrestricted access
+      /yolo - Toggle freedom mode for this session
+      /yolo on - Bypass project policy for this session
+      /yolo off - Restore project policy for this session
       /help - Show this help message
     """)
 

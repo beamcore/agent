@@ -22,7 +22,9 @@ defmodule Beamcore.Agent.TUI.Events do
     %Command{name: "policy allow-write ", description: "Add an allowed write path"},
     %Command{name: "policy read-only ", description: "Add a read-only path"},
     %Command{name: "policy tool ", description: "Set tool permission"},
-    %Command{name: "yolo", description: "Enable all tools with unrestricted access"},
+    %Command{name: "yolo", description: "Toggle freedom mode"},
+    %Command{name: "yolo on", description: "Bypass project policy for this session"},
+    %Command{name: "yolo off", description: "Restore project policy for this session"},
     %Command{name: "quit", description: "Exit", aliases: ["exit", "q"]}
   ]
 
@@ -351,6 +353,12 @@ defmodule Beamcore.Agent.TUI.Events do
     state
     |> State.set_session(session)
     |> State.add_activity("policy", policy_activity_args(command), :done)
+  end
+
+  defp apply_command_result(session, state, "yolo" <> _ = command) do
+    state
+    |> State.set_session(session)
+    |> State.add_activity("policy", %{"action" => "mode", "target" => command}, :done)
   end
 
   defp apply_command_result(session, state, _command), do: State.set_session(state, session)

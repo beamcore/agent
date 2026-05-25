@@ -141,6 +141,9 @@ defmodule Beamcore.Agent.TUI.State do
   def yolo?(%{policy_override: %{mode: :unrestricted}}), do: true
   def yolo?(_session), do: false
 
+  def freedom?(%{project_policy_bypassed?: true}), do: true
+  def freedom?(_session), do: false
+
   def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0, needs_compaction: false}
   def usage(session), do: Session.usage(session)
 
@@ -150,7 +153,11 @@ defmodule Beamcore.Agent.TUI.State do
     "mistral"
   end
 
-  def policy_status do
+  def policy_status(session \\ nil)
+
+  def policy_status(%{project_policy_bypassed?: true}), do: "policy: bypassed"
+
+  def policy_status(_session) do
     case ProjectPolicy.load() do
       %{loaded?: false} -> "policy: default"
       %{valid?: false} -> "policy: invalid"

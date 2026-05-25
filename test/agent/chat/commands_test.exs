@@ -166,7 +166,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     }
   end
 
-  test "/yolo sets policy override to unrestricted" do
+  test "/yolo toggles session freedom mode" do
     session = Beamcore.Agent.OpenAI.client() |> Session.new()
 
     output =
@@ -175,10 +175,120 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
         send(self(), {:yolo, result})
       end)
 
-    assert output =~ "YOLO mode enabled"
+    assert output =~ "Freedom mode enabled"
     assert_receive {:yolo, result}
     assert result.policy_override != nil
     assert result.policy_override.mode == :unrestricted
+    assert result.policy_override.project_policy_bypassed?
+    assert result.project_policy_bypassed?
+
+    output =
+      capture_io(fn ->
+        result = Commands.execute("yolo", result)
+        send(self(), {:yolo_off, result})
+      end)
+
+    assert output =~ "Freedom mode disabled"
+    assert_receive {:yolo_off, disabled}
+    refute disabled.project_policy_bypassed?
+    assert disabled.policy_override == nil
+  end
+
+
+  test "/yolo clears stale project policy blocked attempts from context" do
+    session =
+      Beamcore.Agent.OpenAI.client()
+      |> Session.new()
+      |> Map.update!(:context, fn context ->
+        Context.update_from_tool(
+          context,
+          "write",
+          %{"filePath" => "scratch/a.ex"},
+          "Error: Tool call blocked by project policy: scratch/a.ex is denied."
+        )
+      end)
+
+    assert session.context.blocked_attempts == ["write scratch/a.ex"]
+
+    capture_io(fn ->
+      result = Commands.execute("yolo on", session)
+      send(self(), {:enabled, result})
+    end)
+
+    assert_receive {:enabled, enabled}
+    assert enabled.project_policy_bypassed?
+    assert enabled.context.blocked_attempts == []
+  end
+
+
+  test "/yolo removes stale project policy block messages from model history" do
+    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+    stale_messages = [
+      %{role: "user", content: "create scratch/a.ex"},
+      %{
+        role: "assistant",
+        content: "Trying to write.",
+        tool_calls: [
+          %{
+            "id" => "call_write",
+            "type" => "function",
+            "function" => %{
+              "name" => "write",
+              "arguments" => Jason.encode!(%{"filePath" => "scratch/a.ex", "content" => "x"})
+            }
+          }
+        ]
+      },
+      %{
+        role: "tool",
+        tool_call_id: "call_write",
+        name: "write",
+        content: "Error: Tool call blocked by project policy: scratch/a.ex is denied."
+      },
+      %{
+        role: "assistant",
+        content: "I cannot create scratch/a.ex because it is blocked by project policy."
+      }
+    ]
+
+    session = %{session | messages: session.messages ++ stale_messages}
+
+    capture_io(fn ->
+      result = Commands.execute("yolo on", session)
+      send(self(), {:enabled, result})
+    end)
+
+    assert_receive {:enabled, enabled}
+    assert enabled.project_policy_bypassed?
+
+    contents = Enum.map(enabled.messages, &(&1[:content] || &1["content"] || ""))
+    refute Enum.any?(contents, &String.contains?(&1, "blocked by project policy"))
+    refute Enum.any?(enabled.messages, &(is_list(&1[:tool_calls] || &1["tool_calls"])))
+  end
+
+  test "/yolo on and /yolo off set freedom mode explicitly" do
+    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+
+    enabled =
+      capture_io(fn ->
+        result = Commands.execute("yolo on", session)
+        send(self(), {:enabled, result})
+      end)
+
+    assert enabled =~ "Freedom mode enabled"
+    assert_receive {:enabled, session}
+    assert session.project_policy_bypassed?
+
+    disabled =
+      capture_io(fn ->
+        result = Commands.execute("yolo off", session)
+        send(self(), {:disabled, result})
+      end)
+
+    assert disabled =~ "Freedom mode disabled"
+    assert_receive {:disabled, session}
+    refute session.project_policy_bypassed?
   end
 
   test "unknown command keeps plain CLI error rendering" do

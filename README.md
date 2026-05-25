@@ -110,7 +110,9 @@ system, one dispatcher, one context model, and one image generation flow.
 | `/policy remove ...` | Remove a policy entry; weakening changes require `--confirm`. |
 | `/policy reset --confirm` | Delete the local policy config. |
 | `/policy reload` | Reload and summarize policy from disk. |
-| `/yolo` | Re-enable unrestricted autonomous mode for compatibility. |
+| `/yolo` | Toggle session freedom mode. |
+| `/yolo on` | Bypass project policy for this session. |
+| `/yolo off` | Restore project policy for this session. |
 | `/help` | Show command help. |
 | `/quit`, `/exit`, `/q` | Exit the TUI. |
 
@@ -219,6 +221,12 @@ If a `Policy:` block has an invalid mode, the runtime fails closed and disables 
 Projects can add `.beamcore/policy.json` to make runtime permissions stricter. Missing config preserves the default autonomous behavior. Project policy is enforced in code, not only in the prompt, and cannot bypass workspace path safety.
 
 The local config is ignored by git. Use `.beamcore/policy.example.json` as the checked-in template.
+
+`/yolo` toggles a session-local freedom mode. In normal autonomous mode,
+ProjectPolicy remains active. In freedom mode, `.beamcore/policy.json`
+restrictions are bypassed for the current session only; hard workspace,
+path-safety, and tool-specific guards still apply. Use `/yolo off` to restore
+ProjectPolicy enforcement.
 
 Example:
 
