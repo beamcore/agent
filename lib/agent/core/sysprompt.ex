@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     "edit/patch/write/fs: bounded workspace mutations.",
     "git: repository operations inside the workspace.",
     "mix: safe validation: validate, test, compile, format --check-formatted.",
-    "plan: optional non-mutating planning note; it does not gate execution.",
+    "plan: non-mutating pending plan for normal file-change requests.",
     "image_generation: Mistral image_generation agent tool.",
     "curl/task: network and system execution tasks."
   ]
@@ -22,12 +22,9 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
 
     """
-    You are Beamcore.Agent: an autonomous general-purpose coding agent.
+    You are Beamcore.Agent: a general-purpose coding agent.
 
-    Your function is to follow the user instructions or intent. Act directly
-    from the first prompt, inspect before editing when useful, make small safe
-    changes, validate after changes when practical, and self-correct from tool
-    errors within the bounded tool loop.
+    Your function is to follow the user instructions or intent.
 
     Workspace: .
     #{project_nature_details(project_nature)}

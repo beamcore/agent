@@ -52,7 +52,7 @@ defmodule Beamcore.Agent.Chat.Commands do
       /policy deny path <pattern> - Add a denied path pattern
       /policy allow-write <pattern> - Add an allowed write path pattern
       /policy read-only <pattern> - Add a read-only path pattern
-      /policy tool <tool> allow|confirm|deny - Set tool permission
+      /policy tool <tool> allow|deny - Set tool permission
       /policy reload - Reload and summarize project policy
       /yolo - Enable all tools with unrestricted access
       /help - Show this help message
@@ -175,7 +175,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   defp policy_command(_args) do
     {:error,
-     "Malformed /policy command. Try /policy, /policy show, /policy init, /policy deny path <pattern>, or /policy tool <tool> allow|confirm|deny."}
+     "Malformed /policy command. Try /policy, /policy show, /policy init, /policy deny path <pattern>, or /policy tool <tool> allow|deny."}
   end
 
   defp mutate_policy(action, confirmed?) do
@@ -250,7 +250,7 @@ defmodule Beamcore.Agent.Chat.Commands do
         {:error, "Unknown tool #{inspect(tool)}."}
 
       permission not in ProjectPolicy.permissions() ->
-        {:error, "Unknown permission #{inspect(permission)}. Use allow, confirm, or deny."}
+        {:error, "Unknown permission #{inspect(permission)}. Use allow or deny."}
 
       true ->
         {:ok, ProjectPolicy.set_tool_permission(policy, tool, permission),
