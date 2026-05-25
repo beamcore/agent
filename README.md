@@ -119,16 +119,17 @@ line-based operation.
 
 ## TUI layout
 
-- **Wide**: chat transcript, right activity/tool sidebar, bottom input, status
-  bar, and compact header.
-- **Medium**: chat transcript, compact activity strip, input, and status bar.
-- **Narrow**: single-column chat, input, compact status, and activity details
-  via `Tab`.
+- **Wide**: chat transcript, right activity/tool sidebar, bottom input, clean
+  centered header, and compact status bar.
+- **Medium**: chat transcript, compact activity strip, command bar, and status bar.
+- **Narrow**: single-column chat, command bar, compact status, and activity
+  details via `Tab`.
 - **Tiny**: a minimal terminal-too-small screen with a fallback hint.
 
 The empty state is intentional: it shows the product title, a short
-description, example prompts, `/help`, session/model/provider details, and a
-small animated BeamCore mascot.
+description, example prompts, `/help`, autonomous-tool hints, and
+session/model/provider details. The header and status bar stay clean and
+professional; tool calls live in the activity rail instead of decorative UI.
 
 ## Activity timeline
 
