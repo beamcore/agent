@@ -113,7 +113,7 @@ defmodule Beamcore.Agent.TUI.State do
   end
 
   def scroll_up(state, amount \\ 1),
-    do: %{state | scroll_offset: min(state.scroll_offset + amount, 120)} |> mark_dirty()
+    do: %{state | scroll_offset: state.scroll_offset + amount} |> mark_dirty()
 
   def scroll_down(state, amount \\ 1),
     do: %{state | scroll_offset: max(state.scroll_offset - amount, 0)} |> mark_dirty()
