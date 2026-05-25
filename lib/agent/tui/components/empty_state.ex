@@ -1,7 +1,6 @@
 defmodule Beamcore.Agent.TUI.Components.EmptyState do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.Components.Mascot
   alias Beamcore.Agent.TUI.{State, Theme}
   alias ExRatatui.Widgets.Paragraph
   alias Number.SI
@@ -21,15 +20,12 @@ defmodule Beamcore.Agent.TUI.Components.EmptyState do
     model = State.model(state.session)
 
     """
-    #{Mascot.portrait(state.status, state.spinner_step, state.unicode?)}
-
     BEAMCORE.AGENT
-    Fast, visible coding workflow for this workspace.
+    Fast, visible coding workflow for this workspace
 
-    ╭─ Quick starts ─────────────────────────╮
-    │  Review project      Plan safe change  │
-    │  Generate diagram    Explain a module  │
-    ╰────────────────────────────────────────╯
+    Quick starts
+      Review project        Generate diagram
+      Explain a module      Make a focused change
 
     /help commands    Tab activity details    autonomous tools
     Tool calls, plans, and policy blocks appear in Activity.

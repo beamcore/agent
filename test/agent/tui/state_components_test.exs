@@ -2,7 +2,7 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
   use ExUnit.Case
 
   alias Beamcore.Agent.Chat.{Context, Session, ToolPolicy}
-  alias Beamcore.Agent.TUI.Components.{Confirmation, EmptyState, Help, Mascot, StatusBar}
+  alias Beamcore.Agent.TUI.Components.{Confirmation, EmptyState, Help, StatusBar}
   alias Beamcore.Agent.TUI.{Events, State}
 
   setup do
@@ -31,20 +31,15 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     refute Help.widget().content.text =~ "/confirm"
   end
 
-  test "empty state is product-facing and includes mascot hints", %{state: state} do
+  test "empty state is product-facing and professional", %{state: state} do
     widget = state |> EmptyState.text() |> EmptyState.widget()
 
     assert widget.text =~ "BEAMCORE.AGENT"
     assert widget.text =~ "Tool calls, plans"
     assert widget.text =~ "/help"
+    refute widget.text =~ "◢"
+    refute widget.text =~ "[b]"
     refute widget.text =~ "%{"
-  end
-
-  test "mascot has terminal-safe animation frames" do
-    assert Mascot.frame(:running, 0, true) != Mascot.frame(:running, 1, true)
-    assert Mascot.frame(0, false) =~ "b"
-    assert Mascot.frame(:tool_running, 0, true) != Mascot.frame(:tool_running, 1, true)
-    assert Mascot.portrait(:thinking, 2, true) =~ "◢▣◣"
   end
 
   test "animation ticks are throttled and mark state dirty", %{state: state} do

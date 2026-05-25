@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.TUI.Render do
   Render composition for the primary TUI.
   """
 
-  alias Beamcore.Agent.TUI.Components.{Activity, Chat, Help, Input, Mascot, StatusBar}
+  alias Beamcore.Agent.TUI.Components.{Activity, Chat, Help, Input, StatusBar}
   alias Beamcore.Agent.TUI.{Layout, Theme}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Paragraph, SlashCommands}
@@ -27,11 +27,11 @@ defmodule Beamcore.Agent.TUI.Render do
     |> maybe_commands(state, area)
   end
 
-  defp tiny(state, area) do
+  defp tiny(_state, area) do
     [
       {%Paragraph{
          text:
-           "#{Mascot.portrait(:waiting_confirmation, state.spinner_step, state.unicode?)}\n\nBeamcore.Agent\n\nTerminal is too small for the full TUI.\nEnlarge it or use the plain emergency fallback.",
+           "Beamcore.Agent\n\nTerminal is too small for the full TUI.\nEnlarge it or use the plain emergency fallback.",
          style: Theme.style(:error),
          alignment: :center,
          wrap: true
@@ -69,11 +69,12 @@ defmodule Beamcore.Agent.TUI.Render do
   end
 
   defp header(state) do
-    yolo = if Beamcore.Agent.TUI.State.yolo?(state.session), do: "  YOLO", else: ""
+    mode = if Beamcore.Agent.TUI.State.yolo?(state.session), do: "autonomous", else: "guarded"
 
     %Paragraph{
-      text: "BEAMCORE.AGENT#{yolo}  // live tools  // /help",
-      style: Theme.style(:title)
+      text: "BEAMCORE.AGENT  ·  #{mode} tools  ·  /help",
+      style: Theme.style(:title),
+      alignment: :center
     }
   end
 
