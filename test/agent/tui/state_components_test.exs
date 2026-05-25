@@ -251,4 +251,144 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
 
     assert reason =~ "Mutation requires"
   end
+
+  test "TUI input history sliding and draft restoration works via Up/Down keys" do
+    textarea = ExRatatui.textarea_new()
+    ExRatatui.textarea_set_value(textarea, "draft")
+
+    state = %State{
+      textarea: textarea,
+      history: ["first", "second"],
+      history_index: nil,
+      history_draft: ""
+    }
+
+    # 1. First Up key press captures draft and goes to the most recent entry
+    up_event = %ExRatatui.Event.Key{code: "up", modifiers: [], kind: "press"}
+    {:noreply, state} = Events.handle_event(up_event, state)
+    assert state.history_index == 1
+    assert state.history_draft == "draft"
+    assert ExRatatui.textarea_get_value(state.textarea) == "second"
+
+    # 2. Second Up key press goes to the older entry
+    {:noreply, state} = Events.handle_event(up_event, state)
+    assert state.history_index == 0
+    assert ExRatatui.textarea_get_value(state.textarea) == "first"
+
+    # 3. Third Up key press stays at the oldest entry (0)
+    {:noreply, state} = Events.handle_event(up_event, state)
+    assert state.history_index == 0
+    assert ExRatatui.textarea_get_value(state.textarea) == "first"
+
+    # 4. Down key press goes back to the newer entry (1)
+    down_event = %ExRatatui.Event.Key{code: "down", modifiers: [], kind: "press"}
+    {:noreply, state} = Events.handle_event(down_event, state)
+    assert state.history_index == 1
+    assert ExRatatui.textarea_get_value(state.textarea) == "second"
+
+    # 5. Second Down key press restores the draft and resets history_index to nil
+    {:noreply, state} = Events.handle_event(down_event, state)
+    assert state.history_index == nil
+    assert ExRatatui.textarea_get_value(state.textarea) == "draft"
+
+    # 6. Typing a new character resets the index to nil
+    # We navigate back up first
+    {:noreply, state} = Events.handle_event(up_event, state)
+    assert state.history_index == 1
+
+    # User types a character (e.g. "a")
+    char_event = %ExRatatui.Event.Key{code: "a", modifiers: [], kind: "press"}
+    {:noreply, state} = Events.handle_event(char_event, state)
+    assert state.history_index == nil
+  end
+
+  test "TUI handles context-aware mouse scroll events" do
+    {width, height} = ExRatatui.terminal_size()
+
+    areas =
+      Beamcore.Agent.TUI.Layout.areas(%ExRatatui.Layout.Rect{
+        x: 0,
+        y: 0,
+        width: width,
+        height: height
+      })
+
+    # Test scrolling chat (always exists)
+    chat_rect = areas.chat
+    state = %State{scroll_offset: 0}
+
+    # Scroll up over chat
+    mouse_up_chat = %ExRatatui.Event.Mouse{
+      kind: "scroll_up",
+      x: chat_rect.x,
+      y: chat_rect.y
+    }
+
+    {:noreply, state} = Events.handle_event(mouse_up_chat, state)
+    assert state.scroll_offset == 3
+
+    # Scroll down over chat
+    mouse_down_chat = %ExRatatui.Event.Mouse{
+      kind: "scroll_down",
+      x: chat_rect.x,
+      y: chat_rect.y
+    }
+
+    {:noreply, state} = Events.handle_event(mouse_down_chat, state)
+    assert state.scroll_offset == 0
+
+    # Test scrolling activity if it exists in the layout mode (e.g. :wide or :medium)
+    case areas do
+      %{activity: activity_rect} ->
+        state = %State{
+          activity: [
+            %{
+              id: 1,
+              name: "write",
+              target: "a.ex",
+              status: :done,
+              label: "write a.ex",
+              summary: "",
+              result: ""
+            },
+            %{
+              id: 2,
+              name: "read",
+              target: "b.ex",
+              status: :done,
+              label: "read b.ex",
+              summary: "",
+              result: ""
+            }
+          ],
+          selected_activity: 0,
+          show_activity_details: false
+        }
+
+        # Scroll up over activity pane -> moves to older/next activity item (index 1)
+        mouse_up_activity = %ExRatatui.Event.Mouse{
+          kind: "scroll_up",
+          x: activity_rect.x,
+          y: activity_rect.y
+        }
+
+        {:noreply, state} = Events.handle_event(mouse_up_activity, state)
+        assert state.selected_activity == 1
+        assert state.show_activity_details == true
+
+        # Scroll down over activity pane -> moves to newer/previous activity item (index 0)
+        mouse_down_activity = %ExRatatui.Event.Mouse{
+          kind: "scroll_down",
+          x: activity_rect.x,
+          y: activity_rect.y
+        }
+
+        {:noreply, state} = Events.handle_event(mouse_down_activity, state)
+        assert state.selected_activity == 0
+        assert state.show_activity_details == true
+
+      _ ->
+        :ok
+    end
+  end
 end

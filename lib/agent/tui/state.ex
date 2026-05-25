@@ -25,17 +25,24 @@ defmodule Beamcore.Agent.TUI.State do
             last_animation_tick_ms: 0,
             render_dirty?: true,
             worker: nil,
-            unicode?: true
+            unicode?: true,
+            history: [],
+            history_index: nil,
+            history_draft: ""
 
   def new(terminal, textarea, opts \\ []) do
     client = Keyword.get(opts, :client, Beamcore.Agent.OpenAI.client())
+    history = Keyword.get(opts, :history, Beamcore.Agent.TUI.History.load())
 
     %__MODULE__{
       terminal: terminal,
       textarea: textarea,
       session: Session.new(client),
       last_animation_tick_ms: System.monotonic_time(:millisecond),
-      unicode?: Beamcore.Agent.TUI.Capability.unicode?(opts)
+      unicode?: Beamcore.Agent.TUI.Capability.unicode?(opts),
+      history: history,
+      history_index: nil,
+      history_draft: ""
     }
   end
 
