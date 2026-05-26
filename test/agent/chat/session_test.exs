@@ -259,7 +259,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
               }
             }
           ]
-        }
+        },
+        %{role: "tool", tool_call_id: "call_1", name: "write", content: "ok"}
       ]
 
       prepared = Session.prepare_for_api(messages)
@@ -297,7 +298,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
               }
             }
           ]
-        }
+        },
+        %{role: "tool", tool_call_id: "call_1", name: "patch", content: "ok"}
       ]
 
       prepared = Session.prepare_for_api(messages)
