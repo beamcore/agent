@@ -391,29 +391,89 @@ defmodule Beamcore.Agent.Chat.Session do
         (m[:role] || m["role"]) == "system"
       end)
 
-    # 2. Clean up orphaned tools
-    cleaned_messages = clean_orphaned_tools(other_messages)
+    # 2. Normalize tool_calls on assistant messages (add type, strip index)
+    normalized_messages = normalize_all_tool_calls(other_messages)
 
-    # 3. Ensure it starts with a user message
+    # 3. Clean up orphaned tool responses (tool without preceding assistant)
+    cleaned_messages = clean_orphaned_tools(normalized_messages)
+
+    # 4. Strip dangling tool_calls (assistant with tool_calls but no matching tool response)
+    cleaned_messages = clean_dangling_tool_calls(cleaned_messages)
+
+    # 5. Ensure it starts with a user message
     user_starting_messages = ensure_starts_with_user(cleaned_messages)
 
-    # 4. Merge consecutive same-role messages
+    # 6. Merge consecutive same-role messages
     final_messages = merge_consecutive_roles(user_starting_messages)
 
-    # 5. Ensure non-empty user message fallback
+    # 7. Ensure non-empty user message fallback
     final_messages =
       case final_messages do
         [] -> [%{role: "user", content: "Continuing the conversation."}]
         other -> other
       end
 
-    # 6. Combine back with system messages
+    # 8. Combine back with system messages
     system_messages ++ final_messages
   end
 
   defp truncate_for_api(message), do: message
 
   defp compact_tool_calls(message), do: message
+
+  defp normalize_all_tool_calls(messages) do
+    Enum.map(messages, fn msg ->
+      role = msg[:role] || msg["role"]
+      tool_calls = msg["tool_calls"] || msg[:tool_calls]
+
+      if role == "assistant" and is_list(tool_calls) and tool_calls != [] do
+        fixed =
+          Enum.map(tool_calls, fn tc ->
+            tc
+            |> Map.put("type", "function")
+            |> Map.delete("index")
+          end)
+
+        if Map.has_key?(msg, :tool_calls),
+          do: Map.put(msg, :tool_calls, fixed),
+          else: Map.put(msg, "tool_calls", fixed)
+      else
+        msg
+      end
+    end)
+  end
+
+  defp clean_dangling_tool_calls(messages) do
+    # Collect all tool_call_ids that have a matching tool response
+    answered_ids =
+      messages
+      |> Enum.filter(fn msg -> (msg[:role] || msg["role"]) == "tool" end)
+      |> Enum.map(fn msg -> msg[:tool_call_id] || msg["tool_call_id"] end)
+      |> MapSet.new()
+
+    Enum.map(messages, fn msg ->
+      role = msg[:role] || msg["role"]
+      tool_calls = msg["tool_calls"] || msg[:tool_calls]
+
+      if role == "assistant" and is_list(tool_calls) and tool_calls != [] do
+        answered =
+          Enum.filter(tool_calls, fn tc ->
+            MapSet.member?(answered_ids, tc["id"] || tc[:id])
+          end)
+
+        if answered == [] do
+          # No tool_calls answered — strip them, keep content
+          msg |> Map.delete("tool_calls") |> Map.delete(:tool_calls)
+        else
+          if Map.has_key?(msg, :tool_calls),
+            do: Map.put(msg, :tool_calls, answered),
+            else: Map.put(msg, "tool_calls", answered)
+        end
+      else
+        msg
+      end
+    end)
+  end
 
   defp clean_orphaned_tools(messages) do
     messages =
