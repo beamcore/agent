@@ -74,23 +74,32 @@ defmodule Beamcore.Agent.Chat.CorrectionCatch do
 
   @doc false
   def detect_oscillation(fingerprints, window \\ 12) do
-    recent =
-      fingerprints
-      |> Enum.take(-window)
-      |> Enum.map(fn {name, _args} -> name end)
-
+    recent = Enum.take(fingerprints, -window)
     len = length(recent)
 
     # Try cycle lengths 2 and 3
     Enum.find_value([2, 3], false, fn cycle_len ->
       if len >= cycle_len * 3 do
         candidate = Enum.take(recent, -cycle_len * 3)
-        cycle = Enum.take(candidate, cycle_len)
-        full_reps = count_full_cycles(candidate, cycle)
 
-        if full_reps >= 3 do
-          pattern = Enum.join(cycle, " → ")
-          {true, "oscillating pattern: #{pattern} (repeated #{full_reps} times)"}
+        # Extract names to check for oscillation
+        candidate_names = Enum.map(candidate, fn {name, _args} -> name end)
+        cycle_names = Enum.take(candidate_names, cycle_len)
+
+        # A true oscillation must alternate between at least 2 different tools
+        if length(Enum.uniq(cycle_names)) > 1 do
+          full_reps = count_full_cycles(candidate_names, cycle_names)
+
+          if full_reps >= 3 do
+            # Format the cycle using the actual fingerprints of the first cycle rep
+            formatted_cycle =
+              candidate
+              |> Enum.take(cycle_len)
+              |> Enum.map(fn {name, args} -> format_tool_call_short(name, args) end)
+              |> Enum.join(" → ")
+
+            {true, "oscillating pattern: #{formatted_cycle} (repeated #{full_reps} times)"}
+          end
         end
       end
     end) || false
@@ -251,4 +260,44 @@ defmodule Beamcore.Agent.Chat.CorrectionCatch do
       end)
     end
   end
+
+  defp format_tool_call_short(name, args) when is_map(args) and args != %{} do
+    # Get a compact key-value string of arguments
+    keys_to_show = ["path", "filePath", "file", "command", "cmd"]
+
+    shown_args =
+      args
+      |> Enum.filter(fn {k, _v} -> to_string(k) in keys_to_show end)
+      |> Enum.map(fn {k, v} -> "#{k}: #{truncate_val(v)}" end)
+      |> Enum.join(", ")
+
+    if shown_args == "" do
+      # Fallback to first few keys
+      fallback_args =
+        args
+        |> Enum.take(2)
+        |> Enum.map(fn {k, v} -> "#{k}: #{truncate_val(v)}" end)
+        |> Enum.join(", ")
+
+      if fallback_args == "" do
+        name
+      else
+        "#{name}(#{fallback_args})"
+      end
+    else
+      "#{name}(#{shown_args})"
+    end
+  end
+
+  defp format_tool_call_short(name, _args), do: name
+
+  defp truncate_val(val) when is_binary(val) do
+    if String.length(val) > 20 do
+      String.slice(val, 0, 17) <> "..."
+    else
+      val
+    end
+  end
+
+  defp truncate_val(val), do: inspect(val)
 end

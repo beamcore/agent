@@ -217,6 +217,42 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
 
       assert CorrectionCatch.stuck?(messages) == false
     end
+
+    test "does NOT trigger oscillation for consecutive calls of the same tool with different arguments (e.g. parallel reads)" do
+      messages = [
+        tool_call_msg("read", %{"filePath" => "lib/agent.ex"}),
+        tool_response_msg("read"),
+        tool_call_msg("read", %{"filePath" => "mix.exs"}),
+        tool_response_msg("read"),
+        tool_call_msg("read", %{"filePath" => "lib/agent/tui/app.ex"}),
+        tool_response_msg("read"),
+        tool_call_msg("read", %{"filePath" => "lib/agent/chat/session.ex"}),
+        tool_response_msg("read"),
+        tool_call_msg("read", %{"filePath" => "lib/agent/chat/rate_limiter.ex"}),
+        tool_response_msg("read"),
+        tool_call_msg("read", %{"filePath" => "lib/agent/core/status_bar.ex"}),
+        tool_response_msg("read")
+      ]
+
+      assert CorrectionCatch.stuck?(messages) == false
+    end
+
+    test "includes short argument description in the oscillation reason" do
+      messages =
+        Enum.flat_map(1..3, fn i ->
+          [
+            tool_call_msg("edit_file", %{"path" => "lib/app.ex", "content" => "v#{i}"}),
+            tool_response_msg("edit_file"),
+            tool_call_msg("run_command", %{"command" => "mix test attempt #{i}"}),
+            tool_response_msg("run_command")
+          ]
+        end)
+
+      assert {true, reason} = CorrectionCatch.stuck?(messages)
+      assert reason =~ "oscillating pattern:"
+      assert reason =~ "edit_file(path: lib/app.ex)"
+      assert reason =~ "run_command(command: mix test attempt 1)"
+    end
   end
 
   # ===== Fingerprinting =====
