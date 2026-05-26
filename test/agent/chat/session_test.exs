@@ -363,6 +363,44 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert Enum.at(trimmed, 1).role == "user"
     end
 
+    test "removes assistant messages that become empty after stripping dangling tool calls" do
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "hello"},
+        %{role: "assistant", content: "", tool_calls: [%{"id" => "call_1"}]},
+        %{role: "user", content: "interruption"}
+      ]
+
+      trimmed = Session.trim_and_clean_messages(messages)
+
+      # The assistant message had a dangling tool call, which gets stripped.
+      # Since it has no content, it is removed.
+      # Then the consecutive user messages are merged.
+      assert length(trimmed) == 2
+      assert Enum.at(trimmed, 0).role == "system"
+      assert Enum.at(trimmed, 1).role == "user"
+      assert Enum.at(trimmed, 1).content == "hello\n\ninterruption"
+    end
+
+    test "keeps assistant messages with text content even if tool calls are stripped" do
+      messages = [
+        %{role: "system", content: "sys"},
+        %{role: "user", content: "hello"},
+        %{role: "assistant", content: "Let me think...", tool_calls: [%{"id" => "call_1"}]},
+        %{role: "user", content: "interruption"}
+      ]
+
+      trimmed = Session.trim_and_clean_messages(messages)
+
+      assert length(trimmed) == 4
+      assert Enum.map(trimmed, & &1.role) == ["system", "user", "assistant", "user"]
+
+      assistant = Enum.at(trimmed, 2)
+      assert assistant.content == "Let me think..."
+      refute Map.has_key?(assistant, :tool_calls)
+      refute Map.has_key?(assistant, "tool_calls")
+    end
+
     test "keeps valid tool messages preceded by assistant" do
       messages = [
         %{role: "system", content: "sys"},

@@ -400,6 +400,9 @@ defmodule Beamcore.Agent.Chat.Session do
     # 4. Strip dangling tool_calls (assistant with tool_calls but no matching tool response)
     cleaned_messages = clean_dangling_tool_calls(cleaned_messages)
 
+    # 4.5. Remove empty assistant messages (no content and no tool_calls)
+    cleaned_messages = remove_empty_assistant_messages(cleaned_messages)
+
     # 5. Ensure it starts with a user message
     user_starting_messages = ensure_starts_with_user(cleaned_messages)
 
@@ -472,6 +475,18 @@ defmodule Beamcore.Agent.Chat.Session do
       else
         msg
       end
+    end)
+  end
+
+  defp remove_empty_assistant_messages(messages) do
+    Enum.reject(messages, fn msg ->
+      role = msg[:role] || msg["role"]
+      content = msg[:content] || msg["content"]
+      tool_calls = msg[:tool_calls] || msg["tool_calls"]
+
+      role == "assistant" and
+        (is_nil(content) or content == "" or (is_binary(content) and String.trim(content) == "")) and
+        (is_nil(tool_calls) or tool_calls == [])
     end)
   end
 
