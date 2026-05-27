@@ -1,7 +1,7 @@
-defmodule Beamcore.Agent.TUI.Components.EmptyState do
+defmodule Beamcore.TUI.Components.EmptyState do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.{State, Theme}
+  alias Beamcore.TUI.{State, Theme}
   alias ExRatatui.Widgets.Paragraph
   alias Number.SI
 

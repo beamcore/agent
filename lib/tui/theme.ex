@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.TUI.Theme do
+defmodule Beamcore.TUI.Theme do
   @moduledoc """
   Dark-first visual system for the agent TUI.
   """

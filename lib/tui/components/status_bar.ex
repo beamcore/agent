@@ -1,8 +1,8 @@
-defmodule Beamcore.Agent.TUI.Components.StatusBar do
+defmodule Beamcore.TUI.Components.StatusBar do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.Components.{Activity, Mascot}
-  alias Beamcore.Agent.TUI.{State, Theme, Wrap}
+  alias Beamcore.TUI.Components.{Activity, Mascot}
+  alias Beamcore.TUI.{State, Theme, Wrap}
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
   alias Number.SI

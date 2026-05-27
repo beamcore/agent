@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.TUI.Components.Mascot do
+defmodule Beamcore.TUI.Components.Mascot do
   @moduledoc false
 
   @unicode_frames %{

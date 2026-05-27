@@ -1,7 +1,7 @@
-defmodule Beamcore.Agent.TUI.Components.Activity do
+defmodule Beamcore.TUI.Components.Activity do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.{Theme, Wrap}
+  alias Beamcore.TUI.{Theme, Wrap}
   alias ExRatatui.Widgets.{Block, Paragraph, Popup, WidgetList}
 
   def widget(state, variant \\ :sidebar) do

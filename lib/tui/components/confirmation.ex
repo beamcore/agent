@@ -1,8 +1,8 @@
-defmodule Beamcore.Agent.TUI.Components.Confirmation do
+defmodule Beamcore.TUI.Components.Confirmation do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.Theme
-  alias Beamcore.Agent.TUI.Wrap
+  alias Beamcore.TUI.Theme
+  alias Beamcore.TUI.Wrap
   alias ExRatatui.Widgets.Paragraph
 
   def items(action, width) do

@@ -1,9 +1,9 @@
-defmodule Beamcore.Agent.TUI.StateComponentsTest do
+defmodule Beamcore.TUI.StateComponentsTest do
   use ExUnit.Case
 
   alias Beamcore.Agent.Chat.{Context, Session, ToolPolicy}
-  alias Beamcore.Agent.TUI.Components.{Confirmation, EmptyState, Help, StatusBar}
-  alias Beamcore.Agent.TUI.{Events, State}
+  alias Beamcore.TUI.Components.{Confirmation, EmptyState, Help, StatusBar}
+  alias Beamcore.TUI.{Events, State}
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
@@ -52,8 +52,8 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     assert content =~ "◢▣◣"
     assert content =~ "▱▱▱"
 
-    empty_source = File.read!("lib/agent/tui/components/empty_state.ex")
-    header_source = File.read!("lib/agent/tui/render.ex")
+    empty_source = File.read!("lib/tui/components/empty_state.ex")
+    header_source = File.read!("lib/tui/render.ex")
 
     refute empty_source =~ "Mascot"
     refute header_source =~ "Mascot"
@@ -212,15 +212,15 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
     event =
       State.compact_activity(
         "mix",
-        %{"command" => "test", "args" => "test/agent/tui/state_components_test.exs"},
+        %{"command" => "test", "args" => "test/tui/state_components_test.exs"},
         :running
       )
 
-    assert event.label == "mix test test/agent/tui/state_components_test.exs"
+    assert event.label == "mix test test/tui/state_components_test.exs"
     refute event.label =~ "\e["
 
     tui_sources =
-      "lib/agent/tui/**/*.ex"
+      "lib/tui/**/*.ex"
       |> Path.wildcard()
       |> Enum.map(&File.read!/1)
       |> Enum.join("\n")
@@ -349,7 +349,7 @@ defmodule Beamcore.Agent.TUI.StateComponentsTest do
 
   test "TUI handles context-aware mouse scroll events" do
     areas =
-      Beamcore.Agent.TUI.Layout.areas(%ExRatatui.Layout.Rect{
+      Beamcore.TUI.Layout.areas(%ExRatatui.Layout.Rect{
         x: 0,
         y: 0,
         width: 96,

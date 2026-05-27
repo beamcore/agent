@@ -1,8 +1,8 @@
-defmodule Beamcore.Agent.TUI.WrapTest do
+defmodule Beamcore.TUI.WrapTest do
   use ExUnit.Case
 
-  alias Beamcore.Agent.TUI.Components.Chat
-  alias Beamcore.Agent.TUI.Wrap
+  alias Beamcore.TUI.Components.Chat
+  alias Beamcore.TUI.Wrap
 
   test "long assistant text wraps into multiple lines within width" do
     text =

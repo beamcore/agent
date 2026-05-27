@@ -1,16 +1,15 @@
-defmodule Beamcore.Agent.TUI.Render do
+defmodule Beamcore.TUI.Render do
   @moduledoc """
   Render composition for the primary TUI.
   """
 
-  alias Beamcore.Agent.TUI.Components.{Activity, Chat, Help, Input, StatusBar}
-  alias Beamcore.Agent.TUI.{Layout, Theme}
+  alias Beamcore.TUI.Components.{Activity, Chat, Help, Input, StatusBar}
+  alias Beamcore.TUI.{Layout, Theme}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Paragraph, SlashCommands}
 
-  def render(state) do
-    {width, height} = ExRatatui.terminal_size()
-    area = %Rect{x: 0, y: 0, width: width, height: height}
+  def render(state, frame) do
+    area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
     areas = Layout.areas(area)
 
     widgets =
@@ -69,7 +68,7 @@ defmodule Beamcore.Agent.TUI.Render do
   end
 
   defp header(state) do
-    mode = if Beamcore.Agent.TUI.State.yolo?(state.session), do: "autonomous", else: "guarded"
+    mode = if Beamcore.TUI.State.yolo?(state.session), do: "autonomous", else: "guarded"
 
     %Paragraph{
       text: "BEAMCORE.AGENT  ·  #{mode} tools  ·  /help",

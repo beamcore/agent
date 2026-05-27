@@ -25,7 +25,8 @@ defmodule Beamcore.Agent do
       Beamcore.Ledger,
       Beamcore.Memory,
       Beamcore.Agent.Chat.RateLimiter,
-      Beamcore.Agent.Core.StatusBar
+      Beamcore.Agent.Core.StatusBar,
+      Beamcore.TUI.DynamicSupervisor
     ]
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
@@ -71,10 +72,10 @@ defmodule Beamcore.Agent do
   def chat(mode \\ :auto, opts \\ [])
 
   def chat(:auto, opts) do
-    if Beamcore.Agent.TUI.Capability.supported?(opts) do
+    if Beamcore.TUI.Capability.supported?(opts) do
       start_tui(opts)
     else
-      fallback_to_plain(Beamcore.Agent.TUI.Capability.unsupported_reason(opts), opts)
+      fallback_to_plain(Beamcore.TUI.Capability.unsupported_reason(opts), opts)
     end
   rescue
     error ->
@@ -87,7 +88,7 @@ defmodule Beamcore.Agent do
 
   @doc false
   def chat_mode(opts \\ []) do
-    if Beamcore.Agent.TUI.Capability.supported?(opts), do: :tui, else: :plain
+    if Beamcore.TUI.Capability.supported?(opts), do: :tui, else: :plain
   end
 
   defp fallback_to_plain(reason, opts) do
@@ -97,7 +98,7 @@ defmodule Beamcore.Agent do
   end
 
   defp start_tui(opts),
-    do: call_start(Keyword.get(opts, :tui_start, &Beamcore.Agent.TUI.start/1), opts)
+    do: call_start(Keyword.get(opts, :tui_start, &Beamcore.TUI.start/1), opts)
 
   defp start_plain(opts),
     do: call_start(Keyword.get(opts, :plain_start, &Beamcore.Agent.Chat.start/0), opts)

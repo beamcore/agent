@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.TUI.Wrap do
+defmodule Beamcore.TUI.Wrap do
   @moduledoc """
   Width-aware wrapping helpers for TUI text.
   """
