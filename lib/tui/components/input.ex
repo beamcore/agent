@@ -1,7 +1,7 @@
-defmodule Beamcore.Agent.TUI.Components.Input do
+defmodule Beamcore.TUI.Components.Input do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.{State, Theme}
+  alias Beamcore.TUI.{State, Theme}
   alias ExRatatui.Widgets.{Block, Textarea}
 
   def widget(state) do

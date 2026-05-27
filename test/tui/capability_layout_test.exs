@@ -1,7 +1,7 @@
-defmodule Beamcore.Agent.TUI.CapabilityLayoutTest do
+defmodule Beamcore.TUI.CapabilityLayoutTest do
   use ExUnit.Case
 
-  alias Beamcore.Agent.TUI.Layout
+  alias Beamcore.TUI.Layout
   alias ExRatatui.Layout.Rect
 
   test "chat entrypoint selects TUI when supported" do

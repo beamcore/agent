@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.TUI.State do
+defmodule Beamcore.TUI.State do
   @moduledoc """
   Presentation-only state for the primary TUI.
   """
@@ -33,14 +33,14 @@ defmodule Beamcore.Agent.TUI.State do
 
   def new(terminal, textarea, opts \\ []) do
     client = Keyword.get(opts, :client, Beamcore.Agent.OpenAI.client())
-    history = Keyword.get(opts, :history, Beamcore.Agent.TUI.History.load())
+    history = Keyword.get(opts, :history, Beamcore.TUI.History.load())
 
     %__MODULE__{
       terminal: terminal,
       textarea: textarea,
       session: Session.new(client),
       last_animation_tick_ms: System.monotonic_time(:millisecond),
-      unicode?: Beamcore.Agent.TUI.Capability.unicode?(opts),
+      unicode?: Beamcore.TUI.Capability.unicode?(opts),
       history: history,
       history_index: nil,
       history_draft: ""

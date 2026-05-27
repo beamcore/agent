@@ -1,11 +1,10 @@
-defmodule Beamcore.Agent.TUI.HistoryTest do
+defmodule Beamcore.TUI.HistoryTest do
   use ExUnit.Case, async: false
 
-  alias Beamcore.Agent.TUI.History
+  alias Beamcore.TUI.History
 
   setup do
     # Generate a unique temp history path for this test inside the workspace
-    # (since we shouldn't write outside the workspace/tmp dirs, we can write in a local scratch or system tmp)
     temp_dir = System.tmp_dir!()
     unique_id = :erlang.unique_integer([:positive])
     temp_path = Path.join(temp_dir, "history_test_#{unique_id}.json")

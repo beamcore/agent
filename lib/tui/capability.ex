@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.TUI.Capability do
+defmodule Beamcore.TUI.Capability do
   @moduledoc """
   Startup capability checks for the primary TUI.
   """

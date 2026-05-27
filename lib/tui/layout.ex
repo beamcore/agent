@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.TUI.Layout do
+defmodule Beamcore.TUI.Layout do
   @moduledoc """
   Adaptive layout modes for the terminal UI.
   """

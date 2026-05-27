@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.TUI.History do
+defmodule Beamcore.TUI.History do
   @moduledoc """
   Manages persistent TUI user input message history stored in ~/.agent/history.json.
   """

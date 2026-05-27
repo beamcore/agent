@@ -224,7 +224,7 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
         tool_response_msg("read"),
         tool_call_msg("read", %{"filePath" => "mix.exs"}),
         tool_response_msg("read"),
-        tool_call_msg("read", %{"filePath" => "lib/agent/tui/app.ex"}),
+        tool_call_msg("read", %{"filePath" => "lib/tui/render.ex"}),
         tool_response_msg("read"),
         tool_call_msg("read", %{"filePath" => "lib/agent/chat/session.ex"}),
         tool_response_msg("read"),

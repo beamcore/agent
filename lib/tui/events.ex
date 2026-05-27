@@ -1,10 +1,10 @@
-defmodule Beamcore.Agent.TUI.Events do
+defmodule Beamcore.TUI.Events do
   @moduledoc """
   Event handling for the primary TUI.
   """
 
   alias Beamcore.Agent.Chat.{Commands, Loop}
-  alias Beamcore.Agent.TUI.{History, State}
+  alias Beamcore.TUI.{History, State}
   alias ExRatatui.Event
   alias ExRatatui.Widgets.SlashCommands
   alias ExRatatui.Widgets.SlashCommands.Command
@@ -57,7 +57,7 @@ defmodule Beamcore.Agent.TUI.Events do
       end
 
     areas =
-      Beamcore.Agent.TUI.Layout.areas(%ExRatatui.Layout.Rect{
+      Beamcore.TUI.Layout.areas(%ExRatatui.Layout.Rect{
         x: 0,
         y: 0,
         width: width,

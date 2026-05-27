@@ -1,7 +1,7 @@
-defmodule Beamcore.Agent.TUI.Components.Help do
+defmodule Beamcore.TUI.Components.Help do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.Theme
+  alias Beamcore.TUI.Theme
   alias ExRatatui.Widgets.{Block, Paragraph, Popup}
 
   def widget do

@@ -1,8 +1,8 @@
-defmodule Beamcore.Agent.TUI.Components.Chat do
+defmodule Beamcore.TUI.Components.Chat do
   @moduledoc false
 
-  alias Beamcore.Agent.TUI.Components.{Confirmation, EmptyState}
-  alias Beamcore.Agent.TUI.{State, Theme, Wrap}
+  alias Beamcore.TUI.Components.{Confirmation, EmptyState}
+  alias Beamcore.TUI.{State, Theme, Wrap}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, Paragraph, Throbber, WidgetList}
 
