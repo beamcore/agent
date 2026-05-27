@@ -19,13 +19,35 @@ defmodule Beamcore.Agent do
   Start the Beamcore.Agent application.
   """
   def start(_type, _args) do
+    maybe_connect_ledger_node()
+
     children = [
+      Beamcore.Ledger,
       Beamcore.Agent.Chat.RateLimiter,
       Beamcore.Agent.Core.StatusBar
     ]
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp maybe_connect_ledger_node do
+    case System.get_env("LEDGER_NODE") do
+      nil ->
+        :ok
+
+      node_str ->
+        node_atom = String.to_atom(node_str)
+
+        case Node.connect(node_atom) do
+          true ->
+            Process.sleep(100)
+            :ok
+
+          false ->
+            :ok
+        end
+    end
   end
 
   @doc """

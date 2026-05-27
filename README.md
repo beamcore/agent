@@ -49,6 +49,7 @@ MISTRAL_IMAGE_AGENT_ID=
 | `make format` | Format the project. |
 | `make chat` | Start the primary polished terminal UI agent chat. |
 | `make chat-plain` | Start the plain emergency fallback. |
+| `make run-ledger` | Run the ledger service standalone as a globally registered cluster member. |
 | `make init` | Create `.env` from `.env.example` if missing. |
 | `make install` | Build a production release and install a local executable. |
 | `make uninstall` | Remove the installed release/executable. |

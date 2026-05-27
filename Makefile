@@ -1,6 +1,6 @@
 # Makefile for Beamcore.Agent - Mistral API client
 
-.PHONY: all deps compile test format dialyzer shell clean help chat chat-plain tui
+.PHONY: all deps compile test format dialyzer shell clean help chat chat-plain tui run-ledger
 
 ifneq (,$(wildcard .env))
 include .env
@@ -120,3 +120,8 @@ init:
 update:
 	mix deps.update --all
 	mix deps.compile
+
+# Run the ledger service standalone as a globally registered cluster member
+run-ledger: compile
+	LEDGER_GLOBAL=true elixir --sname ledger -S mix run --no-halt
+

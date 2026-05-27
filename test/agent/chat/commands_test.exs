@@ -194,7 +194,6 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert disabled.policy_override == nil
   end
 
-
   test "/yolo clears stale project policy blocked attempts from context" do
     session =
       Beamcore.Agent.OpenAI.client()
@@ -219,7 +218,6 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert enabled.project_policy_bypassed?
     assert enabled.context.blocked_attempts == []
   end
-
 
   test "/yolo removes stale project policy block messages from model history" do
     session = Beamcore.Agent.OpenAI.client() |> Session.new()
@@ -264,7 +262,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
     contents = Enum.map(enabled.messages, &(&1[:content] || &1["content"] || ""))
     refute Enum.any?(contents, &String.contains?(&1, "blocked by project policy"))
-    refute Enum.any?(enabled.messages, &(is_list(&1[:tool_calls] || &1["tool_calls"])))
+    refute Enum.any?(enabled.messages, &is_list(&1[:tool_calls] || &1["tool_calls"]))
   end
 
   test "/yolo on and /yolo off set freedom mode explicitly" do
