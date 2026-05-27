@@ -27,21 +27,41 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   Execute a tool by name with the given arguments.
   """
   def execute(name, args, policy \\ ToolPolicy.default()) do
+    start_time = System.monotonic_time(:millisecond)
+    {org, repo} = Beamcore.Ledger.detect_org_repo()
+
     case find_tool(name) do
       nil ->
-        "Function not implemented"
+        duration = System.monotonic_time(:millisecond) - start_time
+        result = "Function not implemented"
+        Beamcore.Ledger.log_action(org, repo, name, args, result, duration, 0, :error)
+        result
 
       tool ->
         case ToolPolicy.allow_tool_call(policy, name, args) do
           :ok ->
-            if ToolPolicy.project_policy_bypassed?(policy) do
-              ProjectPolicy.with_bypass(fn -> execute_tool(tool, name, args) end)
-            else
-              execute_tool(tool, name, args)
-            end
+            result =
+              if ToolPolicy.project_policy_bypassed?(policy) do
+                ProjectPolicy.with_bypass(fn -> execute_tool(tool, name, args) end)
+              else
+                execute_tool(tool, name, args)
+              end
+
+            duration = System.monotonic_time(:millisecond) - start_time
+
+            status =
+              if is_binary(result) and String.starts_with?(result, "Error:"),
+                do: :error,
+                else: :ok
+
+            Beamcore.Ledger.log_action(org, repo, name, args, result, duration, 0, status)
+            result
 
           {:error, message} ->
-            "Error: #{message}"
+            duration = System.monotonic_time(:millisecond) - start_time
+            result = "Error: #{message}"
+            Beamcore.Ledger.log_action(org, repo, name, args, result, duration, 0, :error)
+            result
         end
     end
   end

@@ -266,8 +266,6 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     assert content =~ "Compact summary."
   end
 
-
-
   test "freedom mode removes stale policy-blocked history before next API request", %{
     session: session
   } do
@@ -359,7 +357,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
 
     assert_receive {:api_messages, api_messages, combined}
     refute combined =~ "blocked by project policy"
-    refute Enum.any?(api_messages, &(is_list(&1[:tool_calls] || &1["tool_calls"])))
+    refute Enum.any?(api_messages, &is_list(&1[:tool_calls] || &1["tool_calls"]))
 
     assert File.exists?("scratch/yolo_test.ex")
     assert_receive {:event, {:tool_finished, "write", ^write_args, result}}
@@ -367,7 +365,9 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     assert updated.project_policy_bypassed?
   end
 
-  test "session freedom flag bypasses project policy even without policy_override", %{session: session} do
+  test "session freedom flag bypasses project policy even without policy_override", %{
+    session: session
+  } do
     File.mkdir_p!(".beamcore")
     File.write!(".beamcore/policy.json", Jason.encode!(%{version: 1, deny_paths: ["scratch/**"]}))
     File.rm_rf!("scratch")

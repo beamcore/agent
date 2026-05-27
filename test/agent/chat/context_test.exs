@@ -81,7 +81,6 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     assert ["write eval/a.ex"] == context.blocked_attempts
   end
 
-
   test "clear_policy_blocks removes stale blocked policy context" do
     context =
       Context.new(:elixir)
@@ -102,7 +101,12 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     cleared = Context.clear_policy_blocks(context)
 
     assert cleared.blocked_attempts == []
-    refute Enum.any?(cleared.active_constraints, &String.starts_with?(&1, "Restricted writes only"))
+
+    refute Enum.any?(
+             cleared.active_constraints,
+             &String.starts_with?(&1, "Restricted writes only")
+           )
+
     refute Enum.any?(cleared.active_constraints, &String.starts_with?(&1, "Current turn"))
     assert "No shell tool." in cleared.active_constraints
   end

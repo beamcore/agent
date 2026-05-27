@@ -83,7 +83,6 @@ defmodule Beamcore.Agent.Chat.Session do
     }
   end
 
-
   @doc """
   Removes stale model-facing ProjectPolicy block/refusal messages after freedom mode is enabled.
 
@@ -327,7 +326,6 @@ defmodule Beamcore.Agent.Chat.Session do
     end
   end
 
-
   defp project_policy_block_message?(message) do
     role = message[:role] || message["role"]
     content = message[:content] || message["content"] || ""
@@ -338,14 +336,17 @@ defmodule Beamcore.Agent.Chat.Session do
   defp project_policy_block_text?(content) when is_binary(content) do
     normalized = String.downcase(content)
 
-    Enum.any?([
-      "blocked by project policy",
-      "project policy",
-      "tool call blocked by project policy",
-      "policy denies",
-      "policy denied",
-      "project policy can only be changed"
-    ], &String.contains?(normalized, &1))
+    Enum.any?(
+      [
+        "blocked by project policy",
+        "project policy",
+        "tool call blocked by project policy",
+        "policy denies",
+        "policy denied",
+        "project policy can only be changed"
+      ],
+      &String.contains?(normalized, &1)
+    )
   end
 
   defp project_policy_block_text?(_content), do: false
