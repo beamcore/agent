@@ -20,7 +20,8 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     Beamcore.Agent.Tools.Task,
     Beamcore.Agent.Tools.Plan,
     Beamcore.Agent.Tools.ImageGeneration,
-    Beamcore.Agent.Tools.Mix
+    Beamcore.Agent.Tools.Mix,
+    Beamcore.Agent.Tools.Memory
   ]
 
   @doc """

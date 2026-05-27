@@ -1,6 +1,6 @@
 # Makefile for Beamcore.Agent - Mistral API client
 
-.PHONY: all deps compile test format dialyzer shell clean help chat chat-plain tui run-ledger
+.PHONY: all deps compile test format dialyzer shell clean help chat chat-plain tui run-ledger run-memory
 
 ifneq (,$(wildcard .env))
 include .env
@@ -124,4 +124,9 @@ update:
 # Run the ledger service standalone as a globally registered cluster member
 run-ledger: compile
 	LEDGER_GLOBAL=true elixir --sname ledger -S mix run --no-halt
+
+# Run the memory service standalone as a globally registered cluster member
+run-memory: compile
+	MEMORY_GLOBAL=true elixir --sname memory -S mix run --no-halt
+
 

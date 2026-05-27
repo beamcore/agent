@@ -23,6 +23,7 @@ defmodule Beamcore.Agent do
 
     children = [
       Beamcore.Ledger,
+      Beamcore.Memory,
       Beamcore.Agent.Chat.RateLimiter,
       Beamcore.Agent.Core.StatusBar
     ]

@@ -28,11 +28,11 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           project_policy_bypassed?: boolean()
         }
 
-  @read_only_tools ~w(read grep glob tree git mix)
-  @unconfirmed_tools ~w(read grep glob tree plan git)
-  @restricted_write_tools ~w(read grep glob write edit patch fs mix)
-  @development_tools ~w(read grep glob edit patch write tree git fs mix)
-  @all_tool_names ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation)
+  @read_only_tools ~w(read grep glob tree git mix memory)
+  @unconfirmed_tools ~w(read grep glob tree plan git memory)
+  @restricted_write_tools ~w(read grep glob write edit patch fs mix memory)
+  @development_tools ~w(read grep glob edit patch write tree git fs mix memory)
+  @all_tool_names ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation memory)
   @mutation_tools ~w(write edit patch fs image_generation)
   @read_only_git_operations ~w(status diff log)
   @read_only_mix_commands ~w(test compile validate)
