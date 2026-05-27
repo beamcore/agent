@@ -13,7 +13,8 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     "plan: non-mutating pending plan for normal file-change requests.",
     "web_get: network fetch and system execution tasks.",
     "task: start sub agents to do parallel work.",
-    "image_generation: Mistral image_generation agent tool."
+    "image_generation: Mistral image_generation agent tool.",
+    "memory: persistent memory service to remember, recall, list, and forget scoped knowledge."
   ]
 
   @doc """
@@ -33,7 +34,22 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     Available tools:
     - #{formatted_tools}
 
+    #{memory_guidelines_and_index()}
+
     Response style: concise, factual, robotic professional.
+    """
+  end
+
+  @doc """
+  Returns the shared memory guidelines and accumulated memory index.
+  """
+  def memory_guidelines_and_index do
+    """
+    Memory Guidelines:
+    - You are highly encouraged to use the `memory` tool to `recall` prior workspace insights, architecture notes, decisions, or user preferences on startup.
+    - Save new lessons, errors/fixes, and architectural choices using `memory` with descriptive, snake_case keys (e.g. `user_preferences`, `loop_fix_2026`).
+    - **Memory Updates (Upserting)**: The `remember` action automatically overwrites/updates any existing key. If you discover that a recalled memory is stale, you MUST run `remember` on the same key to overwrite it with the updated, accurate information.
+    #{memory_index_details()}
     """
   end
 
@@ -49,5 +65,34 @@ defmodule Beamcore.Agent.Core.SysPrompt do
 
   defp project_nature_details(_unknown) do
     "- Project nature is not fully detected. Infer conventions from existing files before editing."
+  end
+
+  defp memory_index_details do
+    {org, repo} = Beamcore.Memory.detect_org_repo()
+    categories = [:repo_map, :patterns, :decisions, :errors, :context]
+
+    index_lines =
+      Enum.map(categories, fn type ->
+        keys =
+          Beamcore.Memory.list(org, repo, type)
+          |> Enum.map(fn {k, _v} -> k end)
+
+        if keys == [] do
+          nil
+        else
+          "  - #{type}: #{inspect(keys)}"
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    if index_lines == [] do
+      ""
+    else
+      """
+
+      Accumulated Repository Memory Index (Use the `memory` tool to `recall` these keys):
+      #{Enum.join(index_lines, "\n")}
+      """
+    end
   end
 end

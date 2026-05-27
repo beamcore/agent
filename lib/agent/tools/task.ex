@@ -76,6 +76,8 @@ defmodule Beamcore.Agent.Tools.Task do
         Do not delegate to other sub-agents.
         Do not modify files when the prompt is read-only or forbids changes.
         Keep tool usage minimal and return a concise final result.
+
+        #{Beamcore.Agent.Core.SysPrompt.memory_guidelines_and_index()}
         """
       },
       %{
