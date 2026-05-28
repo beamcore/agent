@@ -126,7 +126,11 @@ defmodule Beamcore.Memory do
   def init(opts) do
     Process.flag(:trap_exit, true)
 
-    dets_path = opts[:dets_path] || System.get_env("MEMORY_DETS_PATH") || @default_dets_path
+    dets_path =
+      opts[:dets_path] ||
+        Application.get_env(:agent, :memory_dets_path) ||
+        System.get_env("MEMORY_DETS_PATH") ||
+        @default_dets_path
     expanded_path = Path.expand(dets_path)
 
     # Ensure parent directory exists
@@ -331,7 +335,10 @@ defmodule Beamcore.Memory do
       :ets.new(:beamcore_memory_store, [:set, :public, :named_table])
     end
 
-    dets_path = System.get_env("MEMORY_DETS_PATH") || @default_dets_path
+    dets_path =
+      Application.get_env(:agent, :memory_dets_path) ||
+        System.get_env("MEMORY_DETS_PATH") ||
+        @default_dets_path
     expanded_path = Path.expand(dets_path)
 
     try do
