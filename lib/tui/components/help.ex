@@ -14,22 +14,27 @@ defmodule Beamcore.TUI.Components.Help do
     /policy          Show project policy summary
     /policy show     Show normalized project policy config
     /policy init     Create .beamcore/policy.json
-    /policy deny path <pattern>
-    /policy tool <tool> allow|deny
     /policy reload   Reload project policy
+    /policy deny path <pattern>
+    /policy allow-write <pattern>
+    /policy read-only <pattern>
+    /policy tool <tool> allow|deny
     /yolo            Toggle session freedom mode
     /yolo on         Bypass project policy for this session
     /yolo off        Restore project policy
     /quit /exit /q   Exit
 
     Keys
-    Enter            New line
-    Ctrl+Enter /     Send
+    Enter            Send, or accept highlighted command suggestion
     Ctrl+S           Send
-    Ctrl+P / Ctrl+N  History / scroll command menu
-    Tab              Tool details
-    Up/Down          Move cursor in textarea
-    Esc / q          Close this panel
+    Shift+Enter      Insert newline if supported by terminal
+    Ctrl+J / Alt+Enter  Insert newline fallback
+    /                Open command suggestions
+    Up/Down          Choose command suggestion when suggestions are open
+    Ctrl+P / Ctrl+N  History, or choose command suggestion
+    Tab              Complete highlighted command suggestion
+    Esc              Close suggestions, help, or details
+    q                Close this panel
     Ctrl+C           Exit
 
     Tools, blocked attempts, validation, and image generation appear in Activity.
