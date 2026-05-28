@@ -123,7 +123,7 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp handle_key(code, _mods, %{show_help: true} = state)
-       when code in ["esc", "escape", "q", "enter", "space", "h", "?", "f1"] do
+       when code in ["esc", "escape", "q", "space", "h", "?", "f1"] do
     {:noreply, close_panels(state)}
   end
 
@@ -132,10 +132,15 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp handle_key("enter", mods, state) do
-    if state.show_commands do
-      {:noreply, execute_command(state)}
-    else
-      {:noreply, maybe_submit_or_newline(state, mods || [])}
+    cond do
+      ctrl?(mods) and state.show_commands ->
+        {:noreply, execute_command(state)}
+
+      ctrl?(mods) ->
+        {:noreply, submit(state)}
+
+      true ->
+        handle_text_key("enter", mods, state)
     end
   end
 
@@ -146,39 +151,54 @@ defmodule Beamcore.TUI.Events do
       |> Map.put(:command_matches, [])
       |> Map.put(:history_index, nil)
 
-    ExRatatui.textarea_set_value(state.textarea, "")
     {:noreply, state |> close_panels() |> State.mark_dirty()}
   end
 
   defp handle_key("tab", _mods, state),
     do: {:noreply, %{state | show_activity_details: not state.show_activity_details}}
 
-  defp handle_key("up", _mods, state) do
-    cond do
-      state.show_commands ->
-        {:noreply, %{state | command_selected: max(0, state.command_selected - 1)}}
+  defp handle_key("p", mods, state) do
+    if ctrl?(mods) do
+      cond do
+        state.show_commands ->
+          {:noreply, %{state | command_selected: max(0, state.command_selected - 1)}}
 
-      state.show_activity_details ->
-        max_index = max(length(state.activity) - 1, 0)
-        {:noreply, %{state | selected_activity: min(state.selected_activity + 1, max_index)}}
+        state.show_activity_details ->
+          max_index = max(length(state.activity) - 1, 0)
+          {:noreply, %{state | selected_activity: min(state.selected_activity + 1, max_index)}}
 
-      true ->
-        {:noreply, navigate_history(state, :up)}
+        true ->
+          {:noreply, navigate_history(state, :up)}
+      end
+    else
+      handle_text_key("p", mods, state)
     end
   end
 
-  defp handle_key("down", _mods, state) do
-    cond do
-      state.show_commands ->
-        max_index = max(length(state.command_matches) - 1, 0)
-        {:noreply, %{state | command_selected: min(state.command_selected + 1, max_index)}}
+  defp handle_key("n", mods, state) do
+    if ctrl?(mods) do
+      cond do
+        state.show_commands ->
+          max_index = max(length(state.command_matches) - 1, 0)
+          {:noreply, %{state | command_selected: min(state.command_selected + 1, max_index)}}
 
-      state.show_activity_details ->
-        {:noreply, %{state | selected_activity: max(state.selected_activity - 1, 0)}}
+        state.show_activity_details ->
+          {:noreply, %{state | selected_activity: max(state.selected_activity - 1, 0)}}
 
-      true ->
-        {:noreply, navigate_history(state, :down)}
+        true ->
+          {:noreply, navigate_history(state, :down)}
+      end
+    else
+      handle_text_key("n", mods, state)
     end
+  end
+
+  defp handle_key("up", _mods, state) do
+    {:noreply, State.scroll_up(state)}
+  end
+
+  defp handle_key("down", _mods, state) do
+    {:noreply, State.scroll_down(state)}
   end
 
   defp handle_key(code, mods, state), do: handle_text_key(code, mods, state)
@@ -232,6 +252,9 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
+  defp ctrl?(nil), do: false
+  defp ctrl?(mods), do: "ctrl" in mods
+
   defp scroll_activity(state, :up) do
     max_index = max(length(state.activity) - 1, 0)
 
@@ -248,19 +271,11 @@ defmodule Beamcore.TUI.Events do
     |> State.mark_dirty()
   end
 
-  defp ctrl?(mods), do: "ctrl" in mods
-
-  defp maybe_submit_or_newline(state, mods) do
-    if "shift" in mods do
-      insert_newline(state)
-    else
-      submit(state)
-    end
-  end
-
   defp insert_newline(state) do
     ExRatatui.textarea_handle_key(state.textarea, "enter", [])
     state
+    |> Map.put(:history_index, nil)
+    |> State.mark_dirty()
   end
 
   defp submit(%{worker: worker} = state) when not is_nil(worker),

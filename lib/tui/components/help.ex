@@ -23,12 +23,13 @@ defmodule Beamcore.TUI.Components.Help do
     /quit /exit /q   Exit
 
     Keys
-    Enter            Send
-    Shift+Enter      New line when supported
+    Enter            New line
+    Ctrl+Enter /     Send
     Ctrl+S           Send
+    Ctrl+P / Ctrl+N  History / scroll command menu
     Tab              Tool details
-    Up/Down          Scroll chat or command menu
-    Esc / q / Enter  Close this panel
+    Up/Down          Move cursor in textarea
+    Esc / q          Close this panel
     Ctrl+C           Exit
 
     Tools, blocked attempts, validation, and image generation appear in Activity.

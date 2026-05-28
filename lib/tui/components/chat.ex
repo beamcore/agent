@@ -28,6 +28,10 @@ defmodule Beamcore.TUI.Components.Chat do
     }
   end
 
+  def render_message_lines(label, content, width) do
+    [label | Wrap.lines(content, width)]
+  end
+
   defp title(%{status: :waiting_for_confirmation}), do: "Chat · legacy pending"
   defp title(%{status: :thinking}), do: "Chat · thinking"
   defp title(%{status: :tool_running}), do: "Chat · tool running"
@@ -55,10 +59,6 @@ defmodule Beamcore.TUI.Components.Chat do
       %{content: content} ->
         bubble("System", content, Theme.style(:muted), wrap_width, :plain)
     end)
-  end
-
-  def render_message_lines(label, content, width) do
-    [label | Wrap.lines(content, width)]
   end
 
   defp bubble(label, content, style, wrap_width, kind) do
@@ -106,23 +106,24 @@ defmodule Beamcore.TUI.Components.Chat do
   end
 
   defp append_spinner(items, %{status: status} = state)
-       when status in [:thinking, :tool_running] do
+      when status in [:thinking, :tool_running] do
     label = if status == :tool_running, do: " running tools", else: " thinking"
     set = if state.unicode?, do: :braille, else: :ascii
 
     items ++
       [
         {%Throbber{
-           label: label,
-           step: state.spinner_step,
-           throbber_set: set,
-           style: Theme.style(:running),
-           throbber_style: Theme.style(:running)
-         }, 1}
+            label: label,
+            step: state.spinner_step,
+            throbber_set: set,
+            style: Theme.style(:running),
+            throbber_style: Theme.style(:running)
+          }, 1}
       ]
   end
 
   defp append_spinner(items, _state), do: items
+
   defp line_count(text), do: text |> to_string() |> String.split("\n") |> length()
 
   defp content_width(%Rect{width: width}), do: max(width - 4, 12)

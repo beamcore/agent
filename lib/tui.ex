@@ -47,9 +47,6 @@ defmodule Beamcore.TUI do
 
   @impl true
   def mount(opts) do
-    # Enable native terminal mouse scroll and click capture
-    IO.write("\e[?1000h\e[?1002h\e[?1006h")
-
     # Start periodic ticking for animations (e.g. spinners, mascot)
     :timer.send_interval(100, self(), :tick)
 
@@ -105,8 +102,6 @@ defmodule Beamcore.TUI do
 
   @impl true
   def terminate(_reason, _state) do
-    # Restore terminal mouse settings on exit
-    IO.write("\e[?1000l\e[?1002l\e[?1006l")
     :ok
   end
 end
