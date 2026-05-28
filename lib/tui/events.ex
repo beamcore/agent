@@ -33,8 +33,8 @@ defmodule Beamcore.TUI.Events do
   def handle_event(event, state, opts \\ [])
 
   def handle_event(%Event.Key{} = event, state, opts) do
-    code = normalize_code(event.code)
-    mods = normalize_mods(event.modifiers)
+    code = event.code
+    mods = event.modifiers
 
     if key_press?(event) do
       if code == "enter" and Keyword.get(opts, :paste, false) do
@@ -411,15 +411,4 @@ defmodule Beamcore.TUI.Events do
     do: %{state | show_help: false, show_commands: false, show_activity_details: false}
 
   defp key_press?(%{kind: kind}), do: kind in [nil, "press", :press]
-
-  defp normalize_code(code) when is_binary(code), do: code |> String.downcase()
-  defp normalize_code(code) when is_atom(code), do: code |> Atom.to_string() |> String.downcase()
-  defp normalize_code(code), do: code |> to_string() |> String.downcase()
-
-  defp normalize_mods(nil), do: []
-
-  defp normalize_mods(mods) when is_list(mods),
-    do: Enum.map(mods, &normalize_code/1)
-
-  defp normalize_mods(mod), do: [normalize_code(mod)]
 end

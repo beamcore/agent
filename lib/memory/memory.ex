@@ -124,6 +124,8 @@ defmodule Beamcore.Memory do
 
   @impl true
   def init(opts) do
+    Process.flag(:trap_exit, true)
+
     dets_path = opts[:dets_path] || System.get_env("MEMORY_DETS_PATH") || @default_dets_path
     expanded_path = Path.expand(dets_path)
 
@@ -140,7 +142,7 @@ defmodule Beamcore.Memory do
 
     # Open DETS table
     dets_ref =
-      case :dets.open_file(dets_name, file: to_charlist(expanded_path)) do
+      case :dets.open_file(dets_name, [file: to_charlist(expanded_path)]) do
         {:ok, table} ->
           table
 
@@ -169,6 +171,12 @@ defmodule Beamcore.Memory do
   end
 
   @impl true
+  def terminate(_reason, state) do
+    :dets.close(state.dets_name)
+    :ok
+  end
+
+  @impl true
   def handle_call({:remember, org, repo, type, key, value}, _from, state) do
     entry_key = {type, org, repo, key}
 
@@ -177,6 +185,7 @@ defmodule Beamcore.Memory do
 
     # 2. Update DETS
     :dets.insert(state.dets_name, {entry_key, value})
+    :dets.sync(state.dets_name)
 
     {:reply, :ok, state}
   end
@@ -203,6 +212,7 @@ defmodule Beamcore.Memory do
 
     # 2. Delete from DETS
     :dets.delete(state.dets_name, entry_key)
+    :dets.sync(state.dets_name)
 
     {:reply, :ok, state}
   end
@@ -221,6 +231,7 @@ defmodule Beamcore.Memory do
     # Delete all items
     :ets.delete_all_objects(state.ets_name)
     :dets.delete_all_objects(state.dets_name)
+    :dets.sync(state.dets_name)
 
     {:reply, :ok, state}
   end
@@ -247,6 +258,7 @@ defmodule Beamcore.Memory do
 
     try do
       :dets.insert(:beamcore_memory_store, {entry_key, value})
+      :dets.sync(:beamcore_memory_store)
     rescue
       _ -> :ok
     end
@@ -278,6 +290,7 @@ defmodule Beamcore.Memory do
 
     try do
       :dets.delete(:beamcore_memory_store, entry_key)
+      :dets.sync(:beamcore_memory_store)
     rescue
       _ -> :ok
     end
@@ -305,6 +318,7 @@ defmodule Beamcore.Memory do
 
     try do
       :dets.delete_all_objects(:beamcore_memory_store)
+      :dets.sync(:beamcore_memory_store)
     rescue
       _ -> :ok
     end
@@ -322,7 +336,7 @@ defmodule Beamcore.Memory do
 
     try do
       File.mkdir_p!(Path.dirname(expanded_path))
-      :dets.open_file(:beamcore_memory_store, file: to_charlist(expanded_path))
+      :dets.open_file(:beamcore_memory_store, [file: to_charlist(expanded_path)])
       :dets.to_ets(:beamcore_memory_store, :beamcore_memory_store)
     rescue
       _ -> :ok
