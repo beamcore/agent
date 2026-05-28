@@ -202,6 +202,7 @@ defmodule Beamcore.TUI.State do
 
     %{
       id: System.unique_integer([:positive]),
+      timestamp_ms: System.system_time(:millisecond),
       name: display.name,
       target: display.target,
       status: display.status,

@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
   use ExUnit.Case
 
   alias Beamcore.Agent.Chat.{Context, Session, ToolPolicy}
-  alias Beamcore.TUI.Components.{Confirmation, EmptyState, Help, Input, StatusBar}
+  alias Beamcore.TUI.Components.{Activity, Confirmation, EmptyState, Help, Input, StatusBar}
   alias Beamcore.TUI.{Events, State}
 
   setup do
@@ -26,6 +26,9 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert "policy" in command_names
     assert "policy show" in command_names
     assert "policy init" in command_names
+    assert "timeline" in command_names
+    assert "timeline last" in command_names
+    assert "timeline clear" in command_names
     assert "exit" in command_names
     assert "q" in command_names
     refute "confirm" in command_names
@@ -128,6 +131,72 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert input_title =~ "Enter send"
     assert input_title =~ "Tab complete"
     assert input_title =~ "/ commands"
+  end
+
+  test "timeline details show compact selected activity" do
+    state = timeline_state()
+
+    text = Activity.details_text(state)
+
+    assert text =~ "Timeline item 1/2"
+    assert text =~ "write lib/a.ex"
+    assert text =~ "tool: write"
+    assert text =~ "state: done"
+    assert text =~ "target: lib/a.ex"
+    assert text =~ "output: Wrote file"
+    refute text =~ String.duplicate("x", 600)
+  end
+
+  test "timeline selection moves up and down while details are open" do
+    state = %{timeline_state() | show_activity_details: true}
+
+    {:noreply, state} = Events.handle_event(key("down"), state)
+    assert state.selected_activity == 1
+
+    {:noreply, state} = Events.handle_event(key("up"), state)
+    assert state.selected_activity == 0
+
+    {:noreply, state} = Events.handle_event(key("down", ["shift"]), state)
+    assert state.selected_activity == 1
+  end
+
+  test "tab behavior still prioritizes command autocomplete over timeline details" do
+    state = input_state("") |> type_text("/ti")
+
+    {:noreply, state} = Events.handle_event(key("tab"), state)
+
+    refute state.show_activity_details
+    assert ExRatatui.textarea_get_value(state.textarea) == "/timeline"
+  end
+
+  test "esc closes timeline details" do
+    state = %{timeline_state() | show_activity_details: true}
+
+    {:noreply, state} = Events.handle_event(key("esc"), state)
+
+    refute state.show_activity_details
+  end
+
+  test "timeline slash commands focus latest and clear only UI activity" do
+    state = %{timeline_state() | selected_activity: 1}
+    ExRatatui.textarea_set_value(state.textarea, "/timeline last")
+
+    {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    assert state.show_activity_details
+    assert state.selected_activity == 0
+    assert length(state.activity) == 2
+
+    ExRatatui.textarea_set_value(state.textarea, "/timeline clear")
+    {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    refute state.show_activity_details
+    assert state.activity == []
+
+    assert Enum.any?(
+             state.messages,
+             &String.contains?(&1.content, "Session history was not changed")
+           )
   end
 
   test "empty state is product-facing and professional", %{state: state} do
@@ -567,5 +636,18 @@ defmodule Beamcore.TUI.StateComponentsTest do
 
   defp key(code, modifiers \\ []) do
     %ExRatatui.Event.Key{code: code, modifiers: modifiers, kind: "press"}
+  end
+
+  defp timeline_state do
+    long_result = "Wrote file " <> String.duplicate("x", 700)
+
+    input_state("")
+    |> State.update_activity("read", %{"filePath" => "README.md"}, "Read ok")
+    |> State.update_activity(
+      "write",
+      %{"filePath" => "lib/a.ex", "content" => "abc"},
+      long_result
+    )
+    |> Map.put(:selected_activity, 0)
   end
 end

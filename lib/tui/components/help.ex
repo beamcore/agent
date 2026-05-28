@@ -19,6 +19,9 @@ defmodule Beamcore.TUI.Components.Help do
     /policy allow-write <pattern>
     /policy read-only <pattern>
     /policy tool <tool> allow|deny
+    /timeline        Focus timeline details
+    /timeline last   Open latest timeline item
+    /timeline clear  Clear visible UI activity only
     /yolo            Toggle session freedom mode
     /yolo on         Bypass project policy for this session
     /yolo off        Restore project policy
@@ -33,6 +36,8 @@ defmodule Beamcore.TUI.Components.Help do
     Up/Down          Choose command suggestion when suggestions are open
     Ctrl+P / Ctrl+N  History, or choose command suggestion
     Tab              Complete highlighted command suggestion
+    Tab              Toggle timeline/tool details when suggestions are closed
+    Timeline open: Up/Down choose item, Shift+Up/Down or PageUp/PageDown jump
     Esc              Close suggestions, help, or details
     q                Close this panel
     Ctrl+C           Exit
