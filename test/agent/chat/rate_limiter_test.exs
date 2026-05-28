@@ -1,7 +1,7 @@
 defmodule Beamcore.Agent.Chat.RateLimiterTest do
   use ExUnit.Case, async: true
 
-  alias Beamcore.Agent.Chat.RateLimiter
+  alias Beamcore.RateLimiter
 
   test "with interval 0, wait/0 returns immediately and does not sleep" do
     start_time = System.monotonic_time(:millisecond)
@@ -43,6 +43,6 @@ defmodule Beamcore.Agent.Chat.RateLimiterTest do
   end
 
   test "when rate limiter process is running, returns pid" do
-    assert is_pid(Process.whereis(Beamcore.Agent.Chat.RateLimiter))
+    assert is_pid(Process.whereis(Beamcore.RateLimiter))
   end
 end

@@ -1,8 +1,8 @@
-defmodule Beamcore.Agent.Chat.RateLimiter do
+defmodule Beamcore.RateLimiter do
   use GenServer
 
   @moduledoc """
-  A simple rate limiter to ensure we don't exceed the Mistral API rate limit (1 request per second).
+  A simple rate limiter to ensure we don't exceed API rate limits.
   """
 
   # Client API

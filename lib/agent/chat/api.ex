@@ -2,8 +2,7 @@ defmodule Beamcore.Agent.Chat.API do
   @moduledoc """
   Handles API calls to the OpenAI-compatible endpoint.
   """
-
-  alias Beamcore.Agent.Retry.Config
+  alias Beamcore.Retry.Config
 
   @completions_module Application.compile_env(
                         :agent,
@@ -43,11 +42,11 @@ defmodule Beamcore.Agent.Chat.API do
           ]
         }
 
-        Beamcore.Agent.Chat.RateLimiter.wait()
+        Beamcore.RateLimiter.wait()
 
         model = Keyword.get(opts, :model, default_model())
 
-        Beamcore.Agent.Retry.execute(
+        Beamcore.Retry.execute(
           fn ->
             try do
               response =

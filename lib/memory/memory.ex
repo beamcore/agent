@@ -131,6 +131,7 @@ defmodule Beamcore.Memory do
         Application.get_env(:agent, :memory_dets_path) ||
         System.get_env("MEMORY_DETS_PATH") ||
         @default_dets_path
+
     expanded_path = Path.expand(dets_path)
 
     # Ensure parent directory exists
@@ -339,6 +340,7 @@ defmodule Beamcore.Memory do
       Application.get_env(:agent, :memory_dets_path) ||
         System.get_env("MEMORY_DETS_PATH") ||
         @default_dets_path
+
     expanded_path = Path.expand(dets_path)
 
     try do

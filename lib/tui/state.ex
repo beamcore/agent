@@ -33,7 +33,7 @@ defmodule Beamcore.TUI.State do
             memory_total: nil
 
   def new(terminal, textarea, opts \\ []) do
-    client = Keyword.get(opts, :client, Beamcore.Agent.OpenAI.client())
+    client = Keyword.get(opts, :client, Beamcore.OpenAI.client())
     history = Keyword.get(opts, :history, Beamcore.TUI.History.load())
 
     memory_total = compute_memory_total()

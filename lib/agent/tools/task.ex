@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Tools.Task do
 
   alias Beamcore.Agent.Chat.{API, ToolPolicy}
   alias Beamcore.Agent.Tools.Dispatcher
-  alias Beamcore.Agent.OpenAI
+  alias Beamcore.OpenAI
 
   @description """
   Run a bounded sub-agent only when the user explicitly asks for delegation.

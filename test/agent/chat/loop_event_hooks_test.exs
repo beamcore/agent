@@ -18,7 +18,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
       Process.delete(:mock_completions_calls)
     end)
 
-    %{session: Beamcore.Agent.OpenAI.client() |> Session.new()}
+    %{session: Beamcore.OpenAI.client() |> Session.new()}
   end
 
   test "event handler exceptions do not alter the returned session", %{session: session} do
