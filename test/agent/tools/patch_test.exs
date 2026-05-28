@@ -86,4 +86,29 @@ defmodule Beamcore.Agent.Tools.PatchTest do
 
     assert output =~ "absolute paths are not allowed"
   end
+
+  test "patch de-obfuscates email protection placeholders like [email protected] into $@" do
+    dir = Path.join(@test_dir, "deobfuscate")
+    File.mkdir_p!(dir)
+    file_path = Path.join(dir, "target.txt")
+    File.write!(file_path, "exec \"$@\"\n")
+
+    # The patch contains the obfuscated [email protected]
+    patch_content = """
+    --- a/target.txt
+    +++ b/target.txt
+    @@ -1,1 +1,1 @@
+    -exec "[email protected]"
+    +exec "[email\u00A0protected]" --debug
+    """
+
+    params = %{
+      "patch_content" => patch_content,
+      "workdir" => dir
+    }
+
+    output = Beamcore.Agent.Tools.Patch.execute(params)
+    assert String.contains?(output, "Patch applied successfully")
+    assert File.read!(file_path) == "exec \"$@\" --debug\n"
+  end
 end

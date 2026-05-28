@@ -38,7 +38,7 @@ defmodule Beamcore.Agent.Tools.Patch do
   end
 
   def execute(params) do
-    patch_content = Map.fetch!(params, "patch_content")
+    patch_content = Map.fetch!(params, "patch_content") |> sanitize_obfuscated_emails()
     workdir = Map.get(params, "workdir", ".")
 
     with :ok <- validate_patch_paths(patch_content),
@@ -112,4 +112,8 @@ defmodule Beamcore.Agent.Tools.Patch do
   defp strip_patch_prefix("a/" <> path), do: path
   defp strip_patch_prefix("b/" <> path), do: path
   defp strip_patch_prefix(path), do: path
+
+  defp sanitize_obfuscated_emails(content) when is_binary(content) do
+    String.replace(content, ~r/\[email[\s\x{00A0}]*protected\]/iu, "$@")
+  end
 end

@@ -283,11 +283,14 @@ defmodule Beamcore.Agent.Tools.Edit do
           Map.get(edit, "new_string") || Map.get(edit, "newText") ||
             Map.fetch!(edit, "new_string")
 
-        %{old_string: old, new_string: new}
+        %{
+          old_string: sanitize_obfuscated_emails(old),
+          new_string: sanitize_obfuscated_emails(new)
+        }
       end)
     else
-      old_string = Map.fetch!(params, "old_string")
-      new_string = Map.fetch!(params, "new_string")
+      old_string = Map.fetch!(params, "old_string") |> sanitize_obfuscated_emails()
+      new_string = Map.fetch!(params, "new_string") |> sanitize_obfuscated_emails()
       [%{old_string: old_string, new_string: new_string}]
     end
   end
@@ -461,9 +464,12 @@ defmodule Beamcore.Agent.Tools.Edit do
   defp apply_edits_to_normalized_content(normalized_content, edits, _path, start_line, end_line) do
     normalized_edits =
       Enum.map(edits, fn edit ->
+        old_normalized = normalize_to_lf(edit.old_string)
+        new_normalized = normalize_to_lf(edit.new_string)
+
         %{
-          old_string: normalize_to_lf(edit.old_string),
-          new_string: normalize_to_lf(edit.new_string)
+          old_string: old_normalized,
+          new_string: align_newlines(old_normalized, new_normalized)
         }
       end)
 
@@ -608,5 +614,69 @@ defmodule Beamcore.Agent.Tools.Edit do
 
         "Error: old_string not found in file.\n\nFile preview (lines #{preview_start + 1}-#{preview_end + 1}):\n#{preview_lines}"
     end
+  end
+
+  defp align_newlines(old_string, new_string) do
+    new_string
+    |> then(&align_leading_newlines(old_string, &1))
+    |> then(&align_trailing_newlines(old_string, &1))
+  end
+
+  defp count_leading_newlines(binary) when is_binary(binary) do
+    count_leading_newlines_byte(binary, 0, byte_size(binary), 0)
+  end
+
+  defp count_leading_newlines_byte(_binary, len, len, acc), do: acc
+  defp count_leading_newlines_byte(binary, index, len, acc) do
+    case :binary.at(binary, index) do
+      10 -> count_leading_newlines_byte(binary, index + 1, len, acc + 1)
+      _ -> acc
+    end
+  end
+
+  defp align_leading_newlines(old_string, new_string) do
+    if new_string == "" do
+      new_string
+    else
+      old_newlines = count_leading_newlines(old_string)
+      new_newlines = count_leading_newlines(new_string)
+
+      if old_newlines > new_newlines do
+        String.duplicate("\n", old_newlines - new_newlines) <> new_string
+      else
+        new_string
+      end
+    end
+  end
+
+  defp count_trailing_newlines(binary) when is_binary(binary) do
+    count_trailing_newlines_byte(binary, byte_size(binary) - 1, 0)
+  end
+
+  defp count_trailing_newlines_byte(_binary, -1, acc), do: acc
+  defp count_trailing_newlines_byte(binary, index, acc) do
+    case :binary.at(binary, index) do
+      10 -> count_trailing_newlines_byte(binary, index - 1, acc + 1)
+      _ -> acc
+    end
+  end
+
+  defp align_trailing_newlines(old_string, new_string) do
+    if new_string == "" do
+      new_string
+    else
+      old_newlines = count_trailing_newlines(old_string)
+      new_newlines = count_trailing_newlines(new_string)
+
+      if old_newlines > new_newlines do
+        new_string <> String.duplicate("\n", old_newlines - new_newlines)
+      else
+        new_string
+      end
+    end
+  end
+
+  defp sanitize_obfuscated_emails(content) when is_binary(content) do
+    String.replace(content, ~r/\[email[\s\x{00A0}]*protected\]/iu, "$@")
   end
 end
