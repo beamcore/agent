@@ -142,7 +142,7 @@ defmodule Beamcore.Memory do
 
     # Open DETS table
     dets_ref =
-      case :dets.open_file(dets_name, [file: to_charlist(expanded_path)]) do
+      case :dets.open_file(dets_name, file: to_charlist(expanded_path)) do
         {:ok, table} ->
           table
 
@@ -336,7 +336,7 @@ defmodule Beamcore.Memory do
 
     try do
       File.mkdir_p!(Path.dirname(expanded_path))
-      :dets.open_file(:beamcore_memory_store, [file: to_charlist(expanded_path)])
+      :dets.open_file(:beamcore_memory_store, file: to_charlist(expanded_path))
       :dets.to_ets(:beamcore_memory_store, :beamcore_memory_store)
     rescue
       _ -> :ok

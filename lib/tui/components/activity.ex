@@ -101,7 +101,7 @@ defmodule Beamcore.TUI.Components.Activity do
 
   defp field(label, value), do: "#{label}: #{value}"
 
-  defp title(:strip), do: "Activity rail · tools"
+  defp title(:strip), do: "Activity · tools"
   defp title(_variant), do: "Activity · tools"
   defp empty_text(:strip), do: "◇ Tools pulse here."
 

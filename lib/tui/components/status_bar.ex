@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.Components.StatusBar do
   @moduledoc false
 
-  alias Beamcore.TUI.Components.{Activity, Mascot}
+  alias Beamcore.TUI.Components.Mascot
   alias Beamcore.TUI.{State, Theme, Wrap}
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
@@ -9,29 +9,27 @@ defmodule Beamcore.TUI.Components.StatusBar do
 
   def widget(state, mode) do
     usage = State.usage(state.session)
-    session_id = if state.session, do: state.session.session_id, else: "starting"
     yolo = if State.yolo?(state.session), do: " · YOLO", else: ""
     freedom = if State.freedom?(state.session), do: " · FREEDOM", else: ""
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
     model = State.model(state.session)
-    provider = State.provider()
+    policy = State.policy_status(state.session)
+
+    tokens =
+      "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
 
     text =
       case mode do
         :narrow ->
-          "#{mascot} #{status(state.status)}#{yolo}#{freedom}  #{State.policy_status(state.session)}  #{session_id}  tok #{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
+          "#{mascot} · #{status(state.status)}#{yolo}#{freedom} · #{policy} · #{model} · #{tokens} tok"
 
         _ ->
-          [
-            "#{mascot} #{status(state.status)}#{yolo}#{freedom}",
-            State.policy_status(state.session),
-            model,
-            provider,
-            "session #{session_id}",
-            "tok #{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}",
-            Activity.compact_text(state)
-          ]
-          |> Enum.join("  •  ")
+          left = "#{mascot} · #{status(state.status)}#{yolo}#{freedom} · #{policy} · "
+          right = "#{model} · #{tokens} tok"
+
+          # Pad left to align right side
+          padding = String.duplicate(" ", max(0, 40 - String.length(left)))
+          "#{left}#{padding}#{right}"
       end
       |> Wrap.truncate_line(220)
 

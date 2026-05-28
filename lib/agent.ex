@@ -26,7 +26,9 @@ defmodule Beamcore.Agent do
       Beamcore.Memory,
       Beamcore.Agent.Chat.RateLimiter,
       Beamcore.Agent.Core.StatusBar,
-      Beamcore.TUI.DynamicSupervisor
+      Beamcore.TUI.DynamicSupervisor,
+      Beamcore.Agent.Tools.FileMutationQueue,
+      Beamcore.Alignment
     ]
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]

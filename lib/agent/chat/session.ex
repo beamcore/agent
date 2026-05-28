@@ -47,7 +47,7 @@ defmodule Beamcore.Agent.Chat.Session do
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
 
-     project_nature = Beamcore.Agent.Discovery.Detector.detect()
+    project_nature = Beamcore.Agent.Discovery.Detector.detect()
 
     system_message = %{
       role: "system",
