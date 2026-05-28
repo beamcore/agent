@@ -36,7 +36,7 @@ defmodule Beamcore.Agent.Tools.Write do
 
   def execute(params) do
     file_path = fetch_path!(params)
-    content = Map.fetch!(params, "content")
+    content = Map.fetch!(params, "content") |> sanitize_obfuscated_emails()
 
     with :ok <- ProjectPolicy.allowed_write_path?(file_path),
          {:ok, expanded_path} <- PathSafety.resolve(file_path, allow_missing: true) do
@@ -49,6 +49,10 @@ defmodule Beamcore.Agent.Tools.Write do
     else
       {:error, reason} -> PathSafety.error(reason)
     end
+  end
+
+  defp sanitize_obfuscated_emails(content) when is_binary(content) do
+    String.replace(content, ~r/\[email[\s\x{00A0}]*protected\]/iu, "$@")
   end
 
   defp fetch_path!(params) do

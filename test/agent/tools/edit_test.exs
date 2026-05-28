@@ -306,4 +306,36 @@ defmodule Beamcore.Agent.Tools.EditTest do
     assert File.read!(file_path) == "1 2 3 4 5"
     assert Enum.all?(results, &String.starts_with?(&1, "Successfully updated"))
   end
+
+  test "aligns trailing and leading newlines to prevent merging/eaten newlines" do
+    file_path = Path.join(@test_dir, "align_newlines.txt")
+    File.write!(file_path, "defmodule Foo do\n  defp bar do\n  end\n  defp next_func do\n  end\nend\n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "  defp bar do\n  end\n",
+      "new_string" => "  defp bar do\n  end\n\n  defp baz do\n  end"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+
+    expected = "defmodule Foo do\n  defp bar do\n  end\n\n  defp baz do\n  end\n  defp next_func do\n  end\nend\n"
+    assert File.read!(file_path) == expected
+  end
+
+  test "de-obfuscates Cloudflare email protection placeholders like [email protected] into $@" do
+    file_path = Path.join(@test_dir, "deobfuscate.txt")
+    File.write!(file_path, "exec \"$@\"\n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "exec \"[email protected]\"",
+      "new_string" => "exec \"[email\u00A0protected]\" --debug"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+    assert File.read!(file_path) == "exec \"$@\" --debug\n"
+  end
 end
