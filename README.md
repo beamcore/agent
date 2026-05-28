@@ -346,6 +346,29 @@ mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
 - `task` and `web_get` are hidden unless explicitly enabled.
 - `image_generation` is hidden unless explicitly enabled and must write to an allowed output path.
 
+## Recent Changes
+
+### Module Namespace Flattening (2026-05-28)
+To simplify imports and reduce nesting, the following core modules were moved from `Beamcore.Agent.*` to the top-level `Beamcore.*` namespace:
+- `Beamcore.Agent.OpenAI` → `Beamcore.OpenAI`
+- `Beamcore.Agent.Chat.RateLimiter` → `Beamcore.RateLimiter`
+- `Beamcore.Agent.Retry` → `Beamcore.Retry`
+- `Beamcore.Agent.Tools.FileMutationQueue` → `Beamcore.FileMutationQueue`
+
+All internal references and tests have been updated. External code using these modules should update imports accordingly.
+
+### Edit Tool Improvements
+The `edit` tool now:
+- Uses **byte-level precision** for UTF-8 safety (emoji, multi-byte characters).
+- Adapts line endings (LF/CRLF) automatically.
+- Normalizes Unicode smart quotes/dashes in `old_string` (but never modifies file content silently).
+- Supports atomic writes (temp file + rename).
+- De-obfuscates Cloudflare email placeholders (`[email\@protected]` → `$@`).
+- Preserves trailing newlines to prevent line merging.
+
+### Alignment Guard Removal
+The Alignment conflict check was removed from the `edit` tool. File coordination now belongs in a middleware/interceptor layer, not baked into individual tools. The `Beamcore.Alignment` GenServer itself remains available for custom coordination logic.
+
 ## Architecture
 
 - `Beamcore.Agent.Chat.Loop` handles input, tool execution, policy messages, and status updates.
@@ -355,8 +378,8 @@ mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
 - `Beamcore.Agent.Tools.Plan` stores pending mutation plans.
 - `Beamcore.Agent.Tools.ImageGeneration` is the safe local tool that validates output paths and saves generated image bytes.
 - `Beamcore.Agent.Providers.ImageGeneration` dispatches image requests to the configured provider.
-- `Beamcore.Agent.Providers.Mistral` implements Mistral Agents image generation through `Beamcore.Agent.OpenAI` REST helpers.
-- `Beamcore.Agent.OpenAI` is the single Mistral API boundary: OpenaiEx chat client plus binary-safe REST helpers for Agents, Conversations, and Files.
+- `Beamcore.Agent.Providers.Mistral` implements Mistral Agents image generation through `Beamcore.OpenAI` REST helpers.
+- `Beamcore.OpenAI` is the single Mistral API boundary: OpenaiEx chat client plus binary-safe REST helpers for Agents, Conversations, and Files.
 - `Beamcore.Agent.Core.SysPrompt` defines the coding-agent behavior and response style.
 
 ## Development checklist
