@@ -47,17 +47,7 @@ defmodule Beamcore.Agent.Chat.Session do
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
 
-    # Dynamically count total memories on session startup
-    {org, repo} = Beamcore.Memory.detect_org_repo()
-
-    total_memories =
-      [:repo_map, :patterns, :decisions, :errors, :context]
-      |> Enum.map(fn type -> length(Beamcore.Memory.list(org, repo, type)) end)
-      |> Enum.sum()
-
-    IO.puts("Available #{total_memories} memories")
-
-    project_nature = Beamcore.Agent.Discovery.Detector.detect()
+     project_nature = Beamcore.Agent.Discovery.Detector.detect()
 
     system_message = %{
       role: "system",

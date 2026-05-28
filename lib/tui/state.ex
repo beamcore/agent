@@ -10,30 +10,33 @@ defmodule Beamcore.TUI.State do
   @max_activity 80
 
   defstruct terminal: nil,
-            textarea: nil,
-            session: nil,
-            messages: [],
-            activity: [],
-            selected_activity: 0,
-            status: :idle,
-            scroll_offset: 0,
-            show_help: false,
-            show_activity_details: false,
-            show_commands: false,
-            command_matches: [],
-            command_selected: 0,
-            spinner_step: 0,
-            last_animation_tick_ms: 0,
-            render_dirty?: true,
-            worker: nil,
-            unicode?: true,
-            history: [],
-            history_index: nil,
-            history_draft: ""
+             textarea: nil,
+             session: nil,
+             messages: [],
+             activity: [],
+             selected_activity: 0,
+             status: :idle,
+             scroll_offset: 0,
+             show_help: false,
+             show_activity_details: false,
+             show_commands: false,
+             command_matches: [],
+             command_selected: 0,
+             spinner_step: 0,
+             last_animation_tick_ms: 0,
+             render_dirty?: true,
+             worker: nil,
+             unicode?: true,
+             history: [],
+             history_index: nil,
+             history_draft: "",
+             memory_total: nil
 
   def new(terminal, textarea, opts \\ []) do
     client = Keyword.get(opts, :client, Beamcore.Agent.OpenAI.client())
     history = Keyword.get(opts, :history, Beamcore.TUI.History.load())
+
+    memory_total = compute_memory_total()
 
     %__MODULE__{
       terminal: terminal,
@@ -43,8 +46,17 @@ defmodule Beamcore.TUI.State do
       unicode?: Beamcore.TUI.Capability.unicode?(opts),
       history: history,
       history_index: nil,
-      history_draft: ""
+      history_draft: "",
+      memory_total: memory_total
     }
+  end
+
+  defp compute_memory_total() do
+    {org, repo} = Beamcore.Memory.detect_org_repo()
+
+    [:repo_map, :patterns, :decisions, :errors, :context]
+    |> Enum.map(fn type -> length(Beamcore.Memory.list(org, repo, type)) end)
+    |> Enum.sum()
   end
 
   def add_message(state, role, content) when is_binary(content) do
