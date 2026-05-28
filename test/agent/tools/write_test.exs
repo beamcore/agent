@@ -69,7 +69,9 @@ defmodule Beamcore.Agent.Tools.WriteTest do
 
   test "write de-obfuscates email protection placeholders like [email protected] into $@" do
     path = Path.join(@test_dir, "deobfuscate.txt")
-    result = Write.execute(%{"filePath" => path, "content" => "exec \"[email protected]\" --debug\n"})
+
+    result =
+      Write.execute(%{"filePath" => path, "content" => "exec \"[email protected]\" --debug\n"})
 
     assert result =~ "Successfully wrote to"
     assert File.read!(path) == "exec \"$@\" --debug\n"

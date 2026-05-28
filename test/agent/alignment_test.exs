@@ -10,10 +10,12 @@ defmodule Beamcore.Agent.AlignmentTest do
     File.rm_rf!(@test_dir)
     File.mkdir_p!(@test_dir)
     Alignment.clear_claims()
-    on_exit(fn -> 
+
+    on_exit(fn ->
       File.rm_rf!(@test_dir)
       Alignment.clear_claims()
     end)
+
     :ok
   end
 
@@ -63,7 +65,12 @@ defmodule Beamcore.Agent.AlignmentTest do
     }
 
     output = Edit.execute(params)
-    assert String.starts_with?(output, "Error: Alignment Conflict. Another agent 'agent_other' is actively working on")
+
+    assert String.starts_with?(
+             output,
+             "Error: Alignment Conflict. Another agent 'agent_other' is actively working on"
+           )
+
     assert output =~ "Conflict Score: 100"
 
     # Verify file remains unchanged

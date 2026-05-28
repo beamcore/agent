@@ -77,4 +77,36 @@ defmodule Beamcore.TUI.WrapTest do
     assert joined =~ "Task · Action"
     assert Enum.all?(lines, &(String.length(&1) <= 36))
   end
+
+  test "markdown helper preserves snake_case variables and does not strip underscores greedily" do
+    text = "The variable `my_snake_case_var` and another `first_var` should not become mangled."
+    lines = Wrap.markdown_lines(text, 80)
+    joined = Enum.join(lines, "\n")
+
+    assert joined =~ "my_snake_case_var"
+    assert joined =~ "first_var"
+    refute joined =~ "mysnakecasevar"
+  end
+
+  test "markdown helper preserves code block contents and does not normalize them" do
+    text = """
+    ```elixir
+    # This is a comment, not a heading
+    - This is a bullet, not a list
+    | This | is not a table row |
+    `backticks` and _underscores_ and **asterisks**
+    ```
+    """
+
+    lines = Wrap.markdown_lines(text, 80)
+    joined = Enum.join(lines, "\n")
+
+    # In Wrap.markdown_lines/2:
+    # 1. The code block fence lines themselves (```elixir and ```) are dropped by drop_fence_lines/3.
+    # 2. But the content inside the code block should be preserved EXACTLY as is, without normalization!
+    assert joined =~ "# This is a comment, not a heading"
+    assert joined =~ "- This is a bullet, not a list"
+    assert joined =~ "| This | is not a table row |"
+    assert joined =~ "`backticks` and _underscores_ and **asterisks**"
+  end
 end

@@ -51,7 +51,7 @@ defmodule Beamcore.Alignment do
   @impl true
   def handle_call({:claim, path, agent_name, file_hash}, _from, state) do
     now = DateTime.utc_now()
-    
+
     case Map.get(state, path) do
       nil ->
         new_state = Map.put(state, path, %{agent: agent_name, hash: file_hash, timestamp: now})
@@ -63,19 +63,19 @@ defmodule Beamcore.Alignment do
 
       %{agent: other_agent, hash: other_hash, timestamp: other_time} ->
         time_diff_secs = DateTime.diff(now, other_time, :second)
-        
+
         base_score = 50
         hash_score = if file_hash == other_hash, do: 30, else: 0
-        
+
         recency_score =
           cond do
             time_diff_secs <= 300 -> 20
             time_diff_secs <= 900 -> 10
             true -> 0
           end
-          
+
         score = base_score + hash_score + recency_score
-        
+
         new_state = Map.put(state, path, %{agent: agent_name, hash: file_hash, timestamp: now})
         {:reply, {:conflict, score, other_agent}, new_state}
     end
