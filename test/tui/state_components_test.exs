@@ -308,25 +308,25 @@ defmodule Beamcore.TUI.StateComponentsTest do
       history_draft: ""
     }
 
-    # 1. First Up key press captures draft and goes to the most recent entry
-    up_event = %ExRatatui.Event.Key{code: "up", modifiers: [], kind: "press"}
+    # 1. First Ctrl+P key press captures draft and goes to the most recent entry
+    up_event = %ExRatatui.Event.Key{code: "p", modifiers: ["ctrl"], kind: "press"}
     {:noreply, state} = Events.handle_event(up_event, state)
     assert state.history_index == 1
     assert state.history_draft == "draft"
     assert ExRatatui.textarea_get_value(state.textarea) == "second"
 
-    # 2. Second Up key press goes to the older entry
+    # 2. Second Ctrl+P key press goes to the older entry
     {:noreply, state} = Events.handle_event(up_event, state)
     assert state.history_index == 0
     assert ExRatatui.textarea_get_value(state.textarea) == "first"
 
-    # 3. Third Up key press stays at the oldest entry (0)
+    # 3. Third Ctrl+P key press stays at the oldest entry (0)
     {:noreply, state} = Events.handle_event(up_event, state)
     assert state.history_index == 0
     assert ExRatatui.textarea_get_value(state.textarea) == "first"
 
-    # 4. Down key press goes back to the newer entry (1)
-    down_event = %ExRatatui.Event.Key{code: "down", modifiers: [], kind: "press"}
+    # 4. Ctrl+N key press goes back to the newer entry (1)
+    down_event = %ExRatatui.Event.Key{code: "n", modifiers: ["ctrl"], kind: "press"}
     {:noreply, state} = Events.handle_event(down_event, state)
     assert state.history_index == 1
     assert ExRatatui.textarea_get_value(state.textarea) == "second"

@@ -11,7 +11,7 @@ defmodule Beamcore.TUI.Components.Input do
       if pending? do
         "Command deck  legacy pending action  /cancel clears"
       else
-        "Command deck  Enter send  Shift+Enter newline  / commands"
+        "Ctrl+S send"
       end
 
     %Textarea{
