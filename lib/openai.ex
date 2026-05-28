@@ -1,6 +1,6 @@
-defmodule Beamcore.Agent.OpenAI do
+defmodule Beamcore.OpenAI do
   @moduledoc """
-  Mistral client boundary used by the agent.
+  Mistral client boundary.
 
   `client/0` returns the OpenAI-compatible chat client used by OpenaiEx.
   `post_json/2` and `get_binary/1` cover Mistral-specific REST endpoints

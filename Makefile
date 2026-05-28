@@ -90,11 +90,11 @@ api-test: compile
 
 # Direct API client inspection
 api-inspect: compile
-	mix run -e "IO.inspect Beamcore.Agent.OpenAI.client()"
+	mix run -e "IO.inspect Beamcore.OpenAI.client()"
 
 # Test a simple completion
 completion-test: compile
-	mix run -e "client = Beamcore.Agent.OpenAI.client(); IO.puts(\"Client ready for API calls\"); IO.inspect(client)"
+	mix run -e "client = Beamcore.OpenAI.client(); IO.puts(\"Client ready for API calls\"); IO.inspect(client)"
 
 # Start primary agent chat
 chat: compile

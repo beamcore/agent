@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.Retry do
+defmodule Beamcore.Retry do
   @moduledoc """
   Retry mechanism with exponential backoff and budget for API calls.
   """
@@ -31,11 +31,11 @@ defmodule Beamcore.Agent.Retry do
 
     def default do
       %__MODULE__{
-        max_retries: Beamcore.Agent.Retry.default_max_retries(),
-        initial_backoff: Beamcore.Agent.Retry.default_initial_backoff(),
-        max_backoff: Beamcore.Agent.Retry.default_max_backoff(),
-        backoff_multiplier: Beamcore.Agent.Retry.default_backoff_multiplier(),
-        retryable_errors: Beamcore.Agent.Retry.default_retryable_errors()
+        max_retries: Beamcore.Retry.default_max_retries(),
+        initial_backoff: Beamcore.Retry.default_initial_backoff(),
+        max_backoff: Beamcore.Retry.default_max_backoff(),
+        backoff_multiplier: Beamcore.Retry.default_backoff_multiplier(),
+        retryable_errors: Beamcore.Retry.default_retryable_errors()
       }
     end
   end

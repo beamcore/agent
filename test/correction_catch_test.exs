@@ -317,7 +317,7 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
 
   describe "correct_and_rollover/4" do
     test "performs correction and returns rolled-over session with diagnosis" do
-      client = Beamcore.Agent.OpenAI.client()
+      client = Beamcore.OpenAI.client()
       session = Session.new(client)
 
       messages = [
@@ -367,7 +367,7 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
     end
 
     test "skips correction when max corrections reached" do
-      client = Beamcore.Agent.OpenAI.client()
+      client = Beamcore.OpenAI.client()
       session = %{Session.new(client) | correction_count: 3}
 
       messages = [
@@ -391,7 +391,7 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
 
   describe "loop integration" do
     test "loop detects tool repetition, self-corrects, and resumes" do
-      client = Beamcore.Agent.OpenAI.client()
+      client = Beamcore.OpenAI.client()
       session = Session.new(client)
 
       # Seed history with 2 prior identical read_file calls

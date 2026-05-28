@@ -11,7 +11,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
       "MISTRAL_BASE_URL" => nil
     })
 
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
     state = %State{session: session, messages: [], activity: [], status: :idle, unicode?: true}
 
     %{session: session, state: state}

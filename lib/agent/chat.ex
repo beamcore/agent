@@ -12,7 +12,7 @@ defmodule Beamcore.Agent.Chat do
   def start() do
     StatusBar.setup(StatusBar)
 
-    Beamcore.Agent.OpenAI.client()
+    Beamcore.OpenAI.client()
     |> Session.new()
     |> Loop.start(StatusBar)
   end

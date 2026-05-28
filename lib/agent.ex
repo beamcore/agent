@@ -24,10 +24,10 @@ defmodule Beamcore.Agent do
     children = [
       Beamcore.Ledger,
       Beamcore.Memory,
-      Beamcore.Agent.Chat.RateLimiter,
+      Beamcore.RateLimiter,
       Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor,
-      Beamcore.Agent.Tools.FileMutationQueue,
+      Beamcore.FileMutationQueue,
       Beamcore.Alignment
     ]
 
@@ -57,13 +57,13 @@ defmodule Beamcore.Agent do
   @doc """
   Get the OpenAI client.
   """
-  def client, do: Beamcore.Agent.OpenAI.client()
+  def client, do: Beamcore.OpenAI.client()
 
   @doc """
   Make a test API call to verify the client works.
   """
   def test_api_call do
-    client = Beamcore.Agent.OpenAI.client()
+    client = Beamcore.OpenAI.client()
     IO.puts("OpenAI client configured successfully:")
     IO.inspect(client)
   end

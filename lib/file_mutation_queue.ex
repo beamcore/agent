@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.Tools.FileMutationQueue do
+defmodule Beamcore.FileMutationQueue do
   @moduledoc """
   An in-memory lock manager/queue to serialize file mutations on a per-file basis,
   ensuring no race conditions between concurrent read-modify-write operations.

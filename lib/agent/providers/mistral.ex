@@ -6,8 +6,7 @@ defmodule Beamcore.Agent.Providers.Mistral do
   create or reuse an agent with `tools: [%{type: "image_generation"}]`, start a
   conversation, extract `tool_file` chunks, and download each generated file.
   """
-
-  alias Beamcore.Agent.OpenAI
+  alias Beamcore.OpenAI
 
   @default_model "mistral-medium-latest"
 

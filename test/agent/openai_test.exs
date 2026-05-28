@@ -1,7 +1,7 @@
 defmodule Beamcore.Agent.OpenAITest do
   use ExUnit.Case
 
-  alias Beamcore.Agent.OpenAI
+  alias Beamcore.OpenAI
   alias Beamcore.Agent.TestEnv
 
   test "client/0 requires MISTRAL_API_KEY" do

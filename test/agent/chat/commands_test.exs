@@ -13,7 +13,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/new resets session context" do
     session =
-      Beamcore.Agent.OpenAI.client()
+      Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.update!(:context, fn context ->
         Context.update_from_tool(context, "read", %{"filePath" => "README.md"}, "content")
@@ -34,7 +34,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/context prints compact context summary" do
     session =
-      Beamcore.Agent.OpenAI.client()
+      Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.update!(:context, fn context ->
         Context.update_from_tool(context, "read", %{"filePath" => "mix.exs"}, "content")
@@ -48,7 +48,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/context clear clears context without replacing the session" do
     session =
-      Beamcore.Agent.OpenAI.client()
+      Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.update!(:context, fn context ->
         Context.update_from_tool(context, "read", %{"filePath" => "mix.exs"}, "content")
@@ -67,7 +67,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   test "/confirm reports when there is no pending action" do
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
 
     output = capture_io(fn -> assert Commands.execute("confirm", session) == session end)
 
@@ -75,7 +75,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   test "/help does not present confirm as the normal workflow" do
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
 
     output = capture_io(fn -> assert Commands.execute("help", session) == session end)
 
@@ -89,7 +89,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     pending_action = pending_action()
 
     session =
-      Beamcore.Agent.OpenAI.client()
+      Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.put(:pending_user_message, "Create scratch/policy_test.ex")
       |> Map.update!(:context, &Context.put_pending_action(&1, pending_action))
@@ -110,7 +110,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     pending_action = pending_action()
 
     session =
-      Beamcore.Agent.OpenAI.client()
+      Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.put(:pending_user_message, "Create scratch/policy_test.ex")
       |> Map.update!(:context, &Context.put_pending_action(&1, pending_action))
@@ -167,7 +167,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   test "/yolo toggles session freedom mode" do
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
 
     output =
       capture_io(fn ->
@@ -196,7 +196,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/yolo clears stale project policy blocked attempts from context" do
     session =
-      Beamcore.Agent.OpenAI.client()
+      Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.update!(:context, fn context ->
         Context.update_from_tool(
@@ -220,7 +220,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   test "/yolo removes stale project policy block messages from model history" do
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
 
     stale_messages = [
       %{role: "user", content: "create scratch/a.ex"},
@@ -266,7 +266,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   test "/yolo on and /yolo off set freedom mode explicitly" do
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
 
     enabled =
       capture_io(fn ->
@@ -290,7 +290,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   test "unknown command keeps plain CLI error rendering" do
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
 
     output = capture_io(fn -> assert Commands.execute("missing", session) == session end)
 
@@ -298,7 +298,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   test "unknown command can be captured by TUI output callback" do
-    session = Beamcore.Agent.OpenAI.client() |> Session.new()
+    session = Beamcore.OpenAI.client() |> Session.new()
 
     assert Commands.execute("missing", session, output: fn message -> send(self(), message) end) ==
              session
@@ -308,7 +308,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/policy shows summary and initializes config" do
     with_tmp_cwd(fn ->
-      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+      session = Beamcore.OpenAI.client() |> Session.new()
 
       output = capture_io(fn -> assert Commands.execute("policy", session) == session end)
       assert output =~ "Project policy: not loaded"
@@ -328,7 +328,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/policy updates strict settings immediately" do
     with_tmp_cwd(fn ->
-      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+      session = Beamcore.OpenAI.client() |> Session.new()
 
       output =
         capture_io(fn ->
@@ -347,7 +347,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/policy weaker changes require --confirm" do
     with_tmp_cwd(fn ->
-      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+      session = Beamcore.OpenAI.client() |> Session.new()
 
       capture_io(fn ->
         Commands.execute("policy deny path secrets/**", session)
@@ -380,7 +380,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
   test "/policy reset requires --confirm and malformed commands are helpful" do
     with_tmp_cwd(fn ->
-      session = Beamcore.Agent.OpenAI.client() |> Session.new()
+      session = Beamcore.OpenAI.client() |> Session.new()
 
       capture_io(fn -> Commands.execute("policy deny path secrets/**", session) end)
       assert File.exists?(".beamcore/policy.json")

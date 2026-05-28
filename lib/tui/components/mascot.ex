@@ -22,8 +22,8 @@ defmodule Beamcore.TUI.Components.Mascot do
     ],
     tool_running: [
       "ᕕ(◢▣◣)ᕗ   ⚙",
-      "ᕕ(◢▣◣)ᕗ ⚙  ",
-      "ᕙ(◢▣◣)ᕘ   ⚙",
+      "ᕕ(◢▣◣)ᕗ   ⚙",
+      "ᕙ(◢▣◣)ᕘ ⚙  ",
       "ᕙ(◢▣◣)ᕘ ⚙  "
     ],
     generating: [

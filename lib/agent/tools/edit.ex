@@ -86,7 +86,7 @@ defmodule Beamcore.Agent.Tools.Edit do
 
     with :ok <- ProjectPolicy.allowed_write_path?(path),
          {:ok, expanded_path} <- PathSafety.resolve(path) do
-      case Beamcore.Agent.Tools.FileMutationQueue.with_lock(expanded_path, 5000, fn ->
+      case Beamcore.FileMutationQueue.with_lock(expanded_path, 5000, fn ->
              case File.read(expanded_path) do
                {:ok, content} ->
                  process_edit(expanded_path, content, params, dry_run)

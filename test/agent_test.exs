@@ -27,7 +27,7 @@ defmodule Beamcore.AgentTest do
 
   test "openai client configuration" do
     # Verify the OpenAI client can be created
-    client = Beamcore.Agent.OpenAI.client()
+    client = Beamcore.OpenAI.client()
     assert client != nil
     assert is_map(client) or is_struct(client)
   end
