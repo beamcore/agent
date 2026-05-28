@@ -273,6 +273,7 @@ defmodule Beamcore.TUI.Events do
 
   defp insert_newline(state) do
     ExRatatui.textarea_handle_key(state.textarea, "enter", [])
+
     state
     |> Map.put(:history_index, nil)
     |> State.mark_dirty()

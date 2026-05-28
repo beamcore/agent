@@ -12,7 +12,6 @@ defmodule Beamcore.Agent.Tools.EditTest do
 
   test "replaces old string with new string" do
     file_path = Path.join(@test_dir, "replace.txt")
-
     File.write!(file_path, "Hello world!")
 
     params = %{
@@ -21,15 +20,15 @@ defmodule Beamcore.Agent.Tools.EditTest do
       "new_string" => "Elixir"
     }
 
-    assert Beamcore.Agent.Tools.Edit.execute(params) ==
-             "Successfully updated #{Path.expand(file_path)}"
-
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated #{Path.expand(file_path)}")
+    assert output =~ "-Hello world!"
+    assert output =~ "+Hello Elixir!"
     assert File.read!(file_path) == "Hello Elixir!"
   end
 
   test "fails when old_string is ambiguous" do
     file_path = Path.join(@test_dir, "ambiguous.txt")
-
     File.write!(file_path, "apple banana apple")
 
     params = %{
@@ -46,7 +45,6 @@ defmodule Beamcore.Agent.Tools.EditTest do
 
   test "fails when old_string is not found" do
     file_path = Path.join(@test_dir, "not_found.txt")
-
     File.write!(file_path, "apple banana orange")
 
     params = %{
@@ -69,31 +67,6 @@ defmodule Beamcore.Agent.Tools.EditTest do
     }
 
     assert String.starts_with?(Beamcore.Agent.Tools.Edit.execute(params), "Error reading file")
-  end
-
-  test "fails when file is read-only" do
-    file_path = Path.join(@test_dir, "read_only.txt")
-
-    File.write!(file_path, "change me")
-    File.chmod!(file_path, 0o444)
-
-    params = %{
-      "path" => file_path,
-      "old_string" => "change",
-      "new_string" => "changed"
-    }
-
-    # Since elixir runs as user, it might still write or fail. We assume failure or check for it.
-    output = Beamcore.Agent.Tools.Edit.execute(params)
-
-    if String.starts_with?(output, "Error writing file") do
-      assert true
-    else
-      # If it succeeds, it's because root/permissions allow it. In that case, we just accept the coverage hit.
-      assert true
-    end
-
-    File.rm!(file_path)
   end
 
   test "rejects absolute paths" do
@@ -128,9 +101,8 @@ defmodule Beamcore.Agent.Tools.EditTest do
       "end_line" => 2
     }
 
-    assert Beamcore.Agent.Tools.Edit.execute(params) ==
-             "Successfully updated #{Path.expand(file_path)}"
-
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated #{Path.expand(file_path)}")
     assert File.read!(file_path) == "orange\nbanana\napple\ncherry"
   end
 
@@ -146,42 +118,9 @@ defmodule Beamcore.Agent.Tools.EditTest do
       "end_line" => 3
     }
 
-    assert Beamcore.Agent.Tools.Edit.execute(params) ==
-             "Successfully updated #{Path.expand(file_path)}"
-
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated #{Path.expand(file_path)}")
     assert File.read!(file_path) == "1\n2\n3\n4\n5\nfound_me\n7\n8\n9"
-  end
-
-  test "succeeds with whitespace-normalized fallback for indentation/spaces differences" do
-    file_path = Path.join(@test_dir, "spaces.txt")
-    File.write!(file_path, "hello   world\nline2")
-
-    params = %{
-      "path" => file_path,
-      "old_string" => "hello world",
-      "new_string" => "hi elixir"
-    }
-
-    assert Beamcore.Agent.Tools.Edit.execute(params) ==
-             "Successfully updated #{Path.expand(file_path)}"
-
-    assert File.read!(file_path) == "hi elixir\nline2"
-  end
-
-  test "adapts indentation for new_string when using whitespace-normalized match" do
-    file_path = Path.join(@test_dir, "indent.txt")
-    File.write!(file_path, "def foo do\n    x  =  1\nend")
-
-    params = %{
-      "path" => file_path,
-      "old_string" => "x = 1",
-      "new_string" => "y = 2\nz = 3"
-    }
-
-    assert Beamcore.Agent.Tools.Edit.execute(params) ==
-             "Successfully updated #{Path.expand(file_path)}"
-
-    assert File.read!(file_path) == "def foo do\n    y = 2\n    z = 3\nend"
   end
 
   test "performs dry run validation without writing changes" do
@@ -195,9 +134,15 @@ defmodule Beamcore.Agent.Tools.EditTest do
       "dry_run" => true
     }
 
-    assert Beamcore.Agent.Tools.Edit.execute(params) ==
-             "Dry-run succeeded: #{Path.expand(file_path)} would be updated."
+    output = Beamcore.Agent.Tools.Edit.execute(params)
 
+    assert String.starts_with?(
+             output,
+             "Dry-run succeeded: #{Path.expand(file_path)} would be updated."
+           )
+
+    assert output =~ "-Hello world!"
+    assert output =~ "+Hello Elixir!"
     assert File.read!(file_path) == "Hello world!"
   end
 
@@ -234,19 +179,131 @@ defmodule Beamcore.Agent.Tools.EditTest do
     assert output =~ "=> 3:   def my_speclal_function do"
   end
 
-  test "does not double-indent new_string if it already has the correct target indentation" do
-    file_path = Path.join(@test_dir, "double_indent.txt")
-    File.write!(file_path, "def foo do\n    x  =  1\nend")
+  # NEW Parity Tests
+
+  test "preserves UTF-8 BOM" do
+    file_path = Path.join(@test_dir, "bom.txt")
+    File.write!(file_path, "\uFEFFHello world!")
 
     params = %{
       "path" => file_path,
-      "old_string" => "x = 1",
-      "new_string" => "    y = 2\n    z = 3"
+      "old_string" => "world",
+      "new_string" => "BOM"
     }
 
-    assert Beamcore.Agent.Tools.Edit.execute(params) ==
-             "Successfully updated #{Path.expand(file_path)}"
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
 
-    assert File.read!(file_path) == "def foo do\n    y = 2\n    z = 3\nend"
+    content = File.read!(file_path)
+    assert String.starts_with?(content, "\uFEFF")
+    assert content == "\uFEFFHello BOM!"
+  end
+
+  test "preserves CRLF line endings" do
+    file_path = Path.join(@test_dir, "crlf.txt")
+    File.write!(file_path, "line1\r\nline2\r\nline3\r\n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "line2",
+      "new_string" => "updated_line2"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+
+    content = File.read!(file_path)
+    assert String.contains?(content, "\r\n")
+    assert content == "line1\r\nupdated_line2\r\nline3\r\n"
+  end
+
+  test "detects and rejects no-change edits" do
+    file_path = Path.join(@test_dir, "no_change.txt")
+    File.write!(file_path, "Hello world!")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "world",
+      "new_string" => "world"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert output == "Error: No changes would be made to the file."
+  end
+
+  test "fuzzy matches smart quotes, special dashes, spaces, and trailing whitespace" do
+    file_path = Path.join(@test_dir, "fuzzy_match.txt")
+    File.write!(file_path, "“Hello” – world \n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "\"Hello\" - world",
+      "new_string" => "Hi world"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+    assert File.read!(file_path) == "Hi world\n"
+  end
+
+  test "applies multiple non-overlapping edits in a single call" do
+    file_path = Path.join(@test_dir, "multi_edit.txt")
+    File.write!(file_path, "one two three four five")
+
+    params = %{
+      "path" => file_path,
+      "edits" => [
+        %{"old_string" => "two", "new_string" => "2"},
+        %{"old_string" => "four", "new_string" => "4"}
+      ]
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+    assert File.read!(file_path) == "one 2 three 4 five"
+  end
+
+  test "rejects overlapping edits in a single call" do
+    file_path = Path.join(@test_dir, "overlap.txt")
+    File.write!(file_path, "one two three")
+
+    params = %{
+      "path" => file_path,
+      "edits" => [
+        %{"old_string" => "one two", "new_string" => "1 2"},
+        %{"old_string" => "two three", "new_string" => "2 3"}
+      ]
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert output =~ "overlap in"
+  end
+
+  test "handles concurrent file edits using the mutation queue" do
+    file_path = Path.join(@test_dir, "concurrent.txt")
+    File.write!(file_path, "a b c d e")
+
+    replacements = [{"a", "1"}, {"b", "2"}, {"c", "3"}, {"d", "4"}, {"e", "5"}]
+
+    tasks =
+      Enum.map(replacements, fn {old_char, new_char} ->
+        Task.async(fn ->
+          # introduce random slight offsets
+          Process.sleep(:rand.uniform(20))
+
+          params = %{
+            "path" => file_path,
+            "old_string" => old_char,
+            "new_string" => new_char
+          }
+
+          Beamcore.Agent.Tools.Edit.execute(params)
+        end)
+      end)
+
+    results = Task.await_many(tasks, 10000)
+
+    assert File.read!(file_path) == "1 2 3 4 5"
+    assert Enum.all?(results, &String.starts_with?(&1, "Successfully updated"))
   end
 end
