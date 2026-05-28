@@ -6,41 +6,33 @@ defmodule Beamcore.TUI.Components.Chat do
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, Paragraph, Throbber, WidgetList}
 
-  def widget(state, %Rect{} = area) do
-    wrap_width = content_width(area)
+   def widget(state, %Rect{} = area) do
+     wrap_width = content_width(area)
 
-    items =
-      state
-      |> message_items(wrap_width)
-      |> append_confirmation(state, wrap_width)
-      |> append_spinner(state)
+     items =
+       state
+       |> message_items(wrap_width)
+       |> append_confirmation(state, wrap_width)
+       |> append_spinner(state)
 
-    %WidgetList{
-      items: items,
-      scroll_offset: scroll_offset(items, area, state.scroll_offset),
-      block: %Block{
-        title: title(state),
-        borders: [:all],
-        border_type: :rounded,
-        border_style: Theme.border(state.status),
-        padding: {1, 1, 0, 0}
-      }
-    }
-  end
+     %WidgetList{
+       items: items,
+       scroll_offset: scroll_offset(items, area, state.scroll_offset),
+       block: %Block{
+         borders: [],
+         padding: {0, 0, 0, 0}
+       }
+     }
+   end
 
-  def render_message_lines(label, content, width) do
-    [label | Wrap.lines(content, width)]
-  end
+   def render_message_lines(label, content, width) do
+     [label | Wrap.lines(content, width)]
+   end
 
-  defp title(%{status: :waiting_for_confirmation}), do: "Chat · legacy pending"
-  defp title(%{status: :thinking}), do: "Chat · thinking"
-  defp title(%{status: :tool_running}), do: "Chat · tool running"
-  defp title(_state), do: "Chat · workspace"
-
-  defp message_items(%{messages: []} = state, wrap_width) do
-    text = state |> EmptyState.text() |> Wrap.text(wrap_width)
-    [{EmptyState.widget(text), max(9, line_count(text))}]
-  end
+   defp message_items(%{messages: []} = state, wrap_width) do
+     text = state |> EmptyState.text() |> Wrap.text(wrap_width)
+     [{EmptyState.widget(text), max(5, line_count(text))}]
+   end
 
   defp message_items(%{messages: messages}, wrap_width) do
     Enum.flat_map(messages, fn
@@ -61,42 +53,42 @@ defmodule Beamcore.TUI.Components.Chat do
     end)
   end
 
-  defp bubble(label, content, style, wrap_width, kind) do
-    body_width = max(wrap_width - 3, 10)
+   defp bubble(label, content, style, wrap_width, kind) do
+     body_width = max(wrap_width - 2, 10)
 
-    lines =
-      case kind do
-        :markdown -> Wrap.markdown_lines(content, body_width)
-        :plain -> Wrap.lines(content, body_width)
-      end
+     lines =
+       case kind do
+         :markdown -> Wrap.markdown_lines(content, body_width)
+         :plain -> Wrap.lines(content, body_width)
+       end
 
-    card = card_text(label, lines, wrap_width)
+     prefix = label_prefix(label)
+     card = card_text(prefix, lines, wrap_width)
 
-    [
-      {%Paragraph{text: card, style: style, wrap: false}, line_count(card)},
-      {%Paragraph{text: "", style: Theme.style(:muted)}, 1}
-    ]
-  end
+     [
+       {%Paragraph{text: card, style: style, wrap: false}, line_count(card)},
+       {%Paragraph{text: "", style: Theme.style(:subtle)}, 1}
+     ]
+   end
 
-  defp card_text(label, lines, wrap_width) do
-    top = Wrap.truncate_line("╭─ #{label}", wrap_width)
+   defp label_prefix("You"), do: ">"
+   defp label_prefix("Agent"), do: "*"
+   defp label_prefix("Tool"), do: "»"
+   defp label_prefix("Error"), do: "!"
+   defp label_prefix("System"), do: "·"
+   defp label_prefix(label), do: String.slice(label, 0, 1)
 
-    bottom =
-      Wrap.truncate_line(
-        "╰" <> String.duplicate("─", min(max(wrap_width - 1, 1), 36)),
-        wrap_width
-      )
+   defp card_text(prefix, lines, wrap_width) do
+     body =
+       lines
+       |> Enum.flat_map(&split_preserving_width(&1, max(wrap_width - 2, 10)))
+       |> Enum.map(&"  #{&1}")
 
-    body =
-      lines
-      |> Enum.flat_map(&split_preserving_width(&1, max(wrap_width - 3, 10)))
-      |> Enum.map(&"│ #{&1}")
+     (["#{prefix} " <> String.trim(Enum.join(body, "\n"))])
+     |> Enum.join("\n")
+   end
 
-    ([top] ++ body ++ [bottom])
-    |> Enum.join("\n")
-  end
-
-  defp split_preserving_width(line, width), do: Wrap.lines(line, width)
+   defp split_preserving_width(line, width), do: Wrap.lines(line, width)
 
   defp append_confirmation(items, state, wrap_width) do
     case State.pending_action(state.session) do
@@ -105,24 +97,24 @@ defmodule Beamcore.TUI.Components.Chat do
     end
   end
 
-  defp append_spinner(items, %{status: status} = state)
-      when status in [:thinking, :tool_running] do
-    label = if status == :tool_running, do: " running tools", else: " thinking"
-    set = if state.unicode?, do: :braille, else: :ascii
+   defp append_spinner(items, %{status: status} = state)
+       when status in [:thinking, :tool_running] do
+     label = if status == :tool_running, do: "… running tools", else: "… thinking"
+     set = if state.unicode?, do: :braille, else: :ascii
 
-    items ++
-      [
-        {%Throbber{
-            label: label,
-            step: state.spinner_step,
-            throbber_set: set,
-            style: Theme.style(:running),
-            throbber_style: Theme.style(:running)
-          }, 1}
-      ]
-  end
+     items ++
+       [
+         {%Throbber{
+             label: label,
+             step: state.spinner_step,
+             throbber_set: set,
+             style: Theme.style(:subtle),
+             throbber_style: Theme.style(:running)
+           }, 1}
+       ]
+   end
 
-  defp append_spinner(items, _state), do: items
+   defp append_spinner(items, _state), do: items
 
   defp line_count(text), do: text |> to_string() |> String.split("\n") |> length()
 

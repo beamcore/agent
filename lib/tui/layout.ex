@@ -16,54 +16,58 @@ defmodule Beamcore.TUI.Layout do
       :tiny ->
         %{mode: :tiny, screen: area}
 
-      :wide ->
-        [header, body, input, status] = shell(area, 1, input_height(area.height))
+       :wide ->
+         [body, input, status] = shell(area, 0, input_height(area.height))
 
-        [chat, activity] =
-          RatLayout.split(body, :horizontal, [{:percentage, 74}, {:percentage, 26}])
+         [chat, activity] =
+           RatLayout.split(body, :horizontal, [{:percentage, 74}, {:percentage, 26}])
 
-        %{
-          mode: :wide,
-          header: header,
-          chat: chat,
-          activity: activity,
-          input: input,
-          status: status
-        }
+         %{
+           mode: :wide,
+           chat: chat,
+           activity: activity,
+           input: input,
+           status: status
+         }
 
-      :medium ->
-        [header, chat, activity, input, status] =
-          RatLayout.split(area, :vertical, [
-            {:length, 1},
-            {:min, 8},
-            {:length, compact_activity_height(area.height)},
-            {:length, input_height(area.height)},
-            {:length, 1}
-          ])
+       :medium ->
+         [chat, activity, input, status] =
+           RatLayout.split(area, :vertical, [
+             {:min, 8},
+             {:length, compact_activity_height(area.height)},
+             {:length, input_height(area.height)},
+             {:length, 1}
+           ])
 
-        %{
-          mode: :medium,
-          header: header,
-          chat: chat,
-          activity: activity,
-          input: input,
-          status: status
-        }
+         %{
+           mode: :medium,
+           chat: chat,
+           activity: activity,
+           input: input,
+           status: status
+         }
 
-      :narrow ->
-        [header, chat, input, status] = shell(area, 1, input_height(area.height))
-        %{mode: :narrow, header: header, chat: chat, input: input, status: status}
+       :narrow ->
+         [chat, input, status] = shell(area, 0, input_height(area.height))
+         %{mode: :narrow, chat: chat, input: input, status: status}
     end
   end
 
-  defp shell(area, header_height, input_height) do
-    RatLayout.split(area, :vertical, [
-      {:length, header_height},
-      {:min, 8},
-      {:length, input_height},
-      {:length, 1}
-    ])
-  end
+   defp shell(area, header_height, input_height) do
+     parts = RatLayout.split(area, :vertical, [
+       {:length, header_height},
+       {:min, 8},
+       {:length, input_height},
+       {:length, 1}
+     ])
+     
+     # When header_height is 0, the first element is a zero-height rect
+     # We want to skip it and return [body, input, status]
+     case parts do
+       [header | rest] when header.height == 0 -> rest
+       other -> other
+     end
+   end
 
   defp input_height(height) when height < 18, do: 3
   defp input_height(height) when height < 26, do: 4

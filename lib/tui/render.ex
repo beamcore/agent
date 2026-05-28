@@ -38,44 +38,31 @@ defmodule Beamcore.TUI.Render do
     ]
   end
 
-  defp wide(state, areas) do
-    [
-      {header(state), areas.header},
-      {Chat.widget(state, areas.chat), areas.chat},
-      {Activity.widget(state, :sidebar), areas.activity},
-      {Input.widget(state), areas.input},
-      {StatusBar.widget(state, :wide), areas.status}
-    ]
-  end
+   defp wide(state, areas) do
+     [
+       {Chat.widget(state, areas.chat), areas.chat},
+       {Activity.widget(state, :sidebar), areas.activity},
+       {Input.widget(state), areas.input},
+       {StatusBar.widget(state, :wide), areas.status}
+     ]
+   end
 
-  defp medium(state, areas) do
-    [
-      {header(state), areas.header},
-      {Chat.widget(state, areas.chat), areas.chat},
-      {Activity.widget(state, :strip), areas.activity},
-      {Input.widget(state), areas.input},
-      {StatusBar.widget(state, :medium), areas.status}
-    ]
-  end
+   defp medium(state, areas) do
+     [
+       {Chat.widget(state, areas.chat), areas.chat},
+       {Activity.widget(state, :strip), areas.activity},
+       {Input.widget(state), areas.input},
+       {StatusBar.widget(state, :medium), areas.status}
+     ]
+   end
 
-  defp narrow(state, areas) do
-    [
-      {header(state), areas.header},
-      {Chat.widget(state, areas.chat), areas.chat},
-      {Input.widget(state), areas.input},
-      {StatusBar.widget(state, :narrow), areas.status}
-    ]
-  end
-
-  defp header(state) do
-    mode = if Beamcore.TUI.State.yolo?(state.session), do: "autonomous", else: "guarded"
-
-    %Paragraph{
-      text: "BEAMCORE.AGENT  ·  #{mode} tools  ·  /help",
-      style: Theme.style(:title),
-      alignment: :center
-    }
-  end
+   defp narrow(state, areas) do
+     [
+       {Chat.widget(state, areas.chat), areas.chat},
+       {Input.widget(state), areas.input},
+       {StatusBar.widget(state, :narrow), areas.status}
+     ]
+   end
 
   defp maybe_activity_details(widgets, %{show_activity_details: true} = state, area),
     do: widgets ++ [{Activity.details_widget(state), area}]
