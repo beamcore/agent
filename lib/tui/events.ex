@@ -25,7 +25,9 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "yolo", description: "Toggle freedom mode"},
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
-    %Command{name: "quit", description: "Exit", aliases: ["exit", "q"]}
+    %Command{name: "quit", description: "Exit"},
+    %Command{name: "exit", description: "Exit"},
+    %Command{name: "q", description: "Exit"}
   ]
 
   def commands, do: @commands
@@ -131,16 +133,23 @@ defmodule Beamcore.TUI.Events do
     if ctrl?(mods), do: {:noreply, submit(state)}, else: handle_text_key("s", mods, state)
   end
 
+  defp handle_key("j", mods, state) do
+    if ctrl?(mods), do: {:noreply, insert_newline(state)}, else: handle_text_key("j", mods, state)
+  end
+
   defp handle_key("enter", mods, state) do
     cond do
-      ctrl?(mods) and state.show_commands ->
-        {:noreply, execute_command(state)}
+      state.show_commands and command_prefix_only?(state) ->
+        {:noreply, accept_command_completion(state)}
 
       ctrl?(mods) ->
         {:noreply, submit(state)}
 
+      shift?(mods) or alt?(mods) ->
+        {:noreply, insert_newline(state)}
+
       true ->
-        handle_text_key("enter", mods, state)
+        {:noreply, submit(state)}
     end
   end
 
@@ -154,8 +163,13 @@ defmodule Beamcore.TUI.Events do
     {:noreply, state |> close_panels() |> State.mark_dirty()}
   end
 
+  defp handle_key("tab", _mods, %{show_commands: true} = state),
+    do: {:noreply, accept_command_completion(state)}
+
   defp handle_key("tab", _mods, state),
-    do: {:noreply, %{state | show_activity_details: not state.show_activity_details}}
+    do:
+      {:noreply,
+       %{state | show_activity_details: not state.show_activity_details} |> State.mark_dirty()}
 
   defp handle_key("p", mods, state) do
     if ctrl?(mods) do
@@ -194,11 +208,19 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp handle_key("up", _mods, state) do
-    {:noreply, State.scroll_up(state)}
+    if state.show_commands do
+      {:noreply, select_command(state, -1)}
+    else
+      {:noreply, State.scroll_up(state)}
+    end
   end
 
   defp handle_key("down", _mods, state) do
-    {:noreply, State.scroll_down(state)}
+    if state.show_commands do
+      {:noreply, select_command(state, 1)}
+    else
+      {:noreply, State.scroll_down(state)}
+    end
   end
 
   defp handle_key(code, mods, state), do: handle_text_key(code, mods, state)
@@ -255,6 +277,12 @@ defmodule Beamcore.TUI.Events do
   defp ctrl?(nil), do: false
   defp ctrl?(mods), do: "ctrl" in mods
 
+  defp alt?(nil), do: false
+  defp alt?(mods), do: "alt" in mods
+
+  defp shift?(nil), do: false
+  defp shift?(mods), do: "shift" in mods
+
   defp scroll_activity(state, :up) do
     max_index = max(length(state.activity) - 1, 0)
 
@@ -305,17 +333,30 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
-  defp execute_command(state) do
+  defp accept_command_completion(state) do
     case Enum.at(state.command_matches, state.command_selected) do
       nil ->
         state
 
       %Command{name: name} ->
-        ExRatatui.textarea_set_value(state.textarea, "")
-        full_command = "/" <> name
-        state = record_history(state, full_command)
-        run_command(%{state | show_commands: false}, name)
+        ExRatatui.textarea_set_value(state.textarea, "/" <> name)
+
+        %{state | show_commands: false, command_matches: [], command_selected: 0}
+        |> State.mark_dirty()
     end
+  end
+
+  defp command_prefix_only?(state) do
+    value = ExRatatui.textarea_get_value(state.textarea)
+    String.starts_with?(String.trim_leading(value), "/") and not String.contains?(value, "\n")
+  end
+
+  defp select_command(state, offset) do
+    max_index = max(length(state.command_matches) - 1, 0)
+    selected = state.command_selected + offset
+
+    %{state | command_selected: selected |> max(0) |> min(max_index)}
+    |> State.mark_dirty()
   end
 
   defp record_history(state, value) do

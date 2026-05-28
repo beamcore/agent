@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
   use ExUnit.Case
 
   alias Beamcore.Agent.Chat.{Context, Session, ToolPolicy}
-  alias Beamcore.TUI.Components.{Confirmation, EmptyState, Help, StatusBar}
+  alias Beamcore.TUI.Components.{Confirmation, EmptyState, Help, Input, StatusBar}
   alias Beamcore.TUI.{Events, State}
 
   setup do
@@ -26,6 +26,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert "policy" in command_names
     assert "policy show" in command_names
     assert "policy init" in command_names
+    assert "exit" in command_names
+    assert "q" in command_names
     refute "confirm" in command_names
     refute "cancel" in command_names
     assert Help.widget().content.text =~ "/yolo"
@@ -33,6 +35,99 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert Help.widget().content.text =~ "/yolo off"
     assert Help.widget().content.text =~ "/policy"
     refute Help.widget().content.text =~ "/confirm"
+  end
+
+  test "typing slash opens command suggestions" do
+    state = input_state("")
+
+    {:noreply, state} = Events.handle_event(key("/"), state)
+
+    assert state.show_commands
+    assert Enum.any?(state.command_matches, &(&1.name == "help"))
+    assert state.command_selected == 0
+  end
+
+  test "slash command suggestions filter yolo commands" do
+    state = input_state("") |> type_text("/yo")
+
+    names = Enum.map(state.command_matches, & &1.name)
+    assert "yolo" in names
+    assert "yolo on" in names
+    assert "yolo off" in names
+    refute "policy" in names
+  end
+
+  test "up down and ctrl navigation move selected command suggestion" do
+    state = input_state("") |> type_text("/yo")
+
+    assert state.command_selected == 0
+
+    {:noreply, state} = Events.handle_event(key("down"), state)
+    assert state.command_selected == 1
+
+    {:noreply, state} = Events.handle_event(key("n", ["ctrl"]), state)
+    assert state.command_selected == 2
+
+    {:noreply, state} = Events.handle_event(key("up"), state)
+    assert state.command_selected == 1
+
+    {:noreply, state} = Events.handle_event(key("p", ["ctrl"]), state)
+    assert state.command_selected == 0
+  end
+
+  test "tab autocompletes selected slash command" do
+    state = input_state("") |> type_text("/yo")
+    {:noreply, state} = Events.handle_event(key("down"), state)
+
+    {:noreply, state} = Events.handle_event(key("tab"), state)
+
+    refute state.show_commands
+    assert ExRatatui.textarea_get_value(state.textarea) == "/yolo on"
+  end
+
+  test "esc closes command suggestions" do
+    state = input_state("") |> type_text("/yo")
+
+    {:noreply, state} = Events.handle_event(key("esc"), state)
+
+    refute state.show_commands
+    assert state.command_matches == []
+  end
+
+  test "enter accepts a selected suggestion only while suggestions are open" do
+    state = input_state("") |> type_text("/yo")
+    {:noreply, state} = Events.handle_event(key("down"), state)
+
+    {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    refute state.show_commands
+    assert ExRatatui.textarea_get_value(state.textarea) == "/yolo on"
+  end
+
+  test "enter sends slash command when suggestions are closed" do
+    state = input_state("/help")
+
+    {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    assert state.show_help
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+  end
+
+  test "help and input hints describe real command keybindings", %{state: state} do
+    help_text = Help.widget().content.text
+    input_title = Input.widget(%{state | textarea: ExRatatui.textarea_new()}).block.title
+
+    assert help_text =~ "Enter            Send, or accept highlighted command suggestion"
+    assert help_text =~ "Ctrl+S           Send"
+    assert help_text =~ "Ctrl+J / Alt+Enter"
+    assert help_text =~ "Tab              Complete highlighted command suggestion"
+    assert help_text =~ "/yolo on"
+    assert help_text =~ "/yolo off"
+    refute help_text =~ "/confirm"
+
+    assert input_title =~ "Enter send"
+    assert input_title =~ "Tab complete"
+    assert input_title =~ "/ commands"
   end
 
   test "empty state is product-facing and professional", %{state: state} do
@@ -443,5 +538,34 @@ defmodule Beamcore.TUI.StateComponentsTest do
     lines
     |> Enum.flat_map(&Map.get(&1, :spans, []))
     |> Enum.map_join(& &1.content)
+  end
+
+  defp input_state(value) do
+    textarea = ExRatatui.textarea_new()
+    ExRatatui.textarea_set_value(textarea, value)
+
+    %State{
+      textarea: textarea,
+      session: Beamcore.OpenAI.client() |> Session.new(),
+      messages: [],
+      activity: [],
+      status: :idle,
+      unicode?: true
+    }
+  end
+
+  defp type_text(state, text) do
+    text
+    |> String.graphemes()
+    |> Enum.reduce(state, fn code, state -> refresh_with_key(state, code) end)
+  end
+
+  defp refresh_with_key(state, code) do
+    {:noreply, state} = Events.handle_event(key(code), state)
+    state
+  end
+
+  defp key(code, modifiers \\ []) do
+    %ExRatatui.Event.Key{code: code, modifiers: modifiers, kind: "press"}
   end
 end
