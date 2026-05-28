@@ -46,17 +46,17 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     assert Layout.mode(40, 9) == :tiny
   end
 
-  test "layout areas adapt by mode" do
-    assert %{mode: :wide, activity: %Rect{}, chat: %Rect{}} =
-             Layout.areas(%Rect{x: 0, y: 0, width: 140, height: 36})
+   test "layout areas adapt by mode" do
+     assert %{mode: :wide, activity: %Rect{}, chat: %Rect{}, input: %Rect{}, status: %Rect{}} =
+              Layout.areas(%Rect{x: 0, y: 0, width: 140, height: 36})
 
-    assert %{mode: :medium, activity: %Rect{}, input: %Rect{}} =
-             Layout.areas(%Rect{x: 0, y: 0, width: 100, height: 30})
+     assert %{mode: :medium, activity: %Rect{}, chat: %Rect{}, input: %Rect{}, status: %Rect{}} =
+              Layout.areas(%Rect{x: 0, y: 0, width: 100, height: 30})
 
-    assert %{mode: :narrow, chat: %Rect{}, status: %Rect{}} =
-             Layout.areas(%Rect{x: 0, y: 0, width: 80, height: 24})
+     assert %{mode: :narrow, chat: %Rect{}, input: %Rect{}, status: %Rect{}} =
+              Layout.areas(%Rect{x: 0, y: 0, width: 80, height: 24})
 
-    assert %{mode: :tiny, screen: %Rect{}} =
-             Layout.areas(%Rect{x: 0, y: 0, width: 40, height: 9})
-  end
+     assert %{mode: :tiny, screen: %Rect{}} =
+              Layout.areas(%Rect{x: 0, y: 0, width: 40, height: 9})
+   end
 end
