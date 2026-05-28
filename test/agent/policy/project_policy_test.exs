@@ -341,6 +341,22 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     assert grep_output =~ "lib/visible.ex"
   end
 
+  test "project policy can deny ecosystem command tools" do
+    tools = ~w(python node make go rust terraform ruby bazel)
+
+    for tool <- tools do
+      write_policy!(%{version: 1, tool_permissions: %{tool => "deny"}})
+
+      policy = ToolPolicy.default()
+      names = Dispatcher.tool_specs(policy) |> Enum.map(& &1.function.name)
+
+      refute tool in names
+
+      assert Dispatcher.execute(tool, %{"command" => "test"}, policy) =~
+               "Tool call blocked by project policy: #{tool}."
+    end
+  end
+
   defp write_policy!(data) when is_map(data), do: write_policy!(Jason.encode!(data))
 
   defp write_policy!(content) do
