@@ -32,12 +32,10 @@ defmodule Beamcore.TUI.Components.Activity do
   end
 
   def details_widget(state) do
-    selected = Enum.at(state.activity, state.selected_activity) || List.first(state.activity)
-
     %Popup{
-      content: %Paragraph{text: details_text(selected), style: Theme.style(:panel), wrap: true},
+      content: %Paragraph{text: details_text(state), style: Theme.style(:panel), wrap: true},
       block: %Block{
-        title: "Tool details",
+        title: "Timeline details",
         borders: [:all],
         border_type: :rounded,
         border_style: Theme.style(:border_hot),
@@ -46,6 +44,11 @@ defmodule Beamcore.TUI.Components.Activity do
       percent_width: 64,
       percent_height: 48
     }
+  end
+
+  def details_text(state) do
+    selected = Enum.at(state.activity, state.selected_activity) || List.first(state.activity)
+    details_text(selected, state.selected_activity, length(state.activity))
   end
 
   def compact_text(state) do
@@ -84,22 +87,32 @@ defmodule Beamcore.TUI.Components.Activity do
     |> Enum.reject(fn {_widget, height} -> height == 0 end)
   end
 
-  defp details_text(nil), do: "No tool activity yet."
+  defp details_text(nil, _index, _total), do: "No timeline activity yet."
 
-  defp details_text(event) do
+  defp details_text(event, index, total) do
     [
+      "Timeline item #{min(index + 1, max(total, 1))}/#{max(total, 1)}",
       "#{status_prefix(event.status)} #{event.label}",
       "",
+      field("time", timestamp(event)),
       field("tool", event.name),
       field("state", event.status),
       field("target", event.target || "none"),
       field("summary", event.summary || "none"),
-      field("result", event.result || "none")
+      field("output", event.result || "none")
     ]
     |> Enum.join("\n")
   end
 
-  defp field(label, value), do: "#{label}: #{value}"
+  defp field(label, value), do: "#{label}: #{Wrap.truncate_line(to_string(value), 520)}"
+
+  defp timestamp(%{timestamp_ms: timestamp}) when is_integer(timestamp) do
+    timestamp
+    |> DateTime.from_unix!(:millisecond)
+    |> Calendar.strftime("%H:%M:%S")
+  end
+
+  defp timestamp(_event), do: "unknown"
 
   defp title(:strip), do: "Activity · tools"
   defp title(_variant), do: "Activity · tools"

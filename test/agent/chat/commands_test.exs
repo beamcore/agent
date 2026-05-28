@@ -414,13 +414,16 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
     previous = File.cwd!()
     File.mkdir_p!(tmp)
-    File.cd!(tmp)
 
-    try do
-      fun.()
-    after
-      File.cd!(previous)
-      File.rm_rf!(tmp)
-    end
+    Beamcore.Agent.TestPolicyRoot.with_root(tmp, fn ->
+      File.cd!(tmp)
+
+      try do
+        fun.()
+      after
+        File.cd!(previous)
+        File.rm_rf!(tmp)
+      end
+    end)
   end
 end

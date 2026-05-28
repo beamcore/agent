@@ -269,13 +269,11 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
   test "freedom mode removes stale policy-blocked history before next API request", %{
     session: session
   } do
-    File.mkdir_p!(".beamcore")
-    File.write!(".beamcore/policy.json", Jason.encode!(%{version: 1, deny_paths: ["scratch/**"]}))
+    use_temp_policy!(%{version: 1, deny_paths: ["scratch/**"]})
     File.rm_rf!("scratch")
 
     on_exit(fn ->
       File.rm_rf!("scratch")
-      File.rm(".beamcore/policy.json")
     end)
 
     write_args = %{
@@ -368,13 +366,11 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
   test "session freedom flag bypasses project policy even without policy_override", %{
     session: session
   } do
-    File.mkdir_p!(".beamcore")
-    File.write!(".beamcore/policy.json", Jason.encode!(%{version: 1, deny_paths: ["scratch/**"]}))
+    use_temp_policy!(%{version: 1, deny_paths: ["scratch/**"]})
     File.rm_rf!("scratch")
 
     on_exit(fn ->
       File.rm_rf!("scratch")
-      File.rm(".beamcore/policy.json")
     end)
 
     args = %{
@@ -437,5 +433,14 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
         "arguments" => Jason.encode!(args)
       }
     }
+  end
+
+  defp use_temp_policy!(policy) do
+    root = Beamcore.Agent.TestPolicyRoot.temp_root("beamcore_loop_policy")
+    File.mkdir_p!(Path.join(root, ".beamcore"))
+    File.write!(Path.join(root, ".beamcore/policy.json"), Jason.encode!(policy))
+    Beamcore.Agent.TestPolicyRoot.setup(root)
+
+    on_exit(fn -> File.rm_rf!(root) end)
   end
 end

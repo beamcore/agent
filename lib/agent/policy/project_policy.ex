@@ -33,7 +33,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   """
   @spec load(binary() | nil) :: t()
   def load(root \\ nil) do
-    root = root || PathSafety.workspace_root()
+    root = policy_root(root)
     path = Path.join(root, @config_path)
 
     if File.exists?(path) do
@@ -68,7 +68,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   end
 
   def default(root \\ nil) do
-    root = root || PathSafety.workspace_root()
+    root = policy_root(root)
     %__MODULE__{path: Path.join(root, @config_path)}
   end
 
@@ -96,7 +96,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   def save(%__MODULE__{} = policy), do: save(nil, policy)
 
   def save(root, %__MODULE__{} = policy) do
-    root = root || PathSafety.workspace_root()
+    root = policy_root(root)
     path = Path.join(root, @config_path)
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
@@ -106,7 +106,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   end
 
   def init(root \\ nil) do
-    root = root || PathSafety.workspace_root()
+    root = policy_root(root)
     target = Path.join(root, @config_path)
 
     if File.exists?(target) do
@@ -647,4 +647,9 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   defp count_line(label, values), do: "#{length(values)} #{label}."
 
   defp invalid_config_message(policy), do: "Project policy config is invalid: #{policy.error}."
+
+  defp policy_root(nil),
+    do: Application.get_env(:agent, :project_policy_root) || PathSafety.workspace_root()
+
+  defp policy_root(root), do: root
 end

@@ -16,6 +16,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     previous = File.cwd!()
     File.cd!(tmp)
+    Beamcore.Agent.TestPolicyRoot.setup(tmp)
 
     on_exit(fn ->
       File.cd!(previous)

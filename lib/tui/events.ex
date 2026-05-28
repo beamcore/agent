@@ -22,6 +22,9 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "policy allow-write ", description: "Add an allowed write path"},
     %Command{name: "policy read-only ", description: "Add a read-only path"},
     %Command{name: "policy tool ", description: "Set tool permission"},
+    %Command{name: "timeline", description: "Focus timeline details"},
+    %Command{name: "timeline last", description: "Open latest timeline item"},
+    %Command{name: "timeline clear", description: "Clear visible UI activity only"},
     %Command{name: "yolo", description: "Toggle freedom mode"},
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
@@ -142,6 +145,9 @@ defmodule Beamcore.TUI.Events do
       state.show_commands and command_prefix_only?(state) ->
         {:noreply, accept_command_completion(state)}
 
+      state.show_activity_details and input_blank?(state) ->
+        {:noreply, State.mark_dirty(state)}
+
       ctrl?(mods) ->
         {:noreply, submit(state)}
 
@@ -178,8 +184,7 @@ defmodule Beamcore.TUI.Events do
           {:noreply, %{state | command_selected: max(0, state.command_selected - 1)}}
 
         state.show_activity_details ->
-          max_index = max(length(state.activity) - 1, 0)
-          {:noreply, %{state | selected_activity: min(state.selected_activity + 1, max_index)}}
+          {:noreply, select_activity(state, 1)}
 
         true ->
           {:noreply, navigate_history(state, :up)}
@@ -197,7 +202,7 @@ defmodule Beamcore.TUI.Events do
           {:noreply, %{state | command_selected: min(state.command_selected + 1, max_index)}}
 
         state.show_activity_details ->
-          {:noreply, %{state | selected_activity: max(state.selected_activity - 1, 0)}}
+          {:noreply, select_activity(state, -1)}
 
         true ->
           {:noreply, navigate_history(state, :down)}
@@ -207,20 +212,40 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
-  defp handle_key("up", _mods, state) do
-    if state.show_commands do
-      {:noreply, select_command(state, -1)}
-    else
-      {:noreply, State.scroll_up(state)}
+  defp handle_key("up", mods, state) do
+    cond do
+      state.show_commands ->
+        {:noreply, select_command(state, -1)}
+
+      state.show_activity_details ->
+        {:noreply, select_activity(state, if(shift?(mods), do: -5, else: -1))}
+
+      true ->
+        {:noreply, State.scroll_up(state)}
     end
   end
 
-  defp handle_key("down", _mods, state) do
-    if state.show_commands do
-      {:noreply, select_command(state, 1)}
-    else
-      {:noreply, State.scroll_down(state)}
+  defp handle_key("down", mods, state) do
+    cond do
+      state.show_commands ->
+        {:noreply, select_command(state, 1)}
+
+      state.show_activity_details ->
+        {:noreply, select_activity(state, if(shift?(mods), do: 5, else: 1))}
+
+      true ->
+        {:noreply, State.scroll_down(state)}
     end
+  end
+
+  defp handle_key(code, _mods, %{show_activity_details: true} = state)
+       when code in ["page_up", "pageup", "pgup"] do
+    {:noreply, select_activity(state, -5)}
+  end
+
+  defp handle_key(code, _mods, %{show_activity_details: true} = state)
+       when code in ["page_down", "pagedown", "pgdown"] do
+    {:noreply, select_activity(state, 5)}
   end
 
   defp handle_key(code, mods, state), do: handle_text_key(code, mods, state)
@@ -284,19 +309,15 @@ defmodule Beamcore.TUI.Events do
   defp shift?(mods), do: "shift" in mods
 
   defp scroll_activity(state, :up) do
-    max_index = max(length(state.activity) - 1, 0)
-
-    %{
-      state
-      | selected_activity: min(state.selected_activity + 1, max_index),
-        show_activity_details: true
-    }
-    |> State.mark_dirty()
+    state
+    |> Map.put(:show_activity_details, true)
+    |> select_activity(1)
   end
 
   defp scroll_activity(state, :down) do
-    %{state | selected_activity: max(state.selected_activity - 1, 0), show_activity_details: true}
-    |> State.mark_dirty()
+    state
+    |> Map.put(:show_activity_details, true)
+    |> select_activity(-1)
   end
 
   defp insert_newline(state) do
@@ -351,11 +372,26 @@ defmodule Beamcore.TUI.Events do
     String.starts_with?(String.trim_leading(value), "/") and not String.contains?(value, "\n")
   end
 
+  defp input_blank?(state) do
+    state.textarea
+    |> ExRatatui.textarea_get_value()
+    |> String.trim()
+    |> Kernel.==("")
+  end
+
   defp select_command(state, offset) do
     max_index = max(length(state.command_matches) - 1, 0)
     selected = state.command_selected + offset
 
     %{state | command_selected: selected |> max(0) |> min(max_index)}
+    |> State.mark_dirty()
+  end
+
+  defp select_activity(state, offset) do
+    max_index = max(length(state.activity) - 1, 0)
+    selected = state.selected_activity + offset
+
+    %{state | selected_activity: selected |> max(0) |> min(max_index)}
     |> State.mark_dirty()
   end
 
@@ -381,6 +417,17 @@ defmodule Beamcore.TUI.Events do
 
   defp run_command(%{show_help: true} = state, "help"), do: %{state | show_help: false}
   defp run_command(state, "help"), do: %{state | show_help: true}
+  defp run_command(state, "timeline"), do: open_timeline(state)
+  defp run_command(state, "timeline last"), do: open_timeline(%{state | selected_activity: 0})
+
+  defp run_command(state, "timeline clear"),
+    do:
+      state
+      |> Map.merge(%{activity: [], selected_activity: 0, show_activity_details: false})
+      |> State.add_message(
+        :system,
+        "Cleared visible timeline activity. Session history was not changed."
+      )
 
   defp run_command(state, command) do
     result =
@@ -389,6 +436,19 @@ defmodule Beamcore.TUI.Events do
       )
 
     apply_command_result(result, state, command)
+  end
+
+  defp open_timeline(state) do
+    if state.activity == [] do
+      State.add_message(state, :system, "Timeline is empty.")
+    else
+      %{
+        state
+        | show_activity_details: true,
+          selected_activity: min(state.selected_activity, length(state.activity) - 1)
+      }
+      |> State.mark_dirty()
+    end
   end
 
   defp apply_command_result({:run_pending, session, content, policy}, state, _command) do
