@@ -179,7 +179,7 @@ defmodule Beamcore.Agent.Tools.EditTest do
     assert output =~ "=> 3:   def my_speclal_function do"
   end
 
-  # NEW Parity Tests
+  # ---- Parity Tests ----
 
   test "preserves UTF-8 BOM" do
     file_path = Path.join(@test_dir, "bom.txt")
@@ -217,6 +217,22 @@ defmodule Beamcore.Agent.Tools.EditTest do
     assert content == "line1\r\nupdated_line2\r\nline3\r\n"
   end
 
+  test "adapts multi-line old_string to CRLF file" do
+    file_path = Path.join(@test_dir, "crlf_multi.txt")
+    File.write!(file_path, "aaa\r\nbbb\r\nccc\r\n")
+
+    # Agent sends LF line endings but file uses CRLF
+    params = %{
+      "path" => file_path,
+      "old_string" => "aaa\nbbb",
+      "new_string" => "xxx\nyyy"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+    assert File.read!(file_path) == "xxx\r\nyyy\r\nccc\r\n"
+  end
+
   test "detects and rejects no-change edits" do
     file_path = Path.join(@test_dir, "no_change.txt")
     File.write!(file_path, "Hello world!")
@@ -231,19 +247,39 @@ defmodule Beamcore.Agent.Tools.EditTest do
     assert output == "Error: No changes would be made to the file."
   end
 
-  test "fuzzy matches smart quotes, special dashes, spaces, and trailing whitespace" do
-    file_path = Path.join(@test_dir, "fuzzy_match.txt")
-    File.write!(file_path, "“Hello” – world \n")
+  test "normalizes smart quotes in old_string to match ASCII file content" do
+    file_path = Path.join(@test_dir, "unicode_normalize.txt")
+    File.write!(file_path, "say \"Hello\" - world\n")
 
+    # Agent sends smart quotes and en-dash (common LLM behavior)
     params = %{
       "path" => file_path,
-      "old_string" => "\"Hello\" - world",
-      "new_string" => "Hi world"
+      "old_string" => "say \u201cHello\u201d \u2013 world",
+      "new_string" => "say Hi"
     }
 
     output = Beamcore.Agent.Tools.Edit.execute(params)
     assert String.starts_with?(output, "Successfully updated")
-    assert File.read!(file_path) == "Hi world\n"
+    assert File.read!(file_path) == "say Hi\n"
+  end
+
+  test "does NOT silently transmute file content when old_string differs in Unicode form" do
+    file_path = Path.join(@test_dir, "no_transmute.txt")
+    # File has smart quotes — these must be preserved if old_string uses ASCII quotes
+    File.write!(file_path, "\u201cHello\u201d \u2013 world\n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "\"Hello\" - world",
+      "new_string" => "Hi"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    # Should fail because the file has smart quotes but old_string has ASCII quotes.
+    # The tool must NOT silently normalize the file content.
+    assert output =~ "Error: old_string not found in file."
+    # File must be completely untouched
+    assert File.read!(file_path) == "\u201cHello\u201d \u2013 world\n"
   end
 
   test "applies multiple non-overlapping edits in a single call" do
@@ -307,7 +343,7 @@ defmodule Beamcore.Agent.Tools.EditTest do
     assert Enum.all?(results, &String.starts_with?(&1, "Successfully updated"))
   end
 
-  test "aligns trailing and leading newlines to prevent merging/eaten newlines" do
+  test "preserves trailing newline to prevent line merging" do
     file_path = Path.join(@test_dir, "align_newlines.txt")
 
     File.write!(
@@ -343,5 +379,57 @@ defmodule Beamcore.Agent.Tools.EditTest do
     output = Beamcore.Agent.Tools.Edit.execute(params)
     assert String.starts_with?(output, "Successfully updated")
     assert File.read!(file_path) == "exec \"$@\" --debug\n"
+  end
+
+  test "correctly handles multi-byte UTF-8 characters without corruption" do
+    file_path = Path.join(@test_dir, "utf8.txt")
+    File.write!(file_path, "Hello 🌍 world\nLine 2 café\nLine 3 naïve\n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "Line 2 café",
+      "new_string" => "Line 2 updated"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+    assert File.read!(file_path) == "Hello 🌍 world\nLine 2 updated\nLine 3 naïve\n"
+  end
+
+  test "correctly splices around emoji without byte/codepoint mismatch" do
+    file_path = Path.join(@test_dir, "emoji.txt")
+    # Emoji are 4-byte UTF-8 sequences — this is where byte vs codepoint bugs show up
+    File.write!(file_path, "🎉🎊🎈 party\n🎉🎊🎈 celebration\n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "party",
+      "new_string" => "fiesta"
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+    content = File.read!(file_path)
+    assert content == "🎉🎊🎈 fiesta\n🎉🎊🎈 celebration\n"
+    # Verify the emoji survived intact
+    assert String.valid?(content)
+  end
+
+  test "line range disambiguation works correctly with multi-byte characters" do
+    file_path = Path.join(@test_dir, "utf8_range.txt")
+    # Each emoji is 4 bytes — this exercises the byte-offset line range logic
+    File.write!(file_path, "line 1 🎉\nfoo\nline 3 🎊\nfoo\nline 5 🎈\n")
+
+    params = %{
+      "path" => file_path,
+      "old_string" => "foo",
+      "new_string" => "bar",
+      "start_line" => 3,
+      "end_line" => 4
+    }
+
+    output = Beamcore.Agent.Tools.Edit.execute(params)
+    assert String.starts_with?(output, "Successfully updated")
+    assert File.read!(file_path) == "line 1 🎉\nfoo\nline 3 🎊\nbar\nline 5 🎈\n"
   end
 end

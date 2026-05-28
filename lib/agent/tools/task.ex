@@ -231,7 +231,7 @@ defmodule Beamcore.Agent.Tools.Task do
   # Ensures the first non-system message is a user or assistant message.
   # If the first non-system message is a tool response, prepends a dummy user message.
   defp ensure_valid_message_order(messages) do
-    case Enum.find_value(messages, fn msg -> (msg[:role] || msg["role"]) != "system" end) do
+    case Enum.find(messages, fn msg -> (msg[:role] || msg["role"]) != "system" end) do
       # No non-system messages (edge case, but safe)
       nil ->
         messages

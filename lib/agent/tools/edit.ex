@@ -1,16 +1,19 @@
 defmodule Beamcore.Agent.Tools.Edit do
   @moduledoc """
-  Tool to replace exact string in a file with state-of-the-art matching, line-range,
-  and whitespace tolerance.
+  Tool to replace exact strings in a file.
+
+  All matching and splicing operations use byte-level semantics (`:binary.*` and
+  `binary_part/3`) to guarantee correctness with any encoding, including multi-byte
+  UTF-8 characters. File writes are atomic (temp file + rename).
   """
   alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Replace an exact old string with a new string in a specified file.
-  Supports optional start_line and end_line parameters for precision and efficiency.
-  Features robust exact and whitespace-normalized matching fallbacks, line ending preservation,
-  and highly detailed error diagnostics.
+  Replace exact literal text in a file. Provide old_string (the exact text to find)
+  and new_string (the replacement). For files with multiple occurrences of old_string,
+  use start_line/end_line to disambiguate. For multiple edits in one call, use the
+  edits array parameter instead of old_string/new_string.
   """
 
   def name, do: "edit"
@@ -30,11 +33,11 @@ defmodule Beamcore.Agent.Tools.Edit do
             },
             old_string: %{
               type: "string",
-              description: "The exact literal text to replace."
+              description: "The exact literal text to find and replace."
             },
             new_string: %{
               type: "string",
-              description: "The exact literal text to replace old_string with."
+              description: "The replacement text."
             },
             start_line: %{
               type: "integer",
@@ -54,17 +57,17 @@ defmodule Beamcore.Agent.Tools.Edit do
             edits: %{
               type: "array",
               description:
-                "Optional. One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits.",
+                "Optional. One or more targeted replacements applied atomically against the original file content. Do not include overlapping edits.",
               items: %{
                 type: "object",
                 properties: %{
                   old_string: %{
                     type: "string",
-                    description: "The exact literal text to replace."
+                    description: "The exact literal text to find."
                   },
                   new_string: %{
                     type: "string",
-                    description: "The exact literal text to replace it with."
+                    description: "The replacement text."
                   }
                 },
                 required: ["old_string", "new_string"]
@@ -83,43 +86,20 @@ defmodule Beamcore.Agent.Tools.Edit do
 
     with :ok <- ProjectPolicy.allowed_write_path?(path),
          {:ok, expanded_path} <- PathSafety.resolve(path) do
-      # Alignment Interception Guard Layer (First brick)
-      agent_name =
-        Map.get(params, "agent_name") || Map.get(params, "agent") || System.get_env("AGENT_NAME") ||
-          "agent_default"
+      case Beamcore.Agent.Tools.FileMutationQueue.with_lock(expanded_path, 5000, fn ->
+             case File.read(expanded_path) do
+               {:ok, content} ->
+                 process_edit(expanded_path, content, params, dry_run)
 
-      file_hash =
-        case File.read(expanded_path) do
-          {:ok, content} -> :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
-          _ -> ""
-        end
+               {:error, reason} ->
+                 "Error reading file #{expanded_path}: #{reason}"
+             end
+           end) do
+        {:error, :lock_timeout} ->
+          "Error: Could not acquire lock for #{expanded_path} (timeout after 5s)."
 
-      case Beamcore.Alignment.claim_file(expanded_path, agent_name, file_hash) do
-        {:conflict, score, other_agent} when score >= 80 ->
-          "Error: Alignment Conflict. Another agent '#{other_agent}' is actively working on #{path} (Conflict Score: #{score})."
-
-        _ ->
-          # Run under mutation lock!
-          case Beamcore.Agent.Tools.FileMutationQueue.with_lock(expanded_path, 5000, fn ->
-                 case File.read(expanded_path) do
-                   {:ok, content} ->
-                     process_edit(
-                       expanded_path,
-                       content,
-                       params,
-                       dry_run
-                     )
-
-                   {:error, reason} ->
-                     "Error reading file #{expanded_path}: #{reason}"
-                 end
-               end) do
-            {:error, :lock_timeout} ->
-              "Error: Could not acquire lock to modify file #{expanded_path} (timeout after 5s)."
-
-            result ->
-              result
-          end
+        result ->
+          result
       end
     else
       {:error, reason} ->
@@ -127,312 +107,395 @@ defmodule Beamcore.Agent.Tools.Edit do
     end
   end
 
-  defp process_edit(expanded_path, content, params, dry_run) do
-    # 1. Strip BOM
-    {has_bom?, content_without_bom} = strip_bom(content)
+  # ---------------------------------------------------------------------------
+  # Core
+  # ---------------------------------------------------------------------------
 
-    # 2. Detect line ending
-    sep = detect_line_ending(content_without_bom)
+  defp process_edit(expanded_path, original_bytes, params, dry_run) do
+    # 1. Strip BOM (preserve for restoration)
+    {has_bom?, content} = strip_bom(original_bytes)
 
-    # 3. Normalize original content to LF
-    normalized_content = normalize_to_lf(content_without_bom)
+    # 2. Detect line ending style
+    line_ending = detect_line_ending(content)
 
-    # 4. Parse edits
+    # 3. Parse edits from params
     edits = parse_edits(params)
 
-    # 5. Extract single-edit parameters if applicable
+    # 4. Line range is only meaningful for single edits
     {start_line, end_line} =
-      if length(edits) == 1 do
-        {Map.get(params, "start_line"), Map.get(params, "end_line")}
-      else
-        {nil, nil}
-      end
+      if length(edits) == 1,
+        do: {Map.get(params, "start_line"), Map.get(params, "end_line")},
+        else: {nil, nil}
 
-    # 6. Apply edits to normalized content
-    try do
-      {_base_content, new_content} =
-        apply_edits_to_normalized_content(
-          normalized_content,
-          edits,
-          expanded_path,
-          start_line,
-          end_line
-        )
+    # 5. Find and validate all matches
+    case find_all_matches(content, edits, line_ending, start_line, end_line) do
+      {:ok, matched_edits} ->
+        # 6. Apply edits via byte-level splicing
+        new_content = apply_edits(content, matched_edits, line_ending)
 
-      # 7. Restore line endings and prepend BOM
-      final_new_content =
-        new_content
-        |> restore_line_endings(sep)
-        |> then(fn text -> if has_bom?, do: "\uFEFF" <> text, else: text end)
+        if new_content == content do
+          if length(edits) == 1,
+            do: "Error: No changes would be made to the file.",
+            else:
+              "Error: No changes made to #{expanded_path}. The replacements produced identical content."
+        else
+          # 7. Restore BOM if originally present
+          final =
+            if has_bom?, do: <<0xEF, 0xBB, 0xBF>> <> new_content, else: new_content
 
-      # 8. Generate diff
-      diff =
-        generate_diff(params["path"] || Path.basename(expanded_path), content, final_new_content)
+          # 8. Generate unified diff for feedback
+          diff =
+            generate_diff(
+              params["path"] || Path.basename(expanded_path),
+              original_bytes,
+              final
+            )
 
-      if dry_run do
-        "Dry-run succeeded: #{expanded_path} would be updated." <>
-          if(diff != "", do: "\n\n" <> diff, else: "")
-      else
-        case File.write(expanded_path, final_new_content) do
-          :ok ->
-            "Successfully updated #{expanded_path}" <>
+          if dry_run do
+            "Dry-run succeeded: #{expanded_path} would be updated." <>
               if(diff != "", do: "\n\n" <> diff, else: "")
+          else
+            # 9. Atomic write (temp file + rename)
+            case atomic_write(expanded_path, final) do
+              :ok ->
+                "Successfully updated #{expanded_path}" <>
+                  if(diff != "", do: "\n\n" <> diff, else: "")
 
-          {:error, reason} ->
-            "Error writing file #{expanded_path}: #{reason}"
+              {:error, reason} ->
+                "Error writing file #{expanded_path}: #{reason}"
+            end
+          end
         end
-      end
-    catch
-      {:error, :empty_old_string} ->
+
+      {:error, :empty_old_string, _idx, _old} ->
         "Error: old_string must not be empty."
 
-      {:error, {:not_found, idx, old_string}} ->
+      {:error, :not_found, idx, old_string} ->
         if length(edits) == 1 do
-          file_lines = String.split(normalized_content, "\n")
-          old_lines = String.split(old_string, "\n")
-          report_not_found_error(file_lines, old_lines, start_line, end_line, sep)
+          report_not_found_diagnostic(content, old_string, start_line, end_line, line_ending)
         else
-          "Error: Could not find edits[#{idx}] in #{expanded_path}. The oldText must match exactly including all whitespace and newlines."
+          "Error: Could not find edits[#{idx}] in #{expanded_path}. The old_string must match exactly including all whitespace and newlines."
         end
 
-      {:error, {:ambiguous, idx, _old_string, line_numbers}} ->
+      {:error, {:ambiguous, line_numbers}, idx, _old} ->
         if length(edits) == 1 do
           "Error: old_string is ambiguous. It occurs #{length(line_numbers)} times in the file at lines: #{Enum.join(line_numbers, ", ")}."
         else
-          "Error: Found #{length(line_numbers)} occurrences of edits[#{idx}] in #{expanded_path}. Each oldText must be unique. Please provide more context to make it unique."
+          "Error: Found #{length(line_numbers)} occurrences of edits[#{idx}] in #{expanded_path}. Each old_string must be unique. Please provide more context to make it unique."
         end
 
       {:error, {:overlap, prev_idx, curr_idx}} ->
         "Error: edits[#{prev_idx}] and edits[#{curr_idx}] overlap in #{expanded_path}. Merge them into one edit or target disjoint regions."
+    end
+  end
 
-      {:error, :no_change} ->
-        if length(edits) == 1 do
-          "Error: No changes would be made to the file."
-        else
-          "Error: No changes made to #{expanded_path}. The replacements produced identical content."
+  # ---------------------------------------------------------------------------
+  # Matching — all offsets are byte-level via :binary.*
+  # ---------------------------------------------------------------------------
+
+  defp find_all_matches(content, edits, line_ending, start_line, end_line) do
+    result =
+      edits
+      |> Enum.with_index()
+      |> Enum.reduce_while([], fn {edit, idx}, acc ->
+        case find_single_match(content, edit.old_string, line_ending, start_line, end_line) do
+          {:ok, offset, length, adapted_old} ->
+            match = %{
+              idx: idx,
+              offset: offset,
+              length: length,
+              new_string: edit.new_string,
+              adapted_old: adapted_old
+            }
+
+            {:cont, [match | acc]}
+
+          {:error, reason} ->
+            {:halt, {:error, reason, idx, edit.old_string}}
         end
-    end
-  end
-
-  # Helper Functions
-
-  defp strip_bom(content) do
-    if String.starts_with?(content, "\uFEFF") do
-      {true, String.slice(content, 1..-1//1)}
-    else
-      {false, content}
-    end
-  end
-
-  defp detect_line_ending(content) do
-    crlf_idx =
-      case :binary.match(content, "\r\n") do
-        {idx, _} -> idx
-        :nomatch -> nil
-      end
-
-    lf_idx =
-      case :binary.match(content, "\n") do
-        {idx, _} -> idx
-        :nomatch -> nil
-      end
-
-    cond do
-      is_nil(lf_idx) -> "\n"
-      is_nil(crlf_idx) -> "\n"
-      crlf_idx < lf_idx -> "\r\n"
-      true -> "\n"
-    end
-  end
-
-  defp normalize_to_lf(text) do
-    text
-    |> String.replace("\r\n", "\n")
-    |> String.replace("\r", "\n")
-  end
-
-  defp restore_line_endings(text, "\r\n") do
-    String.replace(text, "\n", "\r\n")
-  end
-
-  defp restore_line_endings(text, _), do: text
-
-  defp parse_edits(params) do
-    edits_param = Map.get(params, "edits")
-
-    edits_list =
-      cond do
-        is_binary(edits_param) ->
-          case Jason.decode(edits_param) do
-            {:ok, decoded} when is_list(decoded) -> decoded
-            _ -> nil
-          end
-
-        is_list(edits_param) ->
-          edits_param
-
-        true ->
-          nil
-      end
-
-    if edits_list do
-      Enum.map(edits_list, fn edit ->
-        old =
-          Map.get(edit, "old_string") || Map.get(edit, "oldText") ||
-            Map.fetch!(edit, "old_string")
-
-        new =
-          Map.get(edit, "new_string") || Map.get(edit, "newText") ||
-            Map.fetch!(edit, "new_string")
-
-        %{
-          old_string: sanitize_obfuscated_emails(old),
-          new_string: sanitize_obfuscated_emails(new)
-        }
       end)
-    else
-      old_string = Map.fetch!(params, "old_string") |> sanitize_obfuscated_emails()
-      new_string = Map.fetch!(params, "new_string") |> sanitize_obfuscated_emails()
-      [%{old_string: old_string, new_string: new_string}]
-    end
-  end
 
-  defp normalize_for_fuzzy_match(text) do
-    text
-    |> String.normalize(:nfkc)
-    |> String.split("\n")
-    |> Enum.map(&String.trim_trailing/1)
-    |> Enum.join("\n")
-    |> String.replace(~r/[\x{2018}\x{2019}\x{201A}\x{201B}]/u, "'")
-    |> String.replace(~r/[\x{201C}\x{201D}\x{201E}\x{201F}]/u, "\"")
-    |> String.replace(~r/[\x{2010}\x{2011}\x{2012}\x{2013}\x{2014}\x{2015}\x{2212}]/u, "-")
-    |> String.replace(~r/[\x{00A0}\x{2002}-\x{200A}\x{202F}\x{205F}\x{3000}]/u, " ")
-  end
+    case result do
+      {:error, _, _, _} = err ->
+        err
 
-  defp fuzzy_find_text(content, old_text) do
-    case :binary.match(content, old_text) do
-      {exact_index, len} ->
-        %{
-          found: true,
-          index: exact_index,
-          match_length: len,
-          used_fuzzy_match: false,
-          content_for_replacement: content
-        }
+      matches ->
+        sorted = Enum.sort_by(matches, & &1.offset)
 
-      :nomatch ->
-        fuzzy_content = normalize_for_fuzzy_match(content)
-        fuzzy_old_text = normalize_for_fuzzy_match(old_text)
-
-        case :binary.match(fuzzy_content, fuzzy_old_text) do
-          {fuzzy_index, len} ->
-            %{
-              found: true,
-              index: fuzzy_index,
-              match_length: len,
-              used_fuzzy_match: true,
-              content_for_replacement: fuzzy_content
-            }
-
-          :nomatch ->
-            %{
-              found: false,
-              index: -1,
-              match_length: 0,
-              used_fuzzy_match: false,
-              content_for_replacement: content
-            }
+        case check_overlaps(sorted) do
+          :ok -> {:ok, sorted}
+          {:error, _} = err -> err
         end
     end
   end
 
-  defp find_edit_match(base_content, old_text, start_line, end_line) do
-    matches = :binary.matches(base_content, old_text)
+  defp find_single_match(content, old_string, line_ending, start_line, end_line) do
+    primary = adapt_to_line_ending(old_string, line_ending)
+
+    if byte_size(primary) == 0 do
+      {:error, :empty_old_string}
+    else
+      # Build candidate search strings in priority order:
+      # 1. Primary line-ending adaptation
+      # 2. Alternative line-ending adaptation (handles mixed-ending files)
+      # 3. Unicode-normalized variants (handles LLM smart quotes → ASCII)
+      alt = adapt_to_line_ending(old_string, other_line_ending(line_ending))
+
+      candidates =
+        Enum.uniq([
+          primary,
+          alt,
+          normalize_unicode_chars(primary),
+          normalize_unicode_chars(alt)
+        ])
+
+      Enum.reduce_while(candidates, {:error, :not_found}, fn candidate, _acc ->
+        case try_binary_match(content, candidate, start_line, end_line) do
+          {:error, :not_found} -> {:cont, {:error, :not_found}}
+          result -> {:halt, result}
+        end
+      end)
+    end
+  end
+
+  defp try_binary_match(content, search, start_line, end_line) do
+    matches = :binary.matches(content, search)
     has_range = not is_nil(start_line) or not is_nil(end_line)
 
-    cond do
-      matches == [] ->
+    case {matches, has_range} do
+      {[], _} ->
         {:error, :not_found}
 
-      not has_range ->
-        case matches do
-          [{index, length}] ->
-            {:ok, index, length}
+      {[{offset, len}], _} ->
+        {:ok, offset, len, search}
 
-          _ ->
-            {:error, :ambiguous, Enum.map(matches, &elem(&1, 0))}
-        end
+      {_, false} ->
+        line_numbers =
+          Enum.map(matches, fn {off, _} -> byte_offset_to_line(content, off) end)
 
-      has_range ->
-        {exact_start, exact_end, _start_idx, _end_idx} =
-          line_range_to_offsets(base_content, start_line, end_line)
+        {:error, {:ambiguous, line_numbers}}
 
-        exact_matches =
-          Enum.filter(matches, fn {idx, len} -> idx >= exact_start and idx + len <= exact_end end)
-
-        case exact_matches do
-          [{index, length}] ->
-            {:ok, index, length}
-
-          [] ->
-            tol_start_line = if start_line, do: max(1, start_line - 20), else: nil
-            tol_end_line = if end_line, do: end_line + 20, else: nil
-
-            {tol_start, tol_end, _start_idx, _end_idx} =
-              line_range_to_offsets(base_content, tol_start_line, tol_end_line)
-
-            tol_matches =
-              Enum.filter(matches, fn {idx, len} -> idx >= tol_start and idx + len <= tol_end end)
-
-            case tol_matches do
-              [{index, length}] ->
-                {:ok, index, length}
-
-              [] ->
-                {:error, :not_found}
-
-              _ ->
-                {:error, :ambiguous, Enum.map(tol_matches, &elem(&1, 0))}
-            end
-
-          _ ->
-            {:error, :ambiguous, Enum.map(exact_matches, &elem(&1, 0))}
-        end
+      {_, true} ->
+        filter_by_line_range(content, search, matches, start_line, end_line)
     end
   end
 
-  defp line_range_to_offsets(normalized_content, start_line, end_line) do
-    lines = String.split(normalized_content, "\n")
-    total_lines = length(lines)
+  defp filter_by_line_range(content, search, matches, start_line, end_line) do
+    {range_start, range_end} = line_range_to_byte_range(content, start_line, end_line)
 
-    start_idx = if start_line, do: max(0, min(start_line - 1, total_lines - 1)), else: 0
+    in_range =
+      Enum.filter(matches, fn {off, len} ->
+        off >= range_start and off + len <= range_end
+      end)
 
-    end_idx =
-      if end_line, do: max(start_idx, min(end_line - 1, total_lines - 1)), else: total_lines - 1
+    case in_range do
+      [{offset, len}] ->
+        {:ok, offset, len, search}
 
-    start_offset =
-      if start_idx > 0 do
-        (Enum.take(lines, start_idx) |> Enum.join("\n") |> String.length()) + 1
-      else
-        0
+      [] ->
+        # Retry with ±20 line tolerance for slightly-off line numbers
+        tol_start = if start_line, do: max(1, start_line - 20), else: start_line
+        tol_end = if end_line, do: end_line + 20, else: end_line
+        {tol_start_b, tol_end_b} = line_range_to_byte_range(content, tol_start, tol_end)
+
+        tol_matches =
+          Enum.filter(matches, fn {off, len} ->
+            off >= tol_start_b and off + len <= tol_end_b
+          end)
+
+        case tol_matches do
+          [{offset, len}] ->
+            {:ok, offset, len, search}
+
+          [] ->
+            {:error, :not_found}
+
+          _ ->
+            line_numbers =
+              Enum.map(tol_matches, fn {off, _} -> byte_offset_to_line(content, off) end)
+
+            {:error, {:ambiguous, line_numbers}}
+        end
+
+      _ ->
+        line_numbers =
+          Enum.map(in_range, fn {off, _} -> byte_offset_to_line(content, off) end)
+
+        {:error, {:ambiguous, line_numbers}}
+    end
+  end
+
+  defp check_overlaps(sorted_edits) do
+    sorted_edits
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.find_value(:ok, fn [prev, curr] ->
+      if prev.offset + prev.length > curr.offset do
+        {:error, {:overlap, prev.idx, curr.idx}}
       end
-
-    end_offset =
-      Enum.take(lines, end_idx + 1) |> Enum.join("\n") |> String.length()
-
-    {start_offset, end_offset, start_idx, end_idx}
-  end
-
-  defp get_line_number_for_offset(content, offset) do
-    before_substring = String.slice(content, 0, offset)
-    length(String.split(before_substring, "\n"))
-  end
-
-  defp find_all_occurrences_lines(content, matches) do
-    Enum.map(matches, fn idx ->
-      get_line_number_for_offset(content, idx)
     end)
   end
+
+  # ---------------------------------------------------------------------------
+  # Applying edits — byte-level splicing via binary_part/3
+  # ---------------------------------------------------------------------------
+
+  defp apply_edits(content, matched_edits, line_ending) do
+    # Apply in reverse byte-offset order so earlier offsets remain valid
+    matched_edits
+    |> Enum.reverse()
+    |> Enum.reduce(content, fn edit, acc ->
+      adapted_new = adapt_to_line_ending(edit.new_string, line_ending)
+      adapted_new = preserve_trailing_newline(edit.adapted_old, adapted_new, line_ending)
+
+      before = binary_part(acc, 0, edit.offset)
+      after_start = edit.offset + edit.length
+      after_part = binary_part(acc, after_start, byte_size(acc) - after_start)
+
+      before <> adapted_new <> after_part
+    end)
+  end
+
+  # If old_string ended with a line ending but new_string does not, append one.
+  # This prevents the extremely common LLM mistake of eating the separator between
+  # the replaced block and the following line.
+  defp preserve_trailing_newline(_old, new, _le) when byte_size(new) == 0, do: new
+
+  defp preserve_trailing_newline(old, new, line_ending) do
+    le = if line_ending == :crlf, do: "\r\n", else: "\n"
+
+    if String.ends_with?(old, le) and not String.ends_with?(new, le) do
+      new <> le
+    else
+      new
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Line ending handling
+  # ---------------------------------------------------------------------------
+
+  defp detect_line_ending(content) do
+    case :binary.match(content, "\r\n") do
+      {_, _} -> :crlf
+      :nomatch -> :lf
+    end
+  end
+
+  # Adapt text to the target line ending style.
+  # First normalizes to LF, then expands to CRLF if needed.
+  defp adapt_to_line_ending(text, :crlf) do
+    text
+    |> String.replace("\r\n", "\n")
+    |> String.replace("\n", "\r\n")
+  end
+
+  defp adapt_to_line_ending(text, :lf) do
+    String.replace(text, "\r\n", "\n")
+  end
+
+  defp other_line_ending(:crlf), do: :lf
+  defp other_line_ending(:lf), do: :crlf
+
+  # ---------------------------------------------------------------------------
+  # BOM handling
+  # ---------------------------------------------------------------------------
+
+  defp strip_bom(<<0xEF, 0xBB, 0xBF, rest::binary>>), do: {true, rest}
+  defp strip_bom(content), do: {false, content}
+
+  # ---------------------------------------------------------------------------
+  # Byte-offset / line-number utilities
+  # ---------------------------------------------------------------------------
+
+  defp byte_offset_to_line(content, target_offset) do
+    clamped = min(target_offset, byte_size(content))
+    before = binary_part(content, 0, clamped)
+    length(:binary.matches(before, "\n")) + 1
+  end
+
+  defp line_range_to_byte_range(content, start_line, end_line) do
+    newline_positions = :binary.matches(content, "\n")
+    total_bytes = byte_size(content)
+
+    # Line N starts at byte 0 (for line 1) or right after the (N-1)th newline
+    line_starts = [0 | Enum.map(newline_positions, fn {pos, _} -> pos + 1 end)]
+    total_lines = length(line_starts)
+
+    start_idx =
+      if start_line, do: max(0, min(start_line - 1, total_lines - 1)), else: 0
+
+    end_idx =
+      if end_line,
+        do: max(start_idx, min(end_line - 1, total_lines - 1)),
+        else: total_lines - 1
+
+    range_start = Enum.at(line_starts, start_idx, 0)
+
+    range_end =
+      if end_idx + 1 < length(line_starts),
+        do: Enum.at(line_starts, end_idx + 1),
+        else: total_bytes
+
+    {range_start, range_end}
+  end
+
+  # ---------------------------------------------------------------------------
+  # Parsing
+  # ---------------------------------------------------------------------------
+
+  defp parse_edits(params) do
+    case Map.get(params, "edits") do
+      edits when is_list(edits) and edits != [] ->
+        Enum.map(edits, &parse_edit_entry/1)
+
+      edits when is_binary(edits) ->
+        case Jason.decode(edits) do
+          {:ok, decoded} when is_list(decoded) and decoded != [] ->
+            Enum.map(decoded, &parse_edit_entry/1)
+
+          _ ->
+            [parse_single_edit(params)]
+        end
+
+      _ ->
+        [parse_single_edit(params)]
+    end
+  end
+
+  defp parse_edit_entry(edit) do
+    %{
+      old_string: sanitize_obfuscated_emails(Map.fetch!(edit, "old_string")),
+      new_string: sanitize_obfuscated_emails(Map.fetch!(edit, "new_string"))
+    }
+  end
+
+  defp parse_single_edit(params) do
+    %{
+      old_string: sanitize_obfuscated_emails(Map.fetch!(params, "old_string")),
+      new_string: sanitize_obfuscated_emails(Map.fetch!(params, "new_string"))
+    }
+  end
+
+  # ---------------------------------------------------------------------------
+  # Atomic write — temp file + rename for crash safety
+  # ---------------------------------------------------------------------------
+
+  defp atomic_write(path, content) do
+    tmp = "#{path}.tmp.#{System.unique_integer([:positive])}"
+
+    with :ok <- File.write(tmp, content),
+         :ok <- File.rename(tmp, path) do
+      :ok
+    else
+      {:error, reason} ->
+        File.rm(tmp)
+        {:error, reason}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Diff generation
+  # ---------------------------------------------------------------------------
 
   defp generate_diff(path, old_content, new_content) do
     tmp_old = Path.join(System.tmp_dir!(), "diff_old_#{System.unique_integer([:positive])}")
@@ -451,135 +514,24 @@ defmodule Beamcore.Agent.Tools.Edit do
              tmp_old,
              tmp_new
            ]) do
-        {diff_out, _status} ->
-          diff_out
+        {diff_out, _status} -> diff_out
       end
     rescue
-      _ ->
-        ""
+      _ -> ""
     after
       File.rm(tmp_old)
       File.rm(tmp_new)
     end
   end
 
-  defp apply_edits_to_normalized_content(normalized_content, edits, _path, start_line, end_line) do
-    normalized_edits =
-      Enum.map(edits, fn edit ->
-        old_normalized = normalize_to_lf(edit.old_string)
-        new_normalized = normalize_to_lf(edit.new_string)
+  # ---------------------------------------------------------------------------
+  # Error reporting — fuzzy diagnostics (read-only, never used for matching)
+  # ---------------------------------------------------------------------------
 
-        %{
-          old_string: old_normalized,
-          new_string: align_newlines(old_normalized, new_normalized)
-        }
-      end)
-
-    Enum.each(normalized_edits, fn edit ->
-      if edit.old_string == "" do
-        throw({:error, :empty_old_string})
-      end
-    end)
-
-    any_fuzzy? =
-      Enum.any?(normalized_edits, fn edit ->
-        match_result = fuzzy_find_text(normalized_content, edit.old_string)
-        match_result.used_fuzzy_match
-      end)
-
-    base_content =
-      if any_fuzzy? do
-        normalize_for_fuzzy_match(normalized_content)
-      else
-        normalized_content
-      end
-
-    matched_edits =
-      normalized_edits
-      |> Enum.with_index()
-      |> Enum.map(fn {edit, idx} ->
-        case find_edit_match(base_content, edit.old_string, start_line, end_line) do
-          {:ok, index, length} ->
-            %{
-              edit_index: idx,
-              match_index: index,
-              match_length: length,
-              new_string: edit.new_string
-            }
-
-          {:error, :not_found} ->
-            throw({:error, {:not_found, idx, edit.old_string}})
-
-          {:error, :ambiguous, match_indices} ->
-            line_numbers = find_all_occurrences_lines(base_content, match_indices)
-            throw({:error, {:ambiguous, idx, edit.old_string, line_numbers}})
-        end
-      end)
-
-    sorted_matched_edits = Enum.sort_by(matched_edits, & &1.match_index)
-
-    if length(sorted_matched_edits) > 1 do
-      Enum.reduce(sorted_matched_edits, nil, fn
-        current, nil ->
-          current
-
-        current, previous ->
-          if previous.match_index + previous.match_length > current.match_index do
-            throw({:error, {:overlap, previous.edit_index, current.edit_index}})
-          else
-            current
-          end
-      end)
-    end
-
-    new_content =
-      Enum.reduce(Enum.reverse(sorted_matched_edits), base_content, fn edit, acc ->
-        before_part = String.slice(acc, 0, edit.match_index)
-        after_part = String.slice(acc, (edit.match_index + edit.match_length)..-1//1)
-        before_part <> edit.new_string <> after_part
-      end)
-
-    if base_content == new_content do
-      throw({:error, :no_change})
-    end
-
-    {base_content, new_content}
-  end
-
-  defp find_best_fuzzy_match(file_lines, old_lines) do
-    k = length(old_lines)
-    total = length(file_lines)
-
-    if total >= k and k > 0 do
-      {best_idx, best_sim} =
-        Enum.reduce(0..(total - k), {-1, 0.0}, fn i, {best_i, best_s} ->
-          sub = Enum.slice(file_lines, i, k)
-
-          sim =
-            sub
-            |> Enum.zip(old_lines)
-            |> Enum.map(fn {fl, ol} -> String.jaro_distance(fl, ol) end)
-            |> Enum.sum()
-            |> Kernel./(k)
-
-          if sim > best_s do
-            {i, sim}
-          else
-            {best_i, best_s}
-          end
-        end)
-
-      if best_sim > 0.5 do
-        {:ok, best_idx, k, best_sim}
-      else
-        :error
-      end
-    else
-      :error
-    end
-  end
-
-  defp report_not_found_error(file_lines, old_lines, start_line, end_line, _sep) do
+  defp report_not_found_diagnostic(content, old_string, start_line, end_line, line_ending) do
+    le = if line_ending == :crlf, do: "\r\n", else: "\n"
+    file_lines = String.split(content, le)
+    old_lines = old_string |> String.replace("\r\n", "\n") |> String.split("\n")
     total = length(file_lines)
 
     case find_best_fuzzy_match(file_lines, old_lines) do
@@ -618,69 +570,45 @@ defmodule Beamcore.Agent.Tools.Edit do
     end
   end
 
-  defp align_newlines(old_string, new_string) do
-    new_string
-    |> then(&align_leading_newlines(old_string, &1))
-    |> then(&align_trailing_newlines(old_string, &1))
-  end
+  defp find_best_fuzzy_match(file_lines, old_lines) do
+    k = length(old_lines)
+    total = length(file_lines)
 
-  defp count_leading_newlines(binary) when is_binary(binary) do
-    count_leading_newlines_byte(binary, 0, byte_size(binary), 0)
-  end
+    if total >= k and k > 0 do
+      {best_idx, best_sim} =
+        Enum.reduce(0..(total - k), {-1, 0.0}, fn i, {best_i, best_s} ->
+          sub = Enum.slice(file_lines, i, k)
 
-  defp count_leading_newlines_byte(_binary, len, len, acc), do: acc
+          sim =
+            Enum.zip(sub, old_lines)
+            |> Enum.map(fn {fl, ol} -> String.jaro_distance(fl, ol) end)
+            |> Enum.sum()
+            |> Kernel./(k)
 
-  defp count_leading_newlines_byte(binary, index, len, acc) do
-    case :binary.at(binary, index) do
-      10 -> count_leading_newlines_byte(binary, index + 1, len, acc + 1)
-      _ -> acc
-    end
-  end
+          if sim > best_s, do: {i, sim}, else: {best_i, best_s}
+        end)
 
-  defp align_leading_newlines(old_string, new_string) do
-    if new_string == "" do
-      new_string
+      if best_sim > 0.5, do: {:ok, best_idx, k, best_sim}, else: :error
     else
-      old_newlines = count_leading_newlines(old_string)
-      new_newlines = count_leading_newlines(new_string)
-
-      if old_newlines > new_newlines do
-        String.duplicate("\n", old_newlines - new_newlines) <> new_string
-      else
-        new_string
-      end
+      :error
     end
   end
 
-  defp count_trailing_newlines(binary) when is_binary(binary) do
-    count_trailing_newlines_byte(binary, byte_size(binary) - 1, 0)
-  end
-
-  defp count_trailing_newlines_byte(_binary, -1, acc), do: acc
-
-  defp count_trailing_newlines_byte(binary, index, acc) do
-    case :binary.at(binary, index) do
-      10 -> count_trailing_newlines_byte(binary, index - 1, acc + 1)
-      _ -> acc
-    end
-  end
-
-  defp align_trailing_newlines(old_string, new_string) do
-    if new_string == "" do
-      new_string
-    else
-      old_newlines = count_trailing_newlines(old_string)
-      new_newlines = count_trailing_newlines(new_string)
-
-      if old_newlines > new_newlines do
-        new_string <> String.duplicate("\n", old_newlines - new_newlines)
-      else
-        new_string
-      end
-    end
-  end
+  # ---------------------------------------------------------------------------
+  # Sanitization
+  # ---------------------------------------------------------------------------
 
   defp sanitize_obfuscated_emails(content) when is_binary(content) do
     String.replace(content, ~r/\[email[\s\x{00A0}]*protected\]/iu, "$@")
+  end
+
+  # Normalize common Unicode typography to ASCII equivalents.
+  # Only applied to the search string (old_string), never to file content.
+  defp normalize_unicode_chars(text) do
+    text
+    |> String.replace(~r/[\x{2018}\x{2019}\x{201A}\x{201B}]/u, "'")
+    |> String.replace(~r/[\x{201C}\x{201D}\x{201E}\x{201F}]/u, "\"")
+    |> String.replace(~r/[\x{2010}\x{2011}\x{2012}\x{2013}\x{2014}\x{2015}\x{2212}]/u, "-")
+    |> String.replace(~r/[\x{00A0}\x{2002}-\x{200A}\x{202F}\x{205F}\x{3000}]/u, " ")
   end
 end

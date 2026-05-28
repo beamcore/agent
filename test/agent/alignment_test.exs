@@ -2,7 +2,6 @@ defmodule Beamcore.Agent.AlignmentTest do
   use ExUnit.Case
 
   alias Beamcore.Alignment
-  alias Beamcore.Agent.Tools.Edit
 
   @test_dir "test/tmp_alignment_test"
 
@@ -48,32 +47,7 @@ defmodule Beamcore.Agent.AlignmentTest do
     assert {:conflict, 70, "agent_2"} = Alignment.claim_file(path, "agent_3", "hash_xyz")
   end
 
-  test "edit tool intercepts and rejects high-score alignment conflicts" do
-    file_path = Path.join(@test_dir, "edit_conflict.txt")
-    File.write!(file_path, "original content")
-
-    # Pretend "agent_other" claimed it with the same hash
-    hash = :crypto.hash(:sha256, "original content") |> Base.encode16(case: :lower)
-    assert {:ok, :claimed} = Alignment.claim_file(Path.expand(file_path), "agent_other", hash)
-
-    # Now we call edit tool under "agent_default" (should conflict since score is 100)
-    params = %{
-      "path" => file_path,
-      "old_string" => "original content",
-      "new_string" => "new content",
-      "agent" => "agent_default"
-    }
-
-    output = Edit.execute(params)
-
-    assert String.starts_with?(
-             output,
-             "Error: Alignment Conflict. Another agent 'agent_other' is actively working on"
-           )
-
-    assert output =~ "Conflict Score: 100"
-
-    # Verify file remains unchanged
-    assert File.read!(file_path) == "original content"
-  end
+  # NOTE: The alignment guard was removed from the edit tool. File coordination
+  # belongs in a middleware/interceptor layer, not baked into individual tools.
+  # The Alignment GenServer itself is tested by the tests above.
 end
