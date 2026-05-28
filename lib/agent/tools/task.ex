@@ -101,7 +101,7 @@ defmodule Beamcore.Agent.Tools.Task do
   end
 
   defp process_subagent(_messages, _depth, name, %{consecutive_errors: errors}, _policy)
-       when errors >= 3 do
+        when errors >= 3 do
     "Error: Sub-agent #{name} hit #{errors} consecutive API errors. Aborting to prevent loop."
   end
 
@@ -113,7 +113,7 @@ defmodule Beamcore.Agent.Tools.Task do
       |> Dispatcher.tool_specs()
       |> Enum.reject(fn spec -> spec.function.name == "task" end)
 
-    trimmed = trim_messages(messages)
+    trimmed = messages |> trim_messages() |> ensure_valid_message_order()
 
     case API.execute(client, trimmed, tools, {:subagent, name}) do
       {:ok, %{message: message, raw_response: _raw_response}} ->
@@ -164,7 +164,7 @@ defmodule Beamcore.Agent.Tools.Task do
       {:error, %OpenaiEx.Error{kind: :bad_request}} ->
         # Likely context overflow — try aggressive trimming once
         if not state.trimmed_on_bad_request do
-          aggressively_trimmed = aggressive_trim_messages(messages)
+          aggressively_trimmed = messages |> aggressive_trim_messages() |> ensure_valid_message_order()
 
           new_state = %{
             state
@@ -224,6 +224,23 @@ defmodule Beamcore.Agent.Tools.Task do
     recent
     |> Enum.frequencies()
     |> Enum.any?(fn {_fp, count} -> count >= 3 end)
+  end
+
+  @doc false
+  # Ensures the first non-system message is a user or assistant message.
+  # If the first non-system message is a tool response, prepends a dummy user message.
+  defp ensure_valid_message_order(messages) do
+    case Enum.find_value(messages, fn msg -> (msg[:role] || msg["role"]) != "system" end) do
+      nil -> messages  # No non-system messages (edge case, but safe)
+      first_non_system ->
+        role = first_non_system[:role] || first_non_system["role"]
+        if role in ["user", "assistant"] do
+          messages
+        else
+          # Prepend a dummy user message to satisfy the API requirement
+          [%{role: "user", content: "Continue processing."} | messages]
+        end
+    end
   end
 
   @doc false
