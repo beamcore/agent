@@ -246,11 +246,20 @@ Example:
     "edit": "allow",
     "patch": "allow",
     "fs": "allow",
-    "git": "allow",
-    "mix": "allow",
-    "image_generation": "allow",
-    "task": "deny",
-    "web_get": "deny"
+        "git": "allow",
+        "mix": "allow",
+        "memory": "allow",
+        "python": "allow",
+        "node": "allow",
+        "make": "allow",
+        "go": "allow",
+        "rust": "allow",
+        "terraform": "deny",
+        "ruby": "allow",
+        "bazel": "allow",
+        "image_generation": "allow",
+        "task": "deny",
+        "web_get": "deny"
   }
 }
 ```
@@ -278,6 +287,15 @@ Example:
 | `fs` | Performs limited filesystem operations; destructive actions require explicit confirmation. |
 | `git` | Performs bounded git operations inside the workspace. |
 | `mix` | Runs safe Mix commands such as `format --check-formatted`, `compile`, `test`, and `validate`. |
+| `memory` | Recalls, remembers, lists, and forgets scoped persistent repository knowledge. |
+| `python` | Runs allowlisted Python workflow commands such as test, lint, format, type-check, build, validate, and venv. |
+| `node` | Runs allowlisted npm/npx workflow commands including test, lint, build, format, install, and Playwright test/report commands. |
+| `make` | Lists Makefile targets or runs one explicit target. |
+| `go` | Runs allowlisted Go commands: test, fmt, vet, build, and mod-tidy. |
+| `rust` | Runs allowlisted Cargo commands: test, check, fmt, clippy, and build. |
+| `terraform` | Runs allowlisted Terraform commands: fmt, validate, and plan. Apply/destroy are not exposed. |
+| `ruby` | Runs allowlisted Ruby/Rails commands such as test, rspec, rubocop, routes, and migration status. |
+| `bazel` | Runs allowlisted Bazel commands: test, build, and query. |
 | `image_generation` | Uses Mistral Agents with the built-in `image_generation` tool, downloads generated files, and saves them to allowed workspace paths. |
 | `web_get` | Fetches external URLs using HTTP GET only when explicitly enabled, using a token-efficient HTML cleaning pipeline. |
 | `task` | Delegates to sub-agents only when explicitly enabled. |

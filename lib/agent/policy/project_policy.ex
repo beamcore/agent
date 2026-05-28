@@ -13,7 +13,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   @example_path ".beamcore/policy.example.json"
   @protected_paths [@config_path]
   @process_bypass_key {__MODULE__, :bypassed}
-  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation)
+  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel)
   @write_tools ~w(write edit patch fs image_generation)
   @read_tools ~w(read grep glob tree)
 
@@ -369,6 +369,17 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     |> allow_all(policy, :read)
   end
 
+  defp allow_tool_paths(policy, name, args)
+       when name in ~w(python node make go rust terraform ruby bazel) do
+    args
+    |> path_values(["workdir"])
+    |> case do
+      [] -> ["."]
+      paths -> paths
+    end
+    |> allow_all(policy, :read)
+  end
+
   defp allow_tool_paths(_policy, _name, _args), do: :ok
 
   defp allow_copy(policy, args) do
@@ -606,6 +617,15 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
         "fs" => "allow",
         "git" => "allow",
         "mix" => "allow",
+        "memory" => "allow",
+        "python" => "allow",
+        "node" => "allow",
+        "make" => "allow",
+        "go" => "allow",
+        "rust" => "allow",
+        "terraform" => "deny",
+        "ruby" => "allow",
+        "bazel" => "allow",
         "image_generation" => "allow",
         "task" => "deny",
         "web_get" => "deny"

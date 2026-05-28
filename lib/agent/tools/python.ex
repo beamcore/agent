@@ -4,7 +4,10 @@ defmodule Beamcore.Agent.Tools.Python do
   Supports virtual environments, dependency management, testing, linting, formatting, and type checking.
   """
 
-  @allowed_commands ~w(test lint format type-check deps install build publish clean validate venv)
+  alias Beamcore.Agent.Tools.PathSafety
+
+  @legacy_commands ~w(test lint format type-check deps install build publish clean validate venv)
+  @allowed_commands ~w(test lint format type-check build validate venv)
   @output_tail_lines 40
   @default_max_truncate 10_000
 
@@ -27,17 +30,16 @@ defmodule Beamcore.Agent.Tools.Python do
   Run safe, scoped Python project management commands.
 
   Supports:
-  - Virtual environment management (create, activate, list)
+  - Virtual environment management (create, list)
   - Testing with pytest
   - Linting with ruff
   - Formatting with black
   - Type checking with mypy
-  - Dependency management with pip
-  - Build and publish with build/twine
+  - Building with build
   - Validation workflow (format, lint, type-check, test)
 
   Returns structured JSON output for agent consumption.
-  An essential tool for Python project testing, formatting, dependency management, and validation.
+  An essential tool for Python project testing, formatting, building, and validation.
   """
 
   def name, do: "python"
@@ -85,6 +87,23 @@ defmodule Beamcore.Agent.Tools.Python do
         validate(venv) |> encode()
 
       command in @allowed_commands ->
+        run_allowed(command, args, venv) |> encode()
+
+      true ->
+        unsupported(command, args) |> encode()
+    end
+  end
+
+  def execute_legacy(params) do
+    command = Map.fetch!(params, "command")
+    args = Map.get(params, "args", "")
+    venv = Map.get(params, "venv", "")
+
+    cond do
+      command == "validate" ->
+        validate(venv) |> encode()
+
+      command in @legacy_commands ->
         run(command, args, venv) |> encode()
 
       true ->
@@ -180,6 +199,58 @@ defmodule Beamcore.Agent.Tools.Python do
       )
     end
   end
+
+  defp run_allowed("venv", args, venv), do: run_safe_venv_command(args, venv)
+  defp run_allowed(command, args, venv), do: run(command, args, venv)
+
+  defp run_safe_venv_command(args, venv) do
+    parts = String.split(args, " ", trim: true)
+    subcommand = if parts != [], do: hd(parts), else: "list"
+    args_tail = if parts != [], do: tl(parts), else: []
+    venv_name = if args_tail != [], do: hd(args_tail), else: venv
+
+    result =
+      case subcommand do
+        "create" when length(args_tail) >= 1 ->
+          create_safe_venv(hd(args_tail))
+
+        "list" ->
+          list_venvs()
+
+        "" ->
+          list_venvs()
+
+        unsupported_subcommand ->
+          unsupported("venv #{unsupported_subcommand}", args)
+      end
+
+    result
+    |> Map.put("name", "venv")
+    |> Map.put("command", "venv")
+    |> Map.put("args", args)
+    |> maybe_put_venv(venv_name)
+  end
+
+  defp create_safe_venv(venv_name) do
+    with {:ok, _path} <- PathSafety.resolve(venv_name, allow_missing: true) do
+      create_venv(venv_name)
+    else
+      {:error, reason} ->
+        %{
+          "ok" => false,
+          "exit_code" => nil,
+          "stdout" => "",
+          "stderr" => "",
+          "output_tail" => "",
+          "output_tail_lines" => 0,
+          "truncated" => false,
+          "summary" => reason
+        }
+    end
+  end
+
+  defp maybe_put_venv(result, ""), do: result
+  defp maybe_put_venv(result, venv_name), do: Map.put(result, "venv", venv_name)
 
   defp run_venv_command(args, venv, name) do
     # Parse venv subcommand
@@ -424,6 +495,21 @@ defmodule Beamcore.Agent.Tools.Python do
       "truncated" => false,
       "summary" =>
         "Disallowed command '#{command}'. Allowed: #{Enum.join(@allowed_commands, ", ")}"
+    }
+  end
+
+  defp unsupported(command, args) do
+    %{
+      "ok" => false,
+      "command" => command,
+      "args" => args,
+      "exit_code" => nil,
+      "stdout" => "",
+      "stderr" => "",
+      "output_tail" => "",
+      "output_tail_lines" => 0,
+      "truncated" => false,
+      "summary" => "Unsupported python command: #{command}"
     }
   end
 

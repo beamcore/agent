@@ -38,7 +38,7 @@ defmodule Beamcore.Agent.Tools.PythonTest do
     assert result["output_tail"] == ""
     assert result["output_tail_lines"] == 0
     assert result["truncated"] == false
-    assert result["summary"] =~ "Disallowed command 'unknown'"
+    assert result["summary"] == "Unsupported python command: unknown"
   end
 
   test "rejects dangerous python commands" do
@@ -46,7 +46,65 @@ defmodule Beamcore.Agent.Tools.PythonTest do
       result = Python.execute(%{"command" => command}) |> decode!()
 
       assert result["ok"] == false
-      assert result["summary"] =~ "Disallowed command '#{command}'"
+      assert result["summary"] == "Unsupported python command: #{command}"
+    end
+  end
+
+  test "does not advertise legacy network or publishing commands in the model spec" do
+    commands = Python.spec().function.parameters.properties.command.enum
+
+    assert "test" in commands
+    assert "validate" in commands
+    refute "deps" in commands
+    refute "install" in commands
+    refute "publish" in commands
+    refute "clean" in commands
+  end
+
+  test "rejects legacy network or publishing commands through model-callable execution" do
+    for command <- ~w(deps install publish clean) do
+      result = Python.execute(%{"command" => command}) |> decode!()
+
+      refute result["ok"]
+      assert result["summary"] == "Unsupported python command: #{command}"
+    end
+  end
+
+  test "keeps legacy python commands behind explicit legacy execution" do
+    parent = self()
+
+    runner = fn "python3", args, _opts ->
+      send(parent, {:python_called, args})
+      {"ok", 0}
+    end
+
+    with_runner(runner, fn ->
+      assert Python.execute_legacy(%{"command" => "deps"}) |> decode!() |> Map.fetch!("ok")
+
+      assert Python.execute_legacy(%{"command" => "install", "args" => "requests"})
+             |> decode!()
+             |> Map.fetch!("ok")
+
+      assert Python.execute_legacy(%{"command" => "publish", "args" => "dist/*"})
+             |> decode!()
+             |> Map.fetch!("ok")
+
+      assert Python.execute_legacy(%{"command" => "clean"}) |> decode!() |> Map.fetch!("ok")
+    end)
+
+    assert_receive {:python_called, ["-m", "pip", "list"]}
+    assert_receive {:python_called, ["-m", "pip", "install", "requests"]}
+    assert_receive {:python_called, ["-m", "twine", "upload", "dist/*"]}
+    assert_receive {:python_called, ["-m", "pip", "cache", "purge"]}
+  end
+
+  test "model-callable venv rejects activate and remove" do
+    for subcommand <- ~w(activate remove) do
+      result =
+        Python.execute(%{"command" => "venv", "args" => "#{subcommand} .venv"}) |> decode!()
+
+      refute result["ok"]
+      assert result["summary"] == "Unsupported python command: venv #{subcommand}"
     end
   end
 

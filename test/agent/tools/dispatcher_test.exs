@@ -23,6 +23,10 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert "task" in names
     assert "web_get" in names
     assert "image_generation" in names
+
+    for tool <- ~w(python node make go rust terraform ruby bazel) do
+      assert tool in names
+    end
   end
 
   test "tool_specs includes task only when policy allows explicit delegation" do
@@ -136,6 +140,38 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     refute result =~ "Mutation requires"
     refute result =~ "Tool call blocked"
+  end
+
+  test "python legacy commands are hidden from specs and blocked by dispatcher" do
+    parent = self()
+
+    previous = Application.get_env(:agent, :python_tool_runner)
+
+    Application.put_env(:agent, :python_tool_runner, fn "python3", args, _opts ->
+      send(parent, {:python_called, args})
+      {"ok", 0}
+    end)
+
+    try do
+      spec =
+        Dispatcher.tool_specs()
+        |> Enum.find(&(&1.function.name == "python"))
+
+      refute "publish" in spec.function.parameters.properties.command.enum
+
+      result = Dispatcher.execute("python", %{"command" => "publish", "args" => "dist/*"})
+      decoded = Jason.decode!(result)
+
+      refute decoded["ok"]
+      assert decoded["summary"] == "Unsupported python command: publish"
+      refute_receive {:python_called, _args}, 50
+    after
+      if previous do
+        Application.put_env(:agent, :python_tool_runner, previous)
+      else
+        Application.delete_env(:agent, :python_tool_runner)
+      end
+    end
   end
 
   test "execute blocks unlisted writes in restricted-write mode" do

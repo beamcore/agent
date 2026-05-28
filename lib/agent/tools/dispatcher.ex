@@ -21,7 +21,15 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     Beamcore.Agent.Tools.Plan,
     Beamcore.Agent.Tools.ImageGeneration,
     Beamcore.Agent.Tools.Mix,
-    Beamcore.Agent.Tools.Memory
+    Beamcore.Agent.Tools.Memory,
+    Beamcore.Agent.Tools.Python,
+    Beamcore.Agent.Tools.Node,
+    Beamcore.Agent.Tools.Make,
+    Beamcore.Agent.Tools.Go,
+    Beamcore.Agent.Tools.Rust,
+    Beamcore.Agent.Tools.Terraform,
+    Beamcore.Agent.Tools.Ruby,
+    Beamcore.Agent.Tools.Bazel
   ]
 
   @doc """
@@ -83,6 +91,11 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   """
   def conductor_tool_specs(policy \\ ToolPolicy.default()) do
     tool_specs(policy)
+  end
+
+  @doc false
+  def registered_tool_names do
+    Enum.map(@tools, & &1.name())
   end
 
   defp execute_tool(tool, name, args) do
