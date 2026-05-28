@@ -48,21 +48,39 @@ defmodule Beamcore.TUI.Wrap do
     text
     |> to_string()
     |> String.split("\n")
-    |> drop_fence_lines(false, [])
-    |> Enum.reject(&markdown_table_separator?/1)
-    |> Enum.reject(&markdown_rule?/1)
-    |> Enum.map(&normalize_markdown_line/1)
-    |> compact_blank_lines()
+    |> process_markdown_lines(false, [])
     |> Enum.join("\n")
   end
 
-  defp drop_fence_lines([], _in_fence?, acc), do: Enum.reverse(acc)
+  defp process_markdown_lines([], _in_fence?, acc), do: Enum.reverse(acc)
 
-  defp drop_fence_lines([line | rest], in_fence?, acc) do
-    if line |> String.trim() |> String.starts_with?("```") do
-      drop_fence_lines(rest, not in_fence?, acc)
+  defp process_markdown_lines([line | rest], in_fence?, acc) do
+    trimmed = String.trim(line)
+
+    if String.starts_with?(trimmed, "```") do
+      process_markdown_lines(rest, not in_fence?, acc)
     else
-      drop_fence_lines(rest, in_fence?, [line | acc])
+      if in_fence? do
+        # Inside code block: preserve exactly as is
+        process_markdown_lines(rest, true, [line | acc])
+      else
+        # Outside code block: apply filters and normalization
+        cond do
+          markdown_table_separator?(line) or markdown_rule?(line) ->
+            process_markdown_lines(rest, false, acc)
+
+          trimmed == "" ->
+            case acc do
+              [] -> process_markdown_lines(rest, false, acc)
+              ["" | _] -> process_markdown_lines(rest, false, acc)
+              _ -> process_markdown_lines(rest, false, ["" | acc])
+            end
+
+          true ->
+            normalized = normalize_markdown_line(line)
+            process_markdown_lines(rest, false, [normalized | acc])
+        end
+      end
     end
   end
 
@@ -117,10 +135,10 @@ defmodule Beamcore.TUI.Wrap do
 
   defp normalize_markdown_inline(line) do
     line
-    |> String.replace(~r/\*\*([^*]+)\*\*/, "\\1")
-    |> String.replace(~r/__(.*?)__/, "\\1")
-    |> String.replace(~r/(?<!\*)\*([^*]+)\*(?!\*)/, "\\1")
-    |> String.replace(~r/_([^_]+)_/, "\\1")
+    |> String.replace(~r/\*\*([^\s*](?:(?!\*\*).)*?[^\s*])\*\*/, "\\1")
+    |> String.replace(~r/(?<![a-zA-Z0-9])__([^\s_](?:(?!__).)*?[^\s_])__(?![a-zA-Z0-9])/, "\\1")
+    |> String.replace(~r/(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/, "\\1")
+    |> String.replace(~r/(?<![a-zA-Z0-9])_([^\s_](?:[^_]*[^\s_])?)_(?![a-zA-Z0-9])/, "\\1")
     |> String.replace(~r/`([^`]+)`/, "\\1")
   end
 
@@ -128,19 +146,6 @@ defmodule Beamcore.TUI.Wrap do
     line
     |> String.replace(~r/^\s*[-*+]\s+/, "  • ")
     |> String.replace(~r/^\s*(\d+)\.\s+/, "  \\1. ")
-  end
-
-  defp compact_blank_lines(lines) do
-    lines
-    |> Enum.reduce([], fn line, acc ->
-      cond do
-        String.trim(line) != "" -> [line | acc]
-        acc == [] -> acc
-        hd(acc) == "" -> acc
-        true -> ["" | acc]
-      end
-    end)
-    |> Enum.reverse()
   end
 
   defp wrap_lines([], _width, _code?, acc), do: acc

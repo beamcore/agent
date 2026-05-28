@@ -84,8 +84,10 @@ defmodule Beamcore.Agent.Tools.Edit do
     with :ok <- ProjectPolicy.allowed_write_path?(path),
          {:ok, expanded_path} <- PathSafety.resolve(path) do
       # Alignment Interception Guard Layer (First brick)
-      agent_name = Map.get(params, "agent_name") || Map.get(params, "agent") || System.get_env("AGENT_NAME") || "agent_default"
-      
+      agent_name =
+        Map.get(params, "agent_name") || Map.get(params, "agent") || System.get_env("AGENT_NAME") ||
+          "agent_default"
+
       file_hash =
         case File.read(expanded_path) do
           {:ok, content} -> :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
@@ -627,6 +629,7 @@ defmodule Beamcore.Agent.Tools.Edit do
   end
 
   defp count_leading_newlines_byte(_binary, len, len, acc), do: acc
+
   defp count_leading_newlines_byte(binary, index, len, acc) do
     case :binary.at(binary, index) do
       10 -> count_leading_newlines_byte(binary, index + 1, len, acc + 1)
@@ -654,6 +657,7 @@ defmodule Beamcore.Agent.Tools.Edit do
   end
 
   defp count_trailing_newlines_byte(_binary, -1, acc), do: acc
+
   defp count_trailing_newlines_byte(binary, index, acc) do
     case :binary.at(binary, index) do
       10 -> count_trailing_newlines_byte(binary, index - 1, acc + 1)

@@ -101,7 +101,7 @@ defmodule Beamcore.Agent.Tools.Task do
   end
 
   defp process_subagent(_messages, _depth, name, %{consecutive_errors: errors}, _policy)
-        when errors >= 3 do
+       when errors >= 3 do
     "Error: Sub-agent #{name} hit #{errors} consecutive API errors. Aborting to prevent loop."
   end
 
@@ -164,7 +164,8 @@ defmodule Beamcore.Agent.Tools.Task do
       {:error, %OpenaiEx.Error{kind: :bad_request}} ->
         # Likely context overflow — try aggressive trimming once
         if not state.trimmed_on_bad_request do
-          aggressively_trimmed = messages |> aggressive_trim_messages() |> ensure_valid_message_order()
+          aggressively_trimmed =
+            messages |> aggressive_trim_messages() |> ensure_valid_message_order()
 
           new_state = %{
             state
@@ -231,9 +232,13 @@ defmodule Beamcore.Agent.Tools.Task do
   # If the first non-system message is a tool response, prepends a dummy user message.
   defp ensure_valid_message_order(messages) do
     case Enum.find_value(messages, fn msg -> (msg[:role] || msg["role"]) != "system" end) do
-      nil -> messages  # No non-system messages (edge case, but safe)
+      # No non-system messages (edge case, but safe)
+      nil ->
+        messages
+
       first_non_system ->
         role = first_non_system[:role] || first_non_system["role"]
+
         if role in ["user", "assistant"] do
           messages
         else
