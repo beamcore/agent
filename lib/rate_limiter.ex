@@ -30,7 +30,14 @@ defmodule Beamcore.RateLimiter do
   @impl true
   def init(opts) do
     interval = Keyword.get(opts, :interval) || Application.get_env(:agent, :rate_limit_ms, 1000)
-    {:ok, %{last_request_time: nil, interval: interval}}
+
+    {:ok,
+     %{
+       last_request_time: nil,
+       interval: interval,
+       waiting: :queue.new(),
+       timer_ref: nil
+     }}
   end
 
   @impl true
@@ -38,24 +45,70 @@ defmodule Beamcore.RateLimiter do
     {:reply, :ok, state}
   end
 
-  def handle_call(:wait, _from, %{last_request_time: nil} = state) do
+  def handle_call(:wait, _from, %{last_request_time: nil, timer_ref: nil} = state) do
     now = System.monotonic_time(:millisecond)
     {:reply, :ok, %{state | last_request_time: now}}
   end
 
-  def handle_call(:wait, _from, state) do
+  def handle_call(:wait, from, state) do
     now = System.monotonic_time(:millisecond)
     elapsed = now - state.last_request_time
 
-    if elapsed >= state.interval do
+    if elapsed >= state.interval and :queue.is_empty(state.waiting) do
       # More than interval has passed, proceed immediately
       {:reply, :ok, %{state | last_request_time: now}}
     else
-      # Need to wait
-      wait_time = state.interval - elapsed
-      Process.sleep(wait_time)
-      # Record the logical start time of this request as if it started after the wait_time
-      {:reply, :ok, %{state | last_request_time: now + wait_time}}
+      state =
+        state
+        |> enqueue_waiter(from)
+        |> ensure_timer(now)
+
+      {:noreply, state}
     end
+  end
+
+  @impl true
+  def handle_info({:release_next, ref, release_at}, %{timer_ref: ref} = state) do
+    case :queue.out(state.waiting) do
+      {{:value, from}, waiting} ->
+        GenServer.reply(from, :ok)
+
+        state = %{state | waiting: waiting, last_request_time: release_at, timer_ref: nil}
+
+        {:noreply, ensure_timer(state, System.monotonic_time(:millisecond))}
+
+      {:empty, waiting} ->
+        {:noreply, %{state | waiting: waiting, timer_ref: nil}}
+    end
+  end
+
+  def handle_info({:release_next, _ref, _release_at}, state), do: {:noreply, state}
+  def handle_info(:release_next, state), do: {:noreply, state}
+
+  defp enqueue_waiter(state, from), do: %{state | waiting: :queue.in(from, state.waiting)}
+
+  defp ensure_timer(%{timer_ref: ref} = state, _now) when not is_nil(ref), do: state
+
+  defp ensure_timer(%{waiting: waiting} = state, _now) do
+    if :queue.is_empty(waiting) do
+      state
+    else
+      {wait_time, release_at} = release_schedule(state)
+      ref = make_ref()
+      Process.send_after(self(), {:release_next, ref, release_at}, wait_time)
+      %{state | timer_ref: ref}
+    end
+  end
+
+  defp release_schedule(%{last_request_time: nil}) do
+    now = System.monotonic_time(:millisecond)
+    {0, now}
+  end
+
+  defp release_schedule(state) do
+    now = System.monotonic_time(:millisecond)
+    elapsed = now - state.last_request_time
+    wait_time = max(state.interval - elapsed, 0)
+    {wait_time, now + wait_time}
   end
 end

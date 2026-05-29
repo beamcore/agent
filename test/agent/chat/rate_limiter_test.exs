@@ -1,5 +1,5 @@
 defmodule Beamcore.Agent.Chat.RateLimiterTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Beamcore.RateLimiter
 
@@ -42,7 +42,105 @@ defmodule Beamcore.Agent.Chat.RateLimiterTest do
     GenServer.stop(pid)
   end
 
+  test "server remains responsive while a caller waits for a reserved slot" do
+    {:ok, pid} = GenServer.start_link(RateLimiter, interval: 80)
+
+    assert :ok == GenServer.call(pid, :wait)
+
+    caller =
+      Task.async(fn ->
+        GenServer.call(pid, :wait, :infinity)
+      end)
+
+    Process.sleep(10)
+
+    assert %{interval: 80} = :sys.get_state(pid, 50)
+    assert :ok == Task.await(caller, 200)
+
+    GenServer.stop(pid)
+  end
+
+  test "concurrent callers are released sequentially with one active timer" do
+    {:ok, pid} = GenServer.start_link(RateLimiter, interval: 60)
+
+    assert :ok == GenServer.call(pid, :wait)
+
+    callers =
+      for _index <- 1..3 do
+        Task.async(fn ->
+          :ok = GenServer.call(pid, :wait, :infinity)
+          System.monotonic_time(:millisecond)
+        end)
+      end
+
+    Process.sleep(10)
+
+    state = :sys.get_state(pid, 50)
+    assert :queue.len(state.waiting) == 3
+    assert is_reference(state.timer_ref)
+
+    [first, second, third] =
+      callers
+      |> Enum.map(&Task.await(&1, 300))
+      |> Enum.sort()
+
+    assert second - first >= 45
+    assert third - second >= 45
+
+    assert %{timer_ref: nil} = :sys.get_state(pid, 50)
+
+    GenServer.stop(pid)
+  end
+
+  test "stale release messages do not release queued callers early" do
+    {:ok, pid} = GenServer.start_link(RateLimiter, interval: 80)
+
+    assert :ok == GenServer.call(pid, :wait)
+
+    caller =
+      Task.async(fn ->
+        GenServer.call(pid, :wait, :infinity)
+      end)
+
+    Process.sleep(10)
+
+    send(pid, :release_next)
+    send(pid, {:release_next, make_ref(), System.monotonic_time(:millisecond)})
+
+    refute Task.yield(caller, 20)
+    assert :ok == Task.await(caller, 200)
+
+    GenServer.stop(pid)
+  end
+
+  test "wait/0 returns ok when the registered limiter is not running" do
+    stop_rate_limiter!()
+
+    try do
+      assert :ok == RateLimiter.wait()
+    after
+      restart_rate_limiter!()
+    end
+  end
+
   test "when rate limiter process is running, returns pid" do
     assert is_pid(Process.whereis(Beamcore.RateLimiter))
+  end
+
+  defp stop_rate_limiter! do
+    case Process.whereis(Beamcore.RateLimiter) do
+      nil ->
+        :ok
+
+      _pid ->
+        :ok = Supervisor.terminate_child(Beamcore.Agent.Supervisor, Beamcore.RateLimiter)
+    end
+  end
+
+  defp restart_rate_limiter! do
+    case Process.whereis(Beamcore.RateLimiter) do
+      nil -> Supervisor.restart_child(Beamcore.Agent.Supervisor, Beamcore.RateLimiter)
+      _pid -> :ok
+    end
   end
 end
