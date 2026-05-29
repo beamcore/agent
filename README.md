@@ -290,7 +290,7 @@ Example:
 | `memory` | Recalls, remembers, lists, and forgets scoped persistent repository knowledge. |
 | `python` | Runs allowlisted Python workflow commands such as test, lint, format, type-check, build, validate, and venv. |
 | `node` | Runs allowlisted npm/npx workflow commands including test, lint, build, format, install, and Playwright test/report commands. |
-| `make` | Lists Makefile targets or runs one explicit target. |
+| `make` | Discovers Makefile targets from text and runs only discovered targets. |
 | `go` | Runs allowlisted Go commands: test, fmt, vet, build, and mod-tidy. |
 | `rust` | Runs allowlisted Cargo commands: test, check, fmt, clippy, and build. |
 | `terraform` | Runs allowlisted Terraform commands: fmt, validate, and plan. Apply/destroy are not exposed. |
@@ -299,6 +299,11 @@ Example:
 | `image_generation` | Uses Mistral Agents with the built-in `image_generation` tool, downloads generated files, and saves them to allowed workspace paths. |
 | `web_get` | Fetches external URLs using HTTP GET only when explicitly enabled, using a token-efficient HTML cleaning pipeline. |
 | `task` | Delegates to sub-agents only when explicitly enabled. |
+
+The `make` tool parses `Makefile`, `makefile`, or `GNUmakefile` text for targets.
+Use `make list` to inspect discovered targets and `make run target=<target>` to run
+only one of those targets. Make targets can still do anything the project defines,
+so sensitive repositories should deny `make` through ProjectPolicy.
 
 ## Image generation
 

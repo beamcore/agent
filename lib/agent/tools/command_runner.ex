@@ -71,9 +71,10 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
     started = System.monotonic_time(:millisecond)
 
     try do
-      task = Task.async(fn ->
-        runner_func.(executable, args, run_opts)
-      end)
+      task =
+        Task.async(fn ->
+          runner_func.(executable, args, run_opts)
+        end)
 
       Process.unlink(task.pid)
 
