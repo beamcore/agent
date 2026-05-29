@@ -71,12 +71,7 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
     started = System.monotonic_time(:millisecond)
 
     try do
-      task =
-        Task.async(fn ->
-          runner_func.(executable, args, run_opts)
-        end)
-
-      Process.unlink(task.pid)
+      task = async_command(fn -> runner_func.(executable, args, run_opts) end)
 
       case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
         {:ok, {output, exit_code}} ->
@@ -184,5 +179,15 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
     Application.get_env(:agent, :"#{tool}_tool_runner") ||
       Application.get_env(:agent, :command_runner) ||
       (&System.cmd/3)
+  end
+
+  defp async_command(fun) when is_function(fun, 0) do
+    if Process.whereis(Beamcore.Agent.TaskSupervisor) do
+      Task.Supervisor.async_nolink(Beamcore.Agent.TaskSupervisor, fun)
+    else
+      task = Task.async(fun)
+      Process.unlink(task.pid)
+      task
+    end
   end
 end
