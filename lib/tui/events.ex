@@ -495,7 +495,7 @@ defmodule Beamcore.TUI.Events do
     session = state.session
 
     {:ok, pid} =
-      Task.start(fn ->
+      start_turn_worker(fn ->
         updated =
           Loop.send_message(session, content, nil, policy,
             silent: true,
@@ -506,6 +506,14 @@ defmodule Beamcore.TUI.Events do
       end)
 
     State.start_worker(state, pid)
+  end
+
+  defp start_turn_worker(fun) when is_function(fun, 0) do
+    if Process.whereis(Beamcore.Agent.TaskSupervisor) do
+      Task.Supervisor.start_child(Beamcore.Agent.TaskSupervisor, fun)
+    else
+      Task.start(fun)
+    end
   end
 
   defp refresh_commands(state) do

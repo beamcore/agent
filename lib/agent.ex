@@ -25,6 +25,7 @@ defmodule Beamcore.Agent do
       Beamcore.Ledger,
       Beamcore.Memory,
       Beamcore.RateLimiter,
+      {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
       Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor,
       Beamcore.FileMutationQueue,

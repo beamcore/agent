@@ -116,6 +116,24 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert ExRatatui.textarea_get_value(state.textarea) == ""
   end
 
+  test "enter starts a turn worker and successful completion clears it" do
+    state = input_state("hello")
+
+    {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    assert is_pid(state.worker)
+    assert state.status == :thinking
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+
+    assert_receive {:agent_done, pid, session}, 1_000
+    assert pid == state.worker
+
+    state = Events.finish_worker(state, session)
+
+    assert state.worker == nil
+    assert state.status == :idle
+  end
+
   test "help and input hints describe real command keybindings", %{state: state} do
     help_text = Help.widget().content.text
     input_title = Input.widget(%{state | textarea: ExRatatui.textarea_new()}).block.title
