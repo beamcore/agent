@@ -142,9 +142,6 @@ defmodule Beamcore.TUI.Events do
 
   defp handle_key("enter", mods, state) do
     cond do
-      state.show_commands and command_prefix_only?(state) ->
-        {:noreply, accept_command_completion(state)}
-
       state.show_activity_details and input_blank?(state) ->
         {:noreply, State.mark_dirty(state)}
 
@@ -155,7 +152,7 @@ defmodule Beamcore.TUI.Events do
         {:noreply, insert_newline(state)}
 
       true ->
-        {:noreply, submit(state)}
+        {:noreply, insert_newline(state)}
     end
   end
 
@@ -220,6 +217,9 @@ defmodule Beamcore.TUI.Events do
       state.show_activity_details ->
         {:noreply, select_activity(state, if(shift?(mods), do: -5, else: -1))}
 
+      not input_blank?(state) ->
+        handle_text_key("up", mods, state)
+
       true ->
         {:noreply, State.scroll_up(state)}
     end
@@ -232,6 +232,9 @@ defmodule Beamcore.TUI.Events do
 
       state.show_activity_details ->
         {:noreply, select_activity(state, if(shift?(mods), do: 5, else: 1))}
+
+      not input_blank?(state) ->
+        handle_text_key("down", mods, state)
 
       true ->
         {:noreply, State.scroll_down(state)}
@@ -365,11 +368,6 @@ defmodule Beamcore.TUI.Events do
         %{state | show_commands: false, command_matches: [], command_selected: 0}
         |> State.mark_dirty()
     end
-  end
-
-  defp command_prefix_only?(state) do
-    value = ExRatatui.textarea_get_value(state.textarea)
-    String.starts_with?(String.trim_leading(value), "/") and not String.contains?(value, "\n")
   end
 
   defp input_blank?(state) do
