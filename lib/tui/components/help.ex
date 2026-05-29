@@ -28,10 +28,13 @@ defmodule Beamcore.TUI.Components.Help do
     /quit /exit /q   Exit
 
     Keys
-    Enter            Send, or accept highlighted command suggestion
+    Enter            Insert newline
     Ctrl+S           Send
+    Ctrl+Enter       Send if supported by terminal
     Shift+Enter      Insert newline if supported by terminal
     Ctrl+J / Alt+Enter  Insert newline fallback
+    Left/Right       Move cursor
+    Up/Down          Move cursor between input lines
     /                Open command suggestions
     Up/Down          Choose command suggestion when suggestions are open
     Ctrl+P / Ctrl+N  History, or choose command suggestion

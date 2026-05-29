@@ -97,29 +97,43 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert state.command_matches == []
   end
 
-  test "enter accepts a selected suggestion only while suggestions are open" do
+  test "enter inserts newline and does not accept suggestions while suggestions are open" do
     state = input_state("") |> type_text("/yo")
     {:noreply, state} = Events.handle_event(key("down"), state)
 
     {:noreply, state} = Events.handle_event(key("enter"), state)
 
-    refute state.show_commands
-    assert ExRatatui.textarea_get_value(state.textarea) == "/yolo on"
+    assert state.show_commands
+    assert ExRatatui.textarea_get_value(state.textarea) == "/yo\n"
   end
 
-  test "enter sends slash command when suggestions are closed" do
+  test "enter inserts newline and does not send slash command when suggestions are closed" do
     state = input_state("/help")
 
     {:noreply, state} = Events.handle_event(key("enter"), state)
 
-    assert state.show_help
-    assert ExRatatui.textarea_get_value(state.textarea) == ""
+    refute state.show_help
+    value = ExRatatui.textarea_get_value(state.textarea)
+    assert value =~ "/help"
+    assert value =~ "\n"
   end
 
-  test "enter starts a turn worker and successful completion clears it" do
+  test "enter inserts newline and does not start a turn worker" do
     state = input_state("hello")
 
     {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    assert state.worker == nil
+    assert state.status == :idle
+    value = ExRatatui.textarea_get_value(state.textarea)
+    assert value =~ "hello"
+    assert value =~ "\n"
+  end
+
+  test "ctrl+s starts a turn worker and successful completion clears it" do
+    state = input_state("hello")
+
+    {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
 
     assert is_pid(state.worker)
     assert state.status == :thinking
@@ -134,19 +148,112 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert state.status == :idle
   end
 
+  test "ctrl+enter sends when terminal reports the modifier" do
+    state = input_state("hello")
+
+    {:noreply, state} = Events.handle_event(key("enter", ["ctrl"]), state)
+
+    assert is_pid(state.worker)
+    assert state.status == :thinking
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+
+    assert_receive {:agent_done, pid, session}, 1_000
+    assert pid == state.worker
+
+    state = Events.finish_worker(state, session)
+
+    assert state.worker == nil
+    assert state.status == :idle
+  end
+
+  test "left and right move cursor and typing inserts at cursor" do
+    state = input_state("") |> type_text("abc")
+
+    {:noreply, state} = Events.handle_event(key("left"), state)
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 2}
+
+    {:noreply, state} = Events.handle_event(key("X"), state)
+    assert ExRatatui.textarea_get_value(state.textarea) == "abXc"
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 3}
+
+    {:noreply, state} = Events.handle_event(key("right"), state)
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 4}
+  end
+
+  test "backspace and delete respect cursor position" do
+    state = input_state("") |> type_text("abc")
+
+    {:noreply, state} = Events.handle_event(key("left"), state)
+    {:noreply, state} = Events.handle_event(key("backspace"), state)
+
+    assert ExRatatui.textarea_get_value(state.textarea) == "ac"
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 1}
+
+    {:noreply, state} = Events.handle_event(key("delete"), state)
+
+    assert ExRatatui.textarea_get_value(state.textarea) == "a"
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 1}
+  end
+
+  test "home and end move cursor within the current input line" do
+    state = input_state("") |> type_text("abc")
+
+    {:noreply, state} = Events.handle_event(key("home"), state)
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 0}
+
+    {:noreply, state} = Events.handle_event(key("end"), state)
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 3}
+  end
+
+  test "up and down move cursor between multiline input lines" do
+    state =
+      input_state("")
+      |> type_text("ab")
+      |> refresh_with_key("enter")
+      |> type_text("cd")
+
+    assert ExRatatui.textarea_get_value(state.textarea) == "ab\ncd"
+    assert ExRatatui.textarea_cursor(state.textarea) == {1, 2}
+
+    {:noreply, state} = Events.handle_event(key("up"), state)
+    assert ExRatatui.textarea_cursor(state.textarea) == {0, 2}
+
+    {:noreply, state} = Events.handle_event(key("X"), state)
+    assert ExRatatui.textarea_get_value(state.textarea) == "abX\ncd"
+
+    {:noreply, state} = Events.handle_event(key("down"), state)
+    assert ExRatatui.textarea_cursor(state.textarea) == {1, 2}
+  end
+
+  test "up and down keep chat scrolling behavior when input is empty", %{state: state} do
+    state = %{state | textarea: ExRatatui.textarea_new(), scroll_offset: 0}
+
+    {:noreply, state} = Events.handle_event(key("up"), state)
+    assert state.scroll_offset == 1
+
+    {:noreply, state} = Events.handle_event(key("down"), state)
+    assert state.scroll_offset == 0
+  end
+
   test "help and input hints describe real command keybindings", %{state: state} do
     help_text = Help.widget().content.text
     input_title = Input.widget(%{state | textarea: ExRatatui.textarea_new()}).block.title
 
-    assert help_text =~ "Enter            Send, or accept highlighted command suggestion"
+    assert help_text =~ "Enter            Insert newline"
     assert help_text =~ "Ctrl+S           Send"
+    assert help_text =~ "Ctrl+Enter       Send if supported by terminal"
     assert help_text =~ "Ctrl+J / Alt+Enter"
+    assert help_text =~ "Left/Right       Move cursor"
+    assert help_text =~ "Up/Down          Move cursor between input lines"
+    assert help_text =~ "Ctrl+P / Ctrl+N  History"
     assert help_text =~ "Tab              Complete highlighted command suggestion"
     assert help_text =~ "/yolo on"
     assert help_text =~ "/yolo off"
     refute help_text =~ "/confirm"
 
-    assert input_title =~ "Enter send"
+    assert input_title =~ "Ctrl+S send"
+    assert input_title =~ "Enter newline"
+    assert input_title =~ "arrows move"
     assert input_title =~ "Tab complete"
     assert input_title =~ "/ commands"
   end
@@ -199,14 +306,14 @@ defmodule Beamcore.TUI.StateComponentsTest do
     state = %{timeline_state() | selected_activity: 1}
     ExRatatui.textarea_set_value(state.textarea, "/timeline last")
 
-    {:noreply, state} = Events.handle_event(key("enter"), state)
+    {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
 
     assert state.show_activity_details
     assert state.selected_activity == 0
     assert length(state.activity) == 2
 
     ExRatatui.textarea_set_value(state.textarea, "/timeline clear")
-    {:noreply, state} = Events.handle_event(key("enter"), state)
+    {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
 
     refute state.show_activity_details
     assert state.activity == []
