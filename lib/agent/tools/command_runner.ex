@@ -62,16 +62,40 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
     run_opts = [
       cd: safe_workdir,
       stderr_to_stdout: true,
-      env: env,
-      timeout: timeout
+      env: env
     ]
+
+    # DEBUG: Log the runner and run_opts to see what's being passed
+    runner_func = runner(tool)
 
     started = System.monotonic_time(:millisecond)
 
     try do
-      {output, exit_code} = runner(tool).(executable, args, run_opts)
-      duration = System.monotonic_time(:millisecond) - started
-      result(tool, command, executable, args, safe_workdir, output, exit_code, duration, opts)
+      task = Task.async(fn ->
+        runner_func.(executable, args, run_opts)
+      end)
+
+      Process.unlink(task.pid)
+
+      case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
+        {:ok, {output, exit_code}} ->
+          duration = System.monotonic_time(:millisecond) - started
+          result(tool, command, executable, args, safe_workdir, output, exit_code, duration, opts)
+
+        nil ->
+          error_result(
+            tool,
+            command,
+            "Command timed out after #{timeout}ms: #{executable} #{Enum.join(args, " ")}"
+          )
+
+        {:exit, reason} ->
+          error_result(
+            tool,
+            command,
+            "Unexpected execution failure: #{inspect(reason)}"
+          )
+      end
     rescue
       error in ErlangError ->
         error_result(
