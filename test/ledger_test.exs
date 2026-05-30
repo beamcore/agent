@@ -21,6 +21,45 @@ defmodule Beamcore.LedgerTest do
     :ok
   end
 
+  test "fallback logging writes to isolated LEDGER_LOG_PATH when no GenServer is running" do
+    fallback_path = "tmp/fallback_test_ledger.jsonl"
+    File.rm_rf!(Path.expand(fallback_path))
+
+    with_env("LEDGER_LOG_PATH", fallback_path, fn ->
+      stop_ledger!()
+
+      try do
+        assert :ok ==
+                 Ledger.log_action(
+                   "fallback_org",
+                   "fallback_repo",
+                   "read",
+                   %{"path" => "README.md"},
+                   "fallback result",
+                   12,
+                   3,
+                   :ok
+                 )
+
+        expanded = Path.expand(fallback_path)
+        assert File.exists?(expanded)
+
+        [line] = File.read!(expanded) |> String.split("\n", trim: true)
+        assert {:ok, record} = Jason.decode(line)
+        assert record["org"] == "fallback_org"
+        assert record["repo"] == "fallback_repo"
+        assert record["tool"] == "read"
+        assert record["args"] == %{"path" => "README.md"}
+        assert record["result"] == "fallback result"
+        assert record["tokens"] == 3
+        assert record["status"] == "ok"
+      after
+        restart_ledger!()
+        File.rm_rf!(Path.expand(fallback_path))
+      end
+    end)
+  end
+
   test "detects org and repo dynamically" do
     {org, repo} = Ledger.detect_org_repo()
     assert is_binary(org)
@@ -171,5 +210,37 @@ defmodule Beamcore.LedgerTest do
     {:ok, record} = Jason.decode(List.first(lines))
 
     assert record["result"] == very_long_result
+  end
+
+  defp stop_ledger! do
+    case Process.whereis(Beamcore.Ledger) do
+      nil ->
+        :ok
+
+      _pid ->
+        :ok = Supervisor.terminate_child(Beamcore.Agent.Supervisor, Beamcore.Ledger)
+    end
+  end
+
+  defp restart_ledger! do
+    case Process.whereis(Beamcore.Ledger) do
+      nil -> Supervisor.restart_child(Beamcore.Agent.Supervisor, Beamcore.Ledger)
+      _pid -> :ok
+    end
+  end
+
+  defp with_env(name, value, fun) do
+    previous = System.get_env(name)
+    System.put_env(name, value)
+
+    try do
+      fun.()
+    after
+      if previous do
+        System.put_env(name, previous)
+      else
+        System.delete_env(name)
+      end
+    end
   end
 end
