@@ -1,23 +1,36 @@
 .PHONY: all install clean uninstall chat
 
+INSTALL_DIR ?= $(HOME)/.beamcore/app
+BIN_DIR ?= $(HOME)/.local/bin
+LAUNCHER ?= $(BIN_DIR)/core
+DRY_RUN ?= 0
+
 # Install the agent globally via release
 install: release
-	@echo "Installing agent to $$HOME/.beamcore/app/..."
-	rm -rf $$HOME/.beamcore/app
-	mkdir -p $$HOME/.beamcore/app
-	cp -a _build/prod/rel/agent/. $$HOME/.beamcore/app/
-	@echo "Creating $$HOME/.local/bin/core..."
-	mkdir -p $$HOME/.local/bin
-	echo '#!/bin/sh' > $$HOME/.local/bin/core
-	echo 'exec /home/brv/.beamcore/app/bin/agent eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' >> $$HOME/.local/bin/core
-	chmod +x $$HOME/.local/bin/core
-	@echo "✅ Installed to $$HOME/.beamcore/app and $$HOME/.local/bin/core"
+	@echo "Installing agent to $(INSTALL_DIR)..."
+	@if [ "$(DRY_RUN)" = "1" ]; then \
+		echo "DRY_RUN rm -rf $(INSTALL_DIR)"; \
+		echo "DRY_RUN mkdir -p $(INSTALL_DIR)"; \
+		echo "DRY_RUN cp -a _build/prod/rel/agent/. $(INSTALL_DIR)/"; \
+		echo "DRY_RUN mkdir -p $(BIN_DIR)"; \
+		echo "DRY_RUN write launcher $(LAUNCHER)"; \
+		printf '%s\n%s\n' '#!/bin/sh' 'exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"'; \
+	else \
+		rm -rf "$(INSTALL_DIR)"; \
+		mkdir -p "$(INSTALL_DIR)"; \
+		cp -a _build/prod/rel/agent/. "$(INSTALL_DIR)/"; \
+		echo "Creating $(LAUNCHER)..."; \
+		mkdir -p "$(BIN_DIR)"; \
+		printf '%s\n%s\n' '#!/bin/sh' 'exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' > "$(LAUNCHER)"; \
+		chmod +x "$(LAUNCHER)"; \
+		echo "✅ Installed to $(INSTALL_DIR) and $(LAUNCHER)"; \
+	fi
 
 # Uninstall
 uninstall:
 	@echo "Removing agent deployment..."
-	rm -rf $$HOME/.beamcore/app
-	rm -f $$HOME/.local/bin/core
+	rm -rf "$(INSTALL_DIR)"
+	rm -f "$(LAUNCHER)"
 	@echo "✅ Uninstalled"
 
 
