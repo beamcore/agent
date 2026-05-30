@@ -29,7 +29,9 @@ make deps
 make init
 ```
 
-Edit `$HOME/.beamcore/.env` for the installed `core` launcher. For local
+Edit `$HOME/.beamcore/.env` for the installed `beamcore` launcher. `make init`
+creates it without overwriting an existing file; if a local `.env` already
+exists in this repository, it uses that as the first-time template. For local
 development, `make chat` also loads `.env` from this repository if present:
 
 ```env
@@ -41,7 +43,7 @@ MISTRAL_IMAGE_AGENT_ID=
 ```
 
 `.env` is ignored by git. Keep `.env.example` committed with empty placeholders only.
-The installed `core` launcher loads `$HOME/.beamcore/.env` first and then a
+The installed `beamcore` launcher loads `$HOME/.beamcore/.env` first and then a
 project-local `.env` from the current working directory, so it works outside
 this repository.
 
@@ -61,6 +63,31 @@ this repository.
 | `make uninstall` | Remove the installed release/executable while preserving `$HOME/.beamcore/.env`. |
 | `make clean` | Remove `_build` and `deps`. |
 | `make help` | Show available targets. |
+
+## Installed CLI
+
+After `make install`, the user-facing command is `beamcore`:
+
+```bash
+beamcore          # start interactive chat/TUI in the foreground
+beamcore start    # start the OTP release in background/service mode
+beamcore stop     # stop the running release
+beamcore remote   # attach to the running release
+```
+
+Additional arguments are forwarded to the underlying release binary.
+
+`make install` writes the launcher to `$HOME/.local/bin/beamcore`. If that
+directory is not in `PATH`, the installer prints the exact shell command to add
+it and the full launcher path for a one-time run. To opt in to updating your
+shell config automatically:
+
+```bash
+make install PATH_UPDATE=1
+```
+
+You may still need to `source` the printed shell rc file or open a new terminal.
+Windows is not the primary install path yet.
 
 ## Primary chat
 
