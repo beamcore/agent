@@ -22,7 +22,7 @@ defmodule Beamcore.Agent.MixProject do
           steps: [:assemble],
           executables: [
             agent: [
-              main_module: Beamcore.Agent.Agent
+              main_module: Beamcore.Agent
             ]
           ]
         ]
