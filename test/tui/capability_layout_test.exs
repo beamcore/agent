@@ -39,6 +39,25 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     assert_receive {:result, :plain_started}
   end
 
+  test "missing Mistral API key reports config error without plain fallback" do
+    Beamcore.Agent.TestEnv.with_env(%{"MISTRAL_API_KEY" => nil}, fn ->
+      output =
+        ExUnit.CaptureIO.capture_io(fn ->
+          result = Beamcore.Agent.chat(:auto, supported?: true)
+          send(self(), {:result, result})
+        end)
+
+      assert output =~ "Beamcore is not configured yet."
+      assert output =~ "Missing:"
+      assert output =~ "MISTRAL_API_KEY"
+      assert output =~ "edit ~/.beamcore/.env"
+      refute output =~ "TUI unavailable"
+      refute output =~ "Starting plain emergency fallback"
+      refute output =~ "** ("
+      assert_receive {:result, {:error, :missing_config}}
+    end)
+  end
+
   test "layout mode selection covers wide, medium, narrow, and tiny" do
     assert Layout.mode(140, 40) == :wide
     assert Layout.mode(100, 30) == :medium

@@ -75,18 +75,44 @@ defmodule Beamcore.Agent do
   def chat(mode \\ :auto, opts \\ [])
 
   def chat(:auto, opts) do
-    if Beamcore.TUI.Capability.supported?(opts) do
-      start_tui(opts)
-    else
-      fallback_to_plain(Beamcore.TUI.Capability.unsupported_reason(opts), opts)
+    case ensure_chat_config(opts) do
+      :ok ->
+        if Beamcore.TUI.Capability.supported?(opts) do
+          start_tui(opts)
+        else
+          fallback_to_plain(Beamcore.TUI.Capability.unsupported_reason(opts), opts)
+        end
+
+      error ->
+        error
     end
   rescue
     error ->
-      fallback_to_plain(Exception.message(error), opts)
+      reason = Exception.message(error)
+
+      if missing_config_reason?(reason) do
+        print_missing_config_error()
+      else
+        fallback_to_plain(reason, opts)
+      end
   end
 
-  def chat(:tui, opts), do: start_tui(opts)
-  def chat(:plain, opts), do: start_plain(opts)
+  def chat(:tui, opts) do
+    case ensure_chat_config(opts),
+      do: (
+        :ok -> start_tui(opts)
+        error -> error
+      )
+  end
+
+  def chat(:plain, opts) do
+    case ensure_chat_config(opts),
+      do: (
+        :ok -> start_plain(opts)
+        error -> error
+      )
+  end
+
   def chat(:classic, opts), do: chat(:plain, opts)
 
   @doc false
@@ -98,6 +124,51 @@ defmodule Beamcore.Agent do
     IO.puts("TUI unavailable: #{reason}")
     IO.puts("Starting plain emergency fallback.")
     start_plain(opts)
+  end
+
+  defp ensure_chat_config(opts) do
+    cond do
+      Keyword.has_key?(opts, :client) or Keyword.has_key?(opts, :tui_start) or
+          Keyword.has_key?(opts, :plain_start) ->
+        :ok
+
+      configured_env?("MISTRAL_API_KEY") ->
+        :ok
+
+      true ->
+        print_missing_config_error()
+    end
+  end
+
+  defp missing_config_reason?(reason) when is_binary(reason),
+    do: String.contains?(reason, "MISTRAL_API_KEY environment variable is required")
+
+  defp print_missing_config_error do
+    IO.puts("""
+    Beamcore is not configured yet.
+
+    Missing:
+      MISTRAL_API_KEY
+
+    Set it globally:
+      make init
+      edit ~/.beamcore/.env
+
+    Or for this project:
+      echo 'MISTRAL_API_KEY=...' > .env
+
+    Then run:
+      beamcore
+    """)
+
+    {:error, :missing_config}
+  end
+
+  defp configured_env?(name) do
+    case System.get_env(name) do
+      nil -> false
+      value -> String.trim(value) != ""
+    end
   end
 
   defp start_tui(opts),
