@@ -103,6 +103,44 @@ defmodule Beamcore.MemoryTest do
     File.rm_rf!(Path.expand(custom_dets))
   end
 
+  test "fallback memory uses isolated configured DETS path when no GenServer is running" do
+    fallback_dets = "tmp/fallback_test_memory.dets"
+    File.rm_rf!(Path.expand(fallback_dets))
+    real_default = Path.expand("~/.beamcore/memory.dets")
+    real_default_mtime = file_mtime(real_default)
+
+    with_app_env(:memory_dets_path, fallback_dets, fn ->
+      stop_memory!()
+
+      try do
+        assert :ok ==
+                 Memory.remember(
+                   "fallback_org",
+                   "fallback_repo",
+                   :context,
+                   "fallback_key",
+                   "fallback value"
+                 )
+
+        assert "fallback value" ==
+                 Memory.recall("fallback_org", "fallback_repo", :context, "fallback_key")
+
+        assert {"fallback_key", "fallback value"} in Memory.list(
+                 "fallback_org",
+                 "fallback_repo",
+                 :context
+               )
+
+        assert File.exists?(Path.expand(fallback_dets))
+        assert file_mtime(real_default) == real_default_mtime
+      after
+        close_fallback_memory_store()
+        restart_memory!()
+        File.rm_rf!(Path.expand(fallback_dets))
+      end
+    end)
+  end
+
   # --- Agent Memory Tool Tests ---
 
   test "tool name and spec" do
@@ -188,5 +226,52 @@ defmodule Beamcore.MemoryTest do
              "type" => "invalid"
            }) =~
              "Error: Invalid type"
+  end
+
+  defp stop_memory! do
+    case Process.whereis(Beamcore.Memory) do
+      nil ->
+        :ok
+
+      _pid ->
+        :ok = Supervisor.terminate_child(Beamcore.Agent.Supervisor, Beamcore.Memory)
+    end
+  end
+
+  defp restart_memory! do
+    case Process.whereis(Beamcore.Memory) do
+      nil -> Supervisor.restart_child(Beamcore.Agent.Supervisor, Beamcore.Memory)
+      _pid -> :ok
+    end
+  end
+
+  defp close_fallback_memory_store do
+    :dets.close(:beamcore_memory_store)
+
+    if :ets.info(:beamcore_memory_store) != :undefined do
+      :ets.delete(:beamcore_memory_store)
+    end
+  end
+
+  defp file_mtime(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, stat} -> stat.mtime
+      {:error, :enoent} -> :missing
+    end
+  end
+
+  defp with_app_env(key, value, fun) do
+    previous = Application.get_env(:agent, key)
+    Application.put_env(:agent, key, value)
+
+    try do
+      fun.()
+    after
+      if previous do
+        Application.put_env(:agent, key, previous)
+      else
+        Application.delete_env(:agent, key)
+      end
+    end
   end
 end
