@@ -4,6 +4,8 @@
 /doc
 /.fetch
 .env
+/escript
+/agent
 .env.*
 !.env.example
 /.beamcore/policy.json
