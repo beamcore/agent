@@ -1,5 +1,7 @@
 # Beamcore.Agent
 
+![AGPL-3.0 License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
+
 Beamcore.Agent is a general-purpose CLI coding agent running inside an Elixir/Mix workspace. It can answer and write code in any language, while its self-development workflow is optimized for this Elixir project: bounded workspace tools, autonomous edits, compact session context, token-aware history, image generation, and repeatable Mix validation.
 
 ## Core ideas
@@ -470,4 +472,8 @@ debugging during development.
 
 ## License
 
-Beamcore.Agent is licensed under the MIT License. See `LICENSE` for details.
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
+
+See [LICENSE](LICENSE) for the full license text.
+
+© 2024 [Beamcore.Agent Contributors](https://github.com/beamcore/agent)

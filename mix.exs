@@ -9,6 +9,13 @@ defmodule Beamcore.Agent.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      description: "A general-purpose CLI coding agent",
+      license: "AGPL-3.0",
+      links: %{"GitHub" => "https://github.com/beamcore/agent"},
+      package: [
+        licenses: ["AGPL-3.0"],
+        links: %{"GitHub" => "https://github.com/beamcore/agent"}
+      ],
       releases: [
         agent: [
           include_executables_for: [:unix],
