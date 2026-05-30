@@ -12,14 +12,29 @@ defmodule Beamcore.Agent.MixProject do
       description: "A general-purpose CLI coding agent",
       license: "AGPL-3.0",
       links: %{"GitHub" => "https://github.com/beamcore/agent"},
-      package: [
-        licenses: ["AGPL-3.0"],
-        links: %{"GitHub" => "https://github.com/beamcore/agent"}
-      ],
+
+      # For advanced users (release)
       releases: [
         agent: [
           include_executables_for: [:unix],
-          applications: [runtime_tools: :permanent]
+          applications: [runtime_tools: :permanent, agent: :permanent],
+          config_providers: [Mix.Release.Config.Env],
+          steps: [:assemble],
+          executables: [
+            agent: [
+              main_module: Beamcore.Agent.Agent
+            ]
+          ]
+        ]
+      ],
+      package: [
+        licenses: ["AGPL-3.0"],
+        links: %{"GitHub" => "https://github.com/beamcore/agent"},
+        files: ["lib", "src", "mix.exs", "README.md", "LICENSE"],
+        maintainers: ["Beamcore Team"],
+        hexpm: [
+          repo: "hexpm",
+          username: "beamcore"
         ]
       ]
     ]
