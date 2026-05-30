@@ -29,7 +29,8 @@ make deps
 make init
 ```
 
-Edit `.env` locally:
+Edit `$HOME/.beamcore/.env` for the installed `core` launcher. For local
+development, `make chat` also loads `.env` from this repository if present:
 
 ```env
 MISTRAL_API_KEY=your_api_key_here
@@ -40,6 +41,9 @@ MISTRAL_IMAGE_AGENT_ID=
 ```
 
 `.env` is ignored by git. Keep `.env.example` committed with empty placeholders only.
+The installed `core` launcher loads `$HOME/.beamcore/.env` first and then a
+project-local `.env` from the current working directory, so it works outside
+this repository.
 
 ## Make targets
 
@@ -52,9 +56,9 @@ MISTRAL_IMAGE_AGENT_ID=
 | `make chat` | Start the primary polished terminal UI agent chat. |
 | `make chat-plain` | Start the plain emergency fallback. |
 | `make run-ledger` | Run the ledger service standalone as a globally registered cluster member. |
-| `make init` | Create `.env` from `.env.example` if missing. |
+| `make init` | Create `$HOME/.beamcore/.env` from `.env.example` if missing. |
 | `make install` | Build a production release and install a local executable. |
-| `make uninstall` | Remove the installed release/executable. |
+| `make uninstall` | Remove the installed release/executable while preserving `$HOME/.beamcore/.env`. |
 | `make clean` | Remove `_build` and `deps`. |
 | `make help` | Show available targets. |
 

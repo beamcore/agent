@@ -68,6 +68,20 @@ defmodule Beamcore.LedgerTest do
     assert repo != ""
   end
 
+  test "flush returns ok when Ledger is running" do
+    assert :ok == Ledger.flush()
+  end
+
+  test "flush returns ok when Ledger is not running" do
+    stop_ledger!()
+
+    try do
+      assert :ok == Ledger.flush()
+    after
+      restart_ledger!()
+    end
+  end
+
   test "logs action and updates ETS metrics correctly" do
     # Ensure ledger is started in local supervisor or we start a test instance
     # The application supervisor starts Beamcore.Ledger by default.
@@ -82,8 +96,7 @@ defmodule Beamcore.LedgerTest do
 
     assert :ok == Ledger.log_action(org, repo, tool, args, result, duration, tokens, :ok)
 
-    # Allow time for async cast to process
-    Process.sleep(50)
+    assert :ok == Ledger.flush()
 
     # Retrieve metrics
     metrics = Ledger.get_metrics()
@@ -109,7 +122,7 @@ defmodule Beamcore.LedgerTest do
 
     assert :ok == Ledger.log_action(org, repo, tool, args, result, duration, tokens, :error)
 
-    Process.sleep(50)
+    assert :ok == Ledger.flush()
 
     metrics = Ledger.get_metrics()
     assert metrics[{org, repo, tool, :actions}] == 1
@@ -128,7 +141,7 @@ defmodule Beamcore.LedgerTest do
 
     assert :ok == Ledger.log_action(org, repo, tool, args, result, duration, 0, :ok)
 
-    Process.sleep(50)
+    assert :ok == Ledger.flush()
 
     metrics = Ledger.get_metrics()
     assert metrics[{org, repo, tool, :tokens}] == 2
@@ -141,7 +154,7 @@ defmodule Beamcore.LedgerTest do
     Ledger.log_action(org, repo, "read", %{}, "content", 10, 5, :ok)
     Ledger.log_action(org, repo, "write", %{}, "Error: disk full", 25, 0, :error)
 
-    Process.sleep(50)
+    assert :ok == Ledger.flush()
 
     prom = Ledger.export_prometheus()
 

@@ -140,6 +140,19 @@ defmodule Beamcore.Ledger do
   end
 
   @doc """
+  Waits until the running Ledger GenServer has processed messages sent before this call.
+
+  Logging remains asynchronous; this helper is intended for tests and graceful
+  shutdown paths that need to wait after calling `log_action/8`.
+  """
+  def flush do
+    case server_ref() do
+      nil -> :ok
+      ref -> GenServer.call(ref, :flush)
+    end
+  end
+
+  @doc """
   Detects the organization and repository name dynamically using Git remote URL
   or environment variable overrides (`BEAMCORE_ORG`, `BEAMCORE_REPO`).
   """
@@ -196,6 +209,9 @@ defmodule Beamcore.Ledger do
 
     {:reply, :ok, state}
   end
+
+  @impl true
+  def handle_call(:flush, _from, state), do: {:reply, :ok, state}
 
   @impl true
   def handle_cast(
