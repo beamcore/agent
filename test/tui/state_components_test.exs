@@ -11,6 +11,20 @@ defmodule Beamcore.TUI.StateComponentsTest do
       "MISTRAL_BASE_URL" => nil
     })
 
+    config_path =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_tui_config_#{System.unique_integer([:positive])}.dets"
+      )
+
+    previous_config_path = Application.get_env(:agent, :config_dets_path)
+    Application.put_env(:agent, :config_dets_path, config_path)
+
+    on_exit(fn ->
+      restore_config_path(previous_config_path)
+      File.rm(config_path)
+    end)
+
     session = Beamcore.OpenAI.client() |> Session.new()
     state = %State{session: session, messages: [], activity: [], status: :idle, unicode?: true}
 
@@ -29,6 +43,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert "timeline" in command_names
     assert "timeline last" in command_names
     assert "timeline clear" in command_names
+    assert "login" in command_names
+    assert "logout" in command_names
     assert "exit" in command_names
     assert "q" in command_names
     refute "confirm" in command_names
@@ -48,6 +64,52 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert state.show_commands
     assert Enum.any?(state.command_matches, &(&1.name == "help"))
     assert state.command_selected == 0
+  end
+
+  test "/login prompt stores next input without history or transcript leak" do
+    state = input_state("/login")
+
+    {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
+
+    assert state.pending_login?
+    assert state.history == []
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+
+    ExRatatui.textarea_set_value(state.textarea, "secret-tui-token")
+    {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
+
+    refute state.pending_login?
+    assert Beamcore.Config.mistral_api_key() == "secret-tui-token"
+    assert state.history == []
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+    assert Enum.any?(state.messages, &(&1.content == "Beamcore login saved."))
+    refute Enum.any?(state.messages, &String.contains?(&1.content, "secret-tui-token"))
+
+    refute Enum.any?(
+             state.session.messages,
+             &String.contains?(to_string(&1.content), "secret-tui-token")
+           )
+  end
+
+  test "/login with inline token stores token without input history" do
+    state = input_state("/login secret-inline-token")
+
+    {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
+
+    assert Beamcore.Config.mistral_api_key() == "secret-inline-token"
+    assert state.history == []
+    refute Enum.any?(state.messages, &String.contains?(&1.content, "secret-inline-token"))
+  end
+
+  test "state shows friendly configuration message when no token exists" do
+    Beamcore.Agent.TestEnv.with_env(%{"MISTRAL_API_KEY" => nil}, fn ->
+      state = State.new(nil, ExRatatui.textarea_new(), history: [])
+
+      assert state.session.client == nil
+      assert [%{role: :system, content: content}] = state.messages
+      assert content =~ "Run /login"
+      assert content =~ "MISTRAL_API_KEY"
+    end)
   end
 
   test "slash command suggestions filter yolo commands" do
@@ -735,6 +797,9 @@ defmodule Beamcore.TUI.StateComponentsTest do
   defp key(code, modifiers \\ []) do
     %ExRatatui.Event.Key{code: code, modifiers: modifiers, kind: "press"}
   end
+
+  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
 
   defp timeline_state do
     long_result = "Wrote file " <> String.duplicate("x", 700)

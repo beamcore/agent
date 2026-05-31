@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Tools.Git do
   Tool to perform git operations within the workspace safely.
   """
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.Tools.{CommandRunner, PathSafety}
 
   @description """
   Run explicit git operations inside the workspace. Log returns up to limit commits.
@@ -197,7 +197,11 @@ defmodule Beamcore.Agent.Tools.Git do
 
       _path ->
         try do
-          case System.cmd("git", args, cd: workdir, stderr_to_stdout: true) do
+          case System.cmd("git", args,
+                 cd: workdir,
+                 stderr_to_stdout: true,
+                 env: CommandRunner.external_env()
+               ) do
             {output, 0} ->
               if String.trim(output) == "" do
                 "Success (no output)"

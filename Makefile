@@ -7,6 +7,7 @@ CONFIG_DIR ?= $(HOME)/.beamcore
 
 PATH_UPDATE ?= 0
 VERBOSE ?= 0
+DRY_RUN ?= 0
 
 LOAD_ENV = set -a; [ ! -f .env ] || . ./.env; set +a;
 
@@ -19,6 +20,13 @@ all: compile
 #   beamcore stop   -> stop release
 #   beamcore remote -> attach to release
 install:
+ifeq ($(DRY_RUN),1)
+	@echo "==> DRY RUN: make install"
+	@echo "Would build Beamcore release"
+	@echo "Would install app to:      $(INSTALL_DIR)"
+	@echo "Would install launcher to: $(LAUNCHER)"
+	@echo "Would ensure config dir:   $(CONFIG_DIR)"
+else
 	@echo "==> Building Beamcore release"; \
 	if [ "$(VERBOSE)" = "1" ]; then \
 		mix deps.get && mix compile && MIX_ENV=prod mix release --overwrite; \
@@ -103,6 +111,7 @@ install:
 			;; \
 	esac
 	@$(MAKE) --no-print-directory config-status
+endif
 
 # Uninstall Beamcore app and launcher.
 # User config directory is intentionally preserved.

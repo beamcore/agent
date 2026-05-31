@@ -18,6 +18,7 @@ defmodule Beamcore.Agent.Chat.Session do
     :policy_override,
     :project_policy_bypassed?,
     :project_nature,
+    :workspace_root,
     :context,
     :pending_user_message
   ]
@@ -41,13 +42,18 @@ defmodule Beamcore.Agent.Chat.Session do
   @doc """
   Creates a new session and initializes the log file.
   """
-  def new(client) do
+  def new(client, opts \\ []) do
     session_id = generate_name()
     log_dir = Path.join([System.user_home!(), ".agent", "sessions"])
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
 
-    {language, build_system} = Beamcore.Agent.Discovery.Detector.detect()
+    workspace_root =
+      opts
+      |> Keyword.get(:workspace_root, Beamcore.Agent.Tools.PathSafety.workspace_root())
+      |> Beamcore.Agent.Tools.PathSafety.canonical_path()
+
+    {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root)
 
     system_message = %{
       role: "system",
@@ -69,6 +75,7 @@ defmodule Beamcore.Agent.Chat.Session do
       policy_override: nil,
       project_policy_bypassed?: false,
       project_nature: {language, build_system},
+      workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
       pending_user_message: nil
     }

@@ -69,8 +69,37 @@ defmodule Beamcore.Agent.Chat.Loop do
         |> Session.clear_pending_action()
         |> loop(pid)
 
+      {:login_prompt, session} ->
+        handle_login_prompt(session, pid)
+
       new_session ->
         loop(new_session, pid)
+    end
+  end
+
+  defp handle_login_prompt(session, pid) do
+    case IO.gets("Mistral API key: ") do
+      input when is_binary(input) ->
+        session =
+          case Commands.store_login_token(input) do
+            :ok ->
+              IO.puts("Beamcore login saved.")
+              %{session | client: Beamcore.OpenAI.client()}
+
+            {:error, :empty_value} ->
+              IO.puts("Login token was empty; nothing was saved.")
+              session
+
+            {:error, reason} ->
+              IO.puts("Login failed: #{inspect(reason)}")
+              session
+          end
+
+        loop(session, pid)
+
+      _ ->
+        IO.puts("Login canceled.")
+        loop(session, pid)
     end
   end
 
@@ -115,6 +144,28 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   def send_message(session, content, pid, policy_override \\ nil, opts \\ []) do
+    with {:ok, session} <- ensure_client(session, opts) do
+      do_send_message(session, content, pid, policy_override, opts)
+    else
+      {:error, session} -> session
+    end
+  end
+
+  defp ensure_client(%{client: nil} = session, opts) do
+    try do
+      {:ok, %{session | client: Beamcore.OpenAI.client()}}
+    rescue
+      error in Beamcore.OpenAI.MissingConfigError ->
+        message = Exception.message(error)
+        maybe_print(opts, fn -> Pretty.print_error(message) end)
+        emit(opts, {:error, message})
+        {:error, session}
+    end
+  end
+
+  defp ensure_client(session, _opts), do: {:ok, session}
+
+  defp do_send_message(session, content, pid, policy_override, opts) do
     session =
       if session.project_policy_bypassed? do
         Session.clear_project_policy_block_history(session)

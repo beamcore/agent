@@ -17,8 +17,14 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
   end
 
   test "chat entrypoint can force TUI and plain fallback" do
-    assert Beamcore.Agent.chat(:tui, tui_start: fn -> :tui_started end) == :tui_started
-    assert Beamcore.Agent.chat(:plain, plain_start: fn -> :plain_started end) == :plain_started
+    assert Beamcore.Agent.chat(:tui, client: :test_client, tui_start: fn -> :tui_started end) ==
+             :tui_started
+
+    assert Beamcore.Agent.chat(:plain,
+             client: :test_client,
+             plain_start: fn -> :plain_started end
+           ) ==
+             :plain_started
   end
 
   test "automatic chat falls back if TUI startup fails" do
@@ -27,6 +33,7 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
         result =
           Beamcore.Agent.chat(:auto,
             supported?: true,
+            client: :test_client,
             tui_start: fn -> raise "alternate screen failed" end,
             plain_start: fn -> :plain_started end
           )
@@ -40,22 +47,41 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
   end
 
   test "missing Mistral API key reports config error without plain fallback" do
-    Beamcore.Agent.TestEnv.with_env(%{"MISTRAL_API_KEY" => nil}, fn ->
-      output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          result = Beamcore.Agent.chat(:auto, supported?: true)
-          send(self(), {:result, result})
-        end)
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_missing_config_#{System.unique_integer([:positive])}.dets"
+      )
 
-      assert output =~ "Beamcore is not configured yet."
-      assert output =~ "Missing:"
-      assert output =~ "MISTRAL_API_KEY"
-      assert output =~ "echo 'MISTRAL_API_KEY=...' > .env"
-      refute output =~ "TUI unavailable"
-      refute output =~ "Starting plain emergency fallback"
-      refute output =~ "** ("
-      assert_receive {:result, {:error, :missing_config}}
-    end)
+    previous = Application.get_env(:agent, :config_dets_path)
+    Application.put_env(:agent, :config_dets_path, path)
+
+    try do
+      Beamcore.Agent.TestEnv.with_env(%{"MISTRAL_API_KEY" => nil}, fn ->
+        output =
+          ExUnit.CaptureIO.capture_io(fn ->
+            result =
+              Beamcore.Agent.chat(:auto,
+                supported?: true,
+                tui_start: fn _opts -> :tui_started end
+              )
+
+            send(self(), {:result, result})
+          end)
+
+        assert output =~ "Beamcore is not configured yet."
+        assert output =~ "Run /login"
+        assert output =~ "MISTRAL_API_KEY"
+        assert output =~ "make chat"
+        refute output =~ "TUI unavailable"
+        refute output =~ "Starting plain emergency fallback"
+        refute output =~ "** ("
+        assert_receive {:result, :tui_started}
+      end)
+    after
+      restore_config_path(previous)
+      File.rm(path)
+    end
   end
 
   test "layout mode selection covers wide, medium, narrow, and tiny" do
@@ -78,4 +104,7 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     assert %{mode: :tiny, screen: %Rect{}} =
              Layout.areas(%Rect{x: 0, y: 0, width: 40, height: 9})
   end
+
+  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
 end

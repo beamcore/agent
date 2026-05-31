@@ -40,6 +40,8 @@ MISTRAL_IMAGE_AGENT_ID=
 ```
 
 `.env` is ignored by git. Keep `.env.example` committed with empty placeholders only.
+Installed `beamcore` does not load project `.env` files; run `/login` once in
+the chat UI to store your Mistral API key in `~/.beamcore/config.dets`.
 
 ## Make targets
 
@@ -70,6 +72,10 @@ beamcore remote   # attach to the running release
 ```
 
 Additional arguments are forwarded to the underlying release binary.
+
+The installed CLI uses `MISTRAL_API_KEY` from the OS environment first. If it is
+not set, it reads the token stored by `/login`. The stored config is local DETS
+storage with owner-only file permissions where supported; it is not encrypted.
 
 `make install` writes the launcher to `$HOME/.local/bin/beamcore`. If that
 directory is not in `PATH`, the installer prints the exact shell command to add
@@ -141,6 +147,8 @@ system, one dispatcher, one context model, and one image generation flow.
 | `/yolo` | Toggle session freedom mode. |
 | `/yolo on` | Bypass project policy for this session. |
 | `/yolo off` | Restore project policy for this session. |
+| `/login` | Store your Mistral API key in `~/.beamcore/config.dets`. |
+| `/logout` | Clear the stored Beamcore login token. |
 | `/help` | Show command help. |
 | `/quit`, `/exit`, `/q` | Exit the TUI. |
 

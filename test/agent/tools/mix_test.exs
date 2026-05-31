@@ -198,6 +198,85 @@ defmodule Beamcore.Agent.Tools.MixTest do
     assert String.ends_with?(opts[:cd], "/lib")
   end
 
+  test "removes release env vars while preserving normal env" do
+    parent = self()
+
+    with_env(
+      %{
+        "PATH" => "/usr/bin:/bin",
+        "HOME" => "/tmp/home",
+        "RELEASE_ROOT" => "/fake/beamcore/release",
+        "BINDIR" => "/fake/beamcore/release/bin",
+        "ROOTDIR" => "/fake/root"
+      },
+      fn ->
+        runner = fn "mix", args, opts ->
+          send(parent, {:mix_called, args, opts})
+          {"compiled", 0}
+        end
+
+        result =
+          with_runner(runner, fn ->
+            Mix.execute(%{"command" => "compile"}) |> decode!()
+          end)
+
+        assert result["ok"]
+        assert_receive {:mix_called, ["compile"], opts}
+        env_map = Map.new(opts[:env])
+
+        assert env_map["PATH"] == "/usr/bin:/bin"
+        assert env_map["HOME"] == "/tmp/home"
+        assert env_map["MIX_ENV"] == "dev"
+        assert env_map["RELEASE_ROOT"] == nil
+        assert env_map["BINDIR"] == nil
+        assert env_map["ROOTDIR"] == nil
+      end
+    )
+  end
+
+  test "compiles a temp Elixir project under simulated release env" do
+    tmp =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_mix_release_env_#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(tmp)
+
+    File.write!(
+      Path.join(tmp, "mix.exs"),
+      """
+      defmodule Smoke.MixProject do
+        use Mix.Project
+        def project, do: [app: :smoke, version: "0.1.0", elixir: "~> 1.12"]
+        def application, do: []
+      end
+      """
+    )
+
+    try do
+      with_env(
+        %{
+          "RELEASE_ROOT" => "/fake/beamcore/release",
+          "BINDIR" => "/fake/beamcore/release/bin",
+          "ROOTDIR" => "/fake/root"
+        },
+        fn ->
+          result =
+            File.cd!(tmp, fn ->
+              Mix.execute(%{"command" => "compile"}) |> decode!()
+            end)
+
+          assert result["ok"]
+          refute result["output_tail"] =~ "cannot get bootfile"
+          refute result["stdout"] =~ "start.boot"
+        end
+      )
+    after
+      File.rm_rf!(tmp)
+    end
+  end
+
   defp decode!(json) do
     Jason.decode!(json)
   end
@@ -214,6 +293,24 @@ defmodule Beamcore.Agent.Tools.MixTest do
       else
         Application.delete_env(:agent, :mix_tool_runner)
       end
+    end
+  end
+
+  defp with_env(values, fun) do
+    previous = Map.new(Map.keys(values), &{&1, System.get_env(&1)})
+
+    Enum.each(values, fn
+      {key, nil} -> System.delete_env(key)
+      {key, value} -> System.put_env(key, value)
+    end)
+
+    try do
+      fun.()
+    after
+      Enum.each(previous, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
     end
   end
 end

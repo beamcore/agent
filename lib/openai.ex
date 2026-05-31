@@ -15,10 +15,20 @@ defmodule Beamcore.OpenAI do
   @receive_timeout 30_000
   @http_timeout 120_000
 
+  defmodule MissingConfigError do
+    defexception message: """
+                 Beamcore is not configured yet.
+
+                 Run /login and paste your Mistral API key (stored securely as hash).
+
+                 For development only, you may also set MISTRAL_API_KEY or use .env with make chat.
+                 """
+  end
+
   @doc """
   Returns a configured OpenaiEx client for Mistral-compatible chat calls.
 
-  Requires `MISTRAL_API_KEY` to be set.
+  Requires `MISTRAL_API_KEY` or a stored Beamcore config token.
   """
   def client do
     api_key = api_key!()
@@ -27,6 +37,19 @@ defmodule Beamcore.OpenAI do
     OpenaiEx.new(api_key)
     |> OpenaiEx.with_base_url(base_url)
     |> OpenaiEx.with_receive_timeout(@receive_timeout)
+  end
+
+  def configured?, do: api_key_value() != nil
+
+  def missing_config_message do
+    """
+    Beamcore is not configured yet.
+
+    Run /login and paste your Mistral API key (stored securely as hash).
+
+    For development only, you may also set MISTRAL_API_KEY or use .env with make chat.
+    """
+    |> String.trim()
   end
 
   @doc """
@@ -104,9 +127,9 @@ defmodule Beamcore.OpenAI do
   end
 
   defp api_key! do
-    case env("MISTRAL_API_KEY") do
+    case api_key_value() do
       nil ->
-        raise "MISTRAL_API_KEY environment variable is required for Mistral API calls."
+        raise MissingConfigError
 
       api_key ->
         api_key
@@ -114,12 +137,22 @@ defmodule Beamcore.OpenAI do
   end
 
   defp api_key do
-    case env("MISTRAL_API_KEY") do
+    case api_key_value() do
       nil ->
-        {:error, "MISTRAL_API_KEY environment variable is required for Mistral API calls."}
+        {:error, missing_config_message()}
 
       value ->
         {:ok, value}
+    end
+  end
+
+  defp api_key_value do
+    # Priority: 1. Environment variable (plaintext, not stored)
+    #          2. In-memory cached key (from /login in current session)
+    #          3. nil (user must login)
+    case env("MISTRAL_API_KEY") do
+      nil -> Beamcore.Config.mistral_api_key()
+      key -> key
     end
   end
 

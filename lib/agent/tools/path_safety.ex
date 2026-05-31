@@ -62,7 +62,34 @@ defmodule Beamcore.Agent.Tools.PathSafety do
   def error(reason), do: "Error: #{reason}"
 
   def workspace_root do
-    File.cwd!() |> Path.expand()
+    Application.get_env(:agent, :workspace_root) || canonical_path(File.cwd!())
+  end
+
+  def configure_workspace_root(root) when is_binary(root) do
+    root = canonical_path(root)
+    previous = Application.get_env(:agent, :workspace_root)
+    Application.put_env(:agent, :workspace_root, root)
+    previous
+  end
+
+  def restore_workspace_root(nil), do: Application.delete_env(:agent, :workspace_root)
+
+  def restore_workspace_root(root) when is_binary(root),
+    do: Application.put_env(:agent, :workspace_root, root)
+
+  def canonical_path(path) when is_binary(path) do
+    expanded = Path.expand(path)
+
+    if File.dir?(expanded) do
+      File.cd!(expanded, fn ->
+        case System.cmd("pwd", ["-P"], stderr_to_stdout: true) do
+          {resolved, 0} -> String.trim(resolved)
+          _ -> expanded
+        end
+      end)
+    else
+      expanded
+    end
   end
 
   defp reject_absolute(path) do

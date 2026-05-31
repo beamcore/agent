@@ -9,6 +9,20 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       "MISTRAL_API_KEY" => "test-api-key",
       "MISTRAL_BASE_URL" => nil
     })
+
+    config_path =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_commands_config_#{System.unique_integer([:positive])}.dets"
+      )
+
+    previous = Application.get_env(:agent, :config_dets_path)
+    Application.put_env(:agent, :config_dets_path, config_path)
+
+    on_exit(fn ->
+      restore_config_path(previous)
+      File.rm(config_path)
+    end)
   end
 
   test "/new resets session context" do
@@ -83,6 +97,68 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     refute output =~ "pending plan"
     assert output =~ "/policy"
     assert output =~ "/yolo"
+    assert output =~ "/login"
+    assert output =~ "/logout"
+  end
+
+  test "/env redacts secret-like values" do
+    Beamcore.Agent.TestEnv.with_env(
+      %{
+        "MISTRAL_API_KEY" => "real-token",
+        "CUSTOM_TOKEN" => "custom-token",
+        "NORMAL_ENV" => "visible"
+      },
+      fn ->
+        session = Beamcore.OpenAI.client() |> Session.new()
+        output = capture_io(fn -> assert Commands.execute("env", session) == session end)
+
+        assert output =~ "MISTRAL_API_KEY=[REDACTED]"
+        assert output =~ "CUSTOM_TOKEN=[REDACTED]"
+        assert output =~ "NORMAL_ENV=visible"
+        refute output =~ "real-token"
+        refute output =~ "custom-token"
+      end
+    )
+  end
+
+  test "/login stores token without printing it and /logout clears it" do
+    session = Beamcore.OpenAI.client() |> Session.new()
+
+    output =
+      capture_io(fn ->
+        result = Commands.execute("login secret-login-token", session)
+        send(self(), {:login_result, result})
+      end)
+
+    assert output =~ "Beamcore login saved."
+    refute output =~ "secret-login-token"
+    assert Beamcore.Config.mistral_api_key() == "secret-login-token"
+    assert_receive {:login_result, login_result}
+    assert login_result.session_id == session.session_id
+
+    output =
+      capture_io(fn ->
+        result = Commands.execute("logout", session)
+        send(self(), {:logout_result, result})
+      end)
+
+    assert output =~ "Beamcore login cleared."
+    refute output =~ "secret-login-token"
+    assert Beamcore.Config.mistral_api_key() == nil
+    assert_receive {:logout_result, ^session}
+  end
+
+  test "/login without token requests token prompt" do
+    session = Beamcore.OpenAI.client() |> Session.new()
+
+    output =
+      capture_io(fn ->
+        result = Commands.execute("login", session)
+        send(self(), {:login_prompt, result})
+      end)
+
+    assert output =~ "stored locally"
+    assert_receive {:login_prompt, {:login_prompt, ^session}}
   end
 
   test "/cancel clears legacy pending action" do
@@ -165,6 +241,9 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       policy: policy
     }
   end
+
+  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
 
   test "/yolo toggles session freedom mode" do
     session = Beamcore.OpenAI.client() |> Session.new()
@@ -405,7 +484,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     end)
   end
 
-  test "/env prints all environment variables sorted" do
+  test "/env prints environment variables with secrets redacted" do
     session = Beamcore.OpenAI.client() |> Session.new()
 
     output =
@@ -413,7 +492,8 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
         assert Commands.execute("env", session) == session
       end)
 
-    assert output =~ "MISTRAL_API_KEY=test-api-key"
+    assert output =~ "MISTRAL_API_KEY=[REDACTED]"
+    refute output =~ "MISTRAL_API_KEY=test-api-key"
   end
 
   defp with_tmp_cwd(fun) do

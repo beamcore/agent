@@ -43,6 +43,50 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
 
   def encode(result), do: Jason.encode!(result)
 
+  def release_env_keys do
+    ~w(
+      RELEASE_ROOT
+      RELEASE_NAME
+      RELEASE_VSN
+      RELEASE_COOKIE
+      RELEASE_MODE
+      RELEASE_NODE
+      RELEASE_TMP
+      RELEASE_VM_ARGS
+      RELEASE_REMOTE_VM_ARGS
+      RELEASE_DISTRIBUTION
+      RELEASE_BOOT_SCRIPT
+      RELEASE_BOOT_SCRIPT_CLEAN
+      RELEASE_COMMAND
+      RELEASE_PROG
+      RELEASE_SYS_CONFIG
+      BINDIR
+      EMU
+      PROGNAME
+      REL_DIR
+      ROOTDIR
+      RUNNER_LOG_DIR
+      SCRIPT
+      ERL_LIBS
+    )
+  end
+
+  def external_env(overrides \\ []) do
+    overrides = Enum.map(overrides, fn {key, value} -> {to_string(key), value} end)
+    override_keys = MapSet.new(Enum.map(overrides, &elem(&1, 0)))
+    release_root = System.get_env("RELEASE_ROOT")
+
+    base =
+      System.get_env()
+      |> Enum.reject(fn {key, value} ->
+        key in release_env_keys() or MapSet.member?(override_keys, key) or
+          release_scoped_erl_libs?(key, value)
+      end)
+      |> Enum.map(&sanitize_env_value(&1, release_root))
+
+    base ++ overrides ++ Enum.map(release_env_keys(), &{&1, nil})
+  end
+
   def split_args(nil), do: []
   def split_args(""), do: []
 
@@ -57,7 +101,7 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
 
   defp do_run(tool, command, executable, args, safe_workdir, opts) do
     timeout = Keyword.get(opts, :timeout, @default_timeout)
-    env = Keyword.get(opts, :env, [])
+    env = opts |> Keyword.get(:env, []) |> external_env()
 
     run_opts = [
       cd: safe_workdir,
@@ -65,7 +109,6 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
       env: env
     ]
 
-    # DEBUG: Log the runner and run_opts to see what's being passed
     runner_func = runner(tool)
 
     started = System.monotonic_time(:millisecond)
@@ -180,6 +223,31 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
       Application.get_env(:agent, :command_runner) ||
       (&System.cmd/3)
   end
+
+  defp release_scoped_erl_libs?("ERL_LIBS", value) when is_binary(value) do
+    release_root = System.get_env("RELEASE_ROOT")
+    is_binary(release_root) and release_root != "" and String.contains?(value, release_root)
+  end
+
+  defp release_scoped_erl_libs?(_key, _value), do: false
+
+  defp sanitize_env_value({"PATH", value}, release_root) when is_binary(value) do
+    {"PATH", strip_release_path_entries(value, release_root)}
+  end
+
+  defp sanitize_env_value(pair, _release_root), do: pair
+
+  defp strip_release_path_entries(path, release_root)
+       when is_binary(release_root) and release_root != "" do
+    path
+    |> String.split(":", trim: true)
+    |> Enum.reject(fn entry ->
+      entry == release_root or String.starts_with?(entry, release_root <> "/")
+    end)
+    |> Enum.join(":")
+  end
+
+  defp strip_release_path_entries(path, _release_root), do: path
 
   defp async_command(fun) when is_function(fun, 0) do
     if Process.whereis(Beamcore.Agent.TaskSupervisor) do

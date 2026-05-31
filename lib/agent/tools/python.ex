@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Tools.Python do
   """
 
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.Tools.{CommandRunner, PathSafety}
 
   @legacy_commands ~w(test lint format type-check deps install build publish clean validate venv)
   @allowed_commands ~w(test lint format type-check build validate venv)
@@ -404,9 +404,9 @@ defmodule Beamcore.Agent.Tools.Python do
     env = [{"PYTHONPATH", System.get_env("PYTHONPATH") || ""}]
 
     if venv_path do
-      [{"VIRTUAL_ENV", Path.expand(venv_path)} | env]
+      CommandRunner.external_env([{"VIRTUAL_ENV", Path.expand(venv_path)} | env])
     else
-      env
+      CommandRunner.external_env(env)
     end
   end
 
@@ -439,7 +439,7 @@ defmodule Beamcore.Agent.Tools.Python do
 
     case runner().(python_executable(), ["-m", "venv", venv_path],
            stderr_to_stdout: true,
-           env: []
+           env: CommandRunner.external_env()
          ) do
       {output, 0} ->
         %{
