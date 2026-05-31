@@ -99,7 +99,8 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   defp handle_context_clear(session, output) do
     output.("Session context cleared.")
-    %{session | context: Beamcore.Agent.Chat.Context.new(session.project_nature)}
+    {language, build_system} = session.project_nature
+    %{session | context: Beamcore.Agent.Chat.Context.new(language, build_system)}
   end
 
   defp handle_policy(args, session, output) do
