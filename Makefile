@@ -5,7 +5,6 @@ BIN_DIR ?= $(HOME)/.local/bin
 LAUNCHER ?= $(BIN_DIR)/beamcore
 CONFIG_DIR ?= $(HOME)/.beamcore
 
-DRY_RUN ?= 0
 PATH_UPDATE ?= 0
 VERBOSE ?= 0
 
@@ -21,9 +20,6 @@ all: compile
 #   beamcore remote -> attach to release
 install:
 	@echo "==> Building Beamcore release"; \
-	if [ "$(DRY_RUN)" = "1" ]; then \
-		echo "DRY RUN: no install files will be changed, but the release build still runs."; \
-	fi; \
 	if [ "$(VERBOSE)" = "1" ]; then \
 		mix deps.get && mix compile && MIX_ENV=prod mix release --overwrite; \
 	else \
@@ -42,33 +38,20 @@ install:
 	@echo "==> Installing Beamcore"
 	@echo "app:      $(INSTALL_DIR)"
 	@echo "launcher: $(LAUNCHER)"
-	@if [ "$(DRY_RUN)" = "1" ]; then \
-		echo ""; \
-		echo "Would remove/create app dir and copy release files."; \
-		echo "Would write launcher:"; \
-		printf '%s\n%s\n%s\n%s\n%s\n' \
-			'#!/bin/sh' \
-			'if [ "$$#" -eq 0 ]; then' \
-			'  exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
-			'fi' \
-			'exec "$(INSTALL_DIR)/bin/agent" "$$@"'; \
-		echo "✓ Dry run complete"; \
-	else \
-		rm -rf "$(INSTALL_DIR)"; \
-		mkdir -p "$(INSTALL_DIR)"; \
-		cp -a _build/prod/rel/agent/. "$(INSTALL_DIR)/"; \
-		mkdir -p "$(BIN_DIR)"; \
-		printf '%s\n%s\n%s\n%s\n%s\n' \
-			'#!/bin/sh' \
-			'if [ "$$#" -eq 0 ]; then' \
-			'  exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
-			'fi' \
-			'exec "$(INSTALL_DIR)/bin/agent" "$$@"' > "$(LAUNCHER)"; \
-		chmod +x "$(LAUNCHER)"; \
-		echo "✓ Installed"; \
-	fi
+	@rm -rf "$(INSTALL_DIR)"; \
+	mkdir -p "$(INSTALL_DIR)"; \
+	cp -a _build/prod/rel/agent/. "$(INSTALL_DIR)/"; \
+	mkdir -p "$(BIN_DIR)"; \
+	printf '%s\n%s\n%s\n%s\n%s\n' \
+		'#!/bin/sh' \
+		'if [ "$$#" -eq 0 ]; then' \
+		'  exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
+		'fi' \
+		'exec "$(INSTALL_DIR)/bin/agent" "$$@"' > "$(LAUNCHER)"; \
+	chmod +x "$(LAUNCHER)"; \
+	echo "✓ Installed"
 	@echo ""
-	@$(MAKE) --no-print-directory init DRY_RUN=$(DRY_RUN)
+	@$(MAKE) --no-print-directory init
 	@echo ""
 	@echo "==> Launcher"
 	@printf '%-17s %s\n' "beamcore" "open interactive TUI chat"
@@ -94,10 +77,7 @@ install:
 			echo "$(BIN_DIR) is not in PATH"; \
 			echo ""; \
 			if [ "$(PATH_UPDATE)" = "1" ]; then \
-				if [ "$(DRY_RUN)" = "1" ]; then \
-					echo "DRY RUN: would append to $$rc_file if missing:"; \
-					echo "  $$path_line"; \
-				elif [ -f "$$rc_file" ] && grep -F "$(BIN_DIR)" "$$rc_file" >/dev/null 2>&1; then \
+				if [ -f "$$rc_file" ] && grep -F "$(BIN_DIR)" "$$rc_file" >/dev/null 2>&1; then \
 					echo "$$rc_file already mentions $(BIN_DIR); not appending."; \
 				else \
 					printf '\n%s\n' "$$path_line" >> "$$rc_file"; \
@@ -153,14 +133,7 @@ chat: compile
 # Create global Beamcore config directory.
 init: .env.example
 	@echo "==> Configuring Beamcore"
-	@if [ "$(DRY_RUN)" = "1" ]; then \
-		echo "DRY_RUN mkdir -p $(CONFIG_DIR)"; \
-		if [ -d "$(CONFIG_DIR)" ]; then \
-			echo "DRY_RUN config directory already exists"; \
-		else \
-			echo "DRY_RUN would create config directory"; \
-		fi; \
-	elif [ -d "$(CONFIG_DIR)" ]; then \
+	@if [ -d "$(CONFIG_DIR)" ]; then \
 		echo "Config directory $(CONFIG_DIR) already exists."; \
 	else \
 		mkdir -p "$(CONFIG_DIR)"; \
