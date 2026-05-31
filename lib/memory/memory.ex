@@ -94,31 +94,7 @@ defmodule Beamcore.Memory do
     end
   end
 
-  @doc """
-  Detects the organization and repository name dynamically.
-  """
-  def detect_org_repo do
-    # Reuses the robust Git/Environment detection logic from Ledger
-    env_org = System.get_env("BEAMCORE_ORG")
-    env_repo = System.get_env("BEAMCORE_REPO")
 
-    if env_org && env_repo do
-      {env_org, env_repo}
-    else
-      case System.cmd("git", ["config", "--get", "remote.origin.url"]) do
-        {url, 0} ->
-          url = String.trim(url)
-
-          case parse_git_url(url) do
-            {org, repo} -> {org, repo}
-            nil -> {"default_org", "default_repo"}
-          end
-
-        _ ->
-          {"default_org", "default_repo"}
-      end
-    end
-  end
 
   # --- GenServer Callbacks ---
 
@@ -352,13 +328,4 @@ defmodule Beamcore.Memory do
     end
   end
 
-  defp parse_git_url(url) do
-    url = String.replace_suffix(url, ".git", "")
-    parts = String.split(url, [":", "/"])
-
-    case Enum.reverse(parts) do
-      [repo, org | _] -> {org, repo}
-      _ -> nil
-    end
-  end
 end

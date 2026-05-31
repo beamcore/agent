@@ -52,11 +52,15 @@ defmodule Beamcore.TUI.State do
   end
 
   defp compute_memory_total() do
-    {org, repo} = Beamcore.Memory.detect_org_repo()
+    case Beamcore.Agent.Workspace.current_context() do
+      nil ->
+        0
 
-    [:repo_map, :patterns, :decisions, :errors, :context]
-    |> Enum.map(fn type -> length(Beamcore.Memory.list(org, repo, type)) end)
-    |> Enum.sum()
+      {org, repo} ->
+        [:repo_map, :patterns, :decisions, :errors, :context]
+        |> Enum.map(fn type -> length(Beamcore.Memory.list(org, repo, type)) end)
+        |> Enum.sum()
+    end
   end
 
   def add_message(state, role, content) when is_binary(content) do

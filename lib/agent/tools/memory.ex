@@ -55,61 +55,66 @@ defmodule Beamcore.Agent.Tools.Memory do
     value = Map.get(params, "value")
     type_str = Map.get(params, "type") || "context"
 
-    with {:ok, action_atom} <- validate_action(action),
-         {:ok, type_atom} <- validate_type(type_str) do
-      {org, repo} = Memory.detect_org_repo()
+    # Check if we're in a git repository
+    case Beamcore.Agent.Workspace.current_context() do
+      nil ->
+        "Error: Memory is only available when running inside a git repository."
 
-      case action_atom do
-        :remember ->
-          if is_nil(key) || String.trim(key) == "" do
-            "Error: key is required for remember action."
-          else
-            if is_nil(value) || String.trim(value) == "" do
-              "Error: value is required for remember action."
-            else
-              case Memory.remember(org, repo, type_atom, key, value) do
-                :ok -> "Successfully remembered #{type_str} memory under key '#{key}'."
-                {:error, reason} -> "Error saving memory: #{inspect(reason)}"
+      {org, repo} ->
+        with {:ok, action_atom} <- validate_action(action),
+             {:ok, type_atom} <- validate_type(type_str) do
+          case action_atom do
+            :remember ->
+              if is_nil(key) || String.trim(key) == "" do
+                "Error: key is required for remember action."
+              else
+                if is_nil(value) || String.trim(value) == "" do
+                  "Error: value is required for remember action."
+                else
+                  case Memory.remember(org, repo, type_atom, key, value) do
+                    :ok -> "Successfully remembered #{type_str} memory under key '#{key}'."
+                    {:error, reason} -> "Error saving memory: #{inspect(reason)}"
+                  end
+                end
               end
-            end
+
+            :recall ->
+              if is_nil(key) || String.trim(key) == "" do
+                "Error: key is required for recall action."
+              else
+                case Memory.recall(org, repo, type_atom, key) do
+                  nil -> "No #{type_str} memory found for key '#{key}'."
+                  val -> "Recalled #{type_str} memory for '#{key}':\n#{val}"
+                end
+              end
+
+            :forget ->
+              if is_nil(key) || String.trim(key) == "" do
+                "Error: key is required for forget action."
+              else
+                case Memory.forget(org, repo, type_atom, key) do
+                  :ok -> "Successfully forgot #{type_str} memory for key '#{key}'."
+                  {:error, reason} -> "Error forgetting memory: #{inspect(reason)}"
+                end
+              end
+
+            :list ->
+              case Memory.list(org, repo, type_atom) do
+                [] ->
+                  "No memories found for type #{type_str}."
+
+                memories ->
+                  list_str =
+                    memories
+                    |> Enum.map(fn {k, v} -> "- #{k}: #{short_summary(v)}" end)
+                    |> Enum.join("\n")
+
+                  "Memories for type #{type_str}:\n#{list_str}"
+              end
           end
-
-        :recall ->
-          if is_nil(key) || String.trim(key) == "" do
-            "Error: key is required for recall action."
-          else
-            case Memory.recall(org, repo, type_atom, key) do
-              nil -> "No #{type_str} memory found for key '#{key}'."
-              val -> "Recalled #{type_str} memory for '#{key}':\n#{val}"
-            end
-          end
-
-        :forget ->
-          if is_nil(key) || String.trim(key) == "" do
-            "Error: key is required for forget action."
-          else
-            case Memory.forget(org, repo, type_atom, key) do
-              :ok -> "Successfully forgot #{type_str} memory for key '#{key}'."
-              {:error, reason} -> "Error forgetting memory: #{inspect(reason)}"
-            end
-          end
-
-        :list ->
-          case Memory.list(org, repo, type_atom) do
-            [] ->
-              "No memories found for type #{type_str}."
-
-            memories ->
-              list_str =
-                memories
-                |> Enum.map(fn {k, v} -> "- #{k}: #{short_summary(v)}" end)
-                |> Enum.join("\n")
-
-              "Memories for type #{type_str}:\n#{list_str}"
-          end
-      end
-    else
-      {:error, reason} -> "Error: #{reason}"
+        else
+          {:error, reason} -> "Error: #{reason}"
+        end
     end
   end
 

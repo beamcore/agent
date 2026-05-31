@@ -68,31 +68,36 @@ defmodule Beamcore.Agent.Core.SysPrompt do
   end
 
   defp memory_index_details do
-    {org, repo} = Beamcore.Memory.detect_org_repo()
-    categories = [:repo_map, :patterns, :decisions, :errors, :context]
+    case Beamcore.Agent.Workspace.current_context() do
+      nil ->
+        ""
 
-    index_lines =
-      Enum.map(categories, fn type ->
-        keys =
-          Beamcore.Memory.list(org, repo, type)
-          |> Enum.map(fn {k, _v} -> k end)
+      {org, repo} ->
+        categories = [:repo_map, :patterns, :decisions, :errors, :context]
 
-        if keys == [] do
-          nil
+        index_lines =
+          Enum.map(categories, fn type ->
+            keys =
+              Beamcore.Memory.list(org, repo, type)
+              |> Enum.map(fn {k, _v} -> k end)
+
+            if keys == [] do
+              nil
+            else
+              "  - #{type}: #{inspect(keys)}"
+            end
+          end)
+          |> Enum.reject(&is_nil/1)
+
+        if index_lines == [] do
+          ""
         else
-          "  - #{type}: #{inspect(keys)}"
+          """
+
+          Accumulated Repository Memory Index (Use the `memory` tool to `recall` these keys):
+          #{Enum.join(index_lines, "\n")}
+          """
         end
-      end)
-      |> Enum.reject(&is_nil/1)
-
-    if index_lines == [] do
-      ""
-    else
-      """
-
-      Accumulated Repository Memory Index (Use the `memory` tool to `recall` these keys):
-      #{Enum.join(index_lines, "\n")}
-      """
     end
   end
 end

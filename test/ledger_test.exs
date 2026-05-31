@@ -60,13 +60,7 @@ defmodule Beamcore.LedgerTest do
     end)
   end
 
-  test "detects org and repo dynamically" do
-    {org, repo} = Ledger.detect_org_repo()
-    assert is_binary(org)
-    assert is_binary(repo)
-    assert org != ""
-    assert repo != ""
-  end
+
 
   test "flush returns ok when Ledger is running" do
     assert :ok == Ledger.flush()

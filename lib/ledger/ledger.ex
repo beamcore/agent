@@ -152,31 +152,7 @@ defmodule Beamcore.Ledger do
     end
   end
 
-  @doc """
-  Detects the organization and repository name dynamically using Git remote URL
-  or environment variable overrides (`BEAMCORE_ORG`, `BEAMCORE_REPO`).
-  """
-  def detect_org_repo do
-    env_org = System.get_env("BEAMCORE_ORG")
-    env_repo = System.get_env("BEAMCORE_REPO")
 
-    if env_org && env_repo do
-      {env_org, env_repo}
-    else
-      case System.cmd("git", ["config", "--get", "remote.origin.url"]) do
-        {url, 0} ->
-          url = String.trim(url)
-
-          case parse_git_url(url) do
-            {org, repo} -> {org, repo}
-            nil -> {"default_org", "default_repo"}
-          end
-
-        _ ->
-          {"default_org", "default_repo"}
-      end
-    end
-  end
 
   # --- GenServer Callbacks ---
 
@@ -319,16 +295,6 @@ defmodule Beamcore.Ledger do
   defp summarize_result(result) when is_binary(result), do: result
 
   defp summarize_result(result), do: inspect(result, limit: :infinity)
-
-  defp parse_git_url(url) do
-    url = String.replace_suffix(url, ".git", "")
-    parts = String.split(url, [":", "/"])
-
-    case Enum.reverse(parts) do
-      [repo, org | _] -> {org, repo}
-      _ -> nil
-    end
-  end
 
   defp find_metric_value(values, target_metric) do
     case Enum.find(values, fn {{_, _, _, metric}, _} -> metric == target_metric end) do
