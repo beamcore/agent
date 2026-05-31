@@ -2,6 +2,8 @@ defmodule Beamcore.Agent.Tools.Mix do
   @moduledoc """
   Safe, scoped wrapper for mix commands.
   """
+  alias Beamcore.Agent.Policy.ProjectPolicy
+  alias Beamcore.Agent.Tools.PathSafety
 
   @allowed_commands ~w(test compile format deps.get dialyzer hex.info validate)
   @output_tail_lines 40
@@ -32,6 +34,10 @@ defmodule Beamcore.Agent.Tools.Mix do
               type: "string",
               description: "Additional arguments as a single string",
               default: ""
+            },
+            workdir: %{
+              type: "string",
+              description: "Workspace-relative workdir (defaults to root)."
             }
           },
           required: ["command"]
@@ -43,22 +49,41 @@ defmodule Beamcore.Agent.Tools.Mix do
   def execute(params) do
     command = Map.fetch!(params, "command")
     args = Map.get(params, "args", "")
+    workdir = Map.get(params, "workdir", ".")
 
-    cond do
-      command == "validate" ->
-        validate() |> encode()
+    with :ok <- ProjectPolicy.allowed_read_path?(workdir),
+         {:ok, safe_workdir} <- PathSafety.resolve(workdir) do
+      cond do
+        command == "validate" ->
+          validate(safe_workdir) |> encode()
 
-      command in @allowed_commands ->
-        command
-        |> run(args)
+        command in @allowed_commands ->
+          command
+          |> run(args, safe_workdir)
+          |> encode()
+
+        true ->
+          disallowed(command, args) |> encode()
+      end
+    else
+      {:error, reason} ->
+        %{
+          "ok" => false,
+          "command" => command,
+          "args" => args,
+          "exit_code" => nil,
+          "stdout" => "",
+          "stderr" => "",
+          "output_tail" => reason,
+          "output_tail_lines" => 1,
+          "truncated" => false,
+          "summary" => "Path safety error: #{reason}"
+        }
         |> encode()
-
-      true ->
-        disallowed(command, args) |> encode()
     end
   end
 
-  defp validate do
+  defp validate(workdir) do
     steps = [
       {"format", "--check-formatted"},
       {"compile", ""},
@@ -67,7 +92,7 @@ defmodule Beamcore.Agent.Tools.Mix do
 
     {results, failed_step, skipped_steps} =
       Enum.reduce_while(steps, {[], nil, []}, fn {command, args}, {results, _failed, _skipped} ->
-        result = run(command, args, command)
+        result = run(command, args, workdir, command)
 
         if result["ok"] do
           {:cont, {results ++ [result], nil, []}}
@@ -99,10 +124,21 @@ defmodule Beamcore.Agent.Tools.Mix do
     }
   end
 
-  defp run(command, args, name \\ nil) do
+  defp run(command, args, workdir, name \\ nil) do
     extra = String.split(args, " ", trim: true)
-    env = [{"MIX_ENV", mix_env(command)}]
-    {output, exit_code} = runner().("mix", [command | extra], stderr_to_stdout: true, env: env)
+
+    env =
+      Map.new()
+      |> Map.put("PATH", System.get_env("PATH") || "")
+      |> Map.put("LANG", System.get_env("LANG") || "")
+      |> Map.put("HOME", System.get_env("HOME") || "")
+      |> Map.put("MIX_ENV", mix_env(command))
+      # Convert back to keyword list format
+      |> Enum.into([])
+
+    {output, exit_code} =
+      runner().("mix", [command | extra], cd: workdir, stderr_to_stdout: true, env: env)
+
     ok = exit_code == 0
 
     output = truncate(output)

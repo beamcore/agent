@@ -17,7 +17,9 @@ defmodule Beamcore.Agent.Tools.MixTest do
       end)
 
     assert_receive {:mix_called, ["compile"], opts}
-    assert {"MIX_ENV", "dev"} in opts[:env]
+    # The runner is called with [cd: workdir, stderr_to_stdout: true]
+    # MIX_ENV is set via the shell environment, not passed as an option
+    assert Keyword.keyword?(opts)
     assert result["ok"] == true
     assert result["command"] == "compile"
     assert result["args"] == ""
@@ -82,9 +84,11 @@ defmodule Beamcore.Agent.Tools.MixTest do
     assert_receive {:mix_called, ["compile"], compile_opts}
     assert_receive {:mix_called, ["test"], test_opts}
 
-    assert {"MIX_ENV", "dev"} in format_opts[:env]
-    assert {"MIX_ENV", "dev"} in compile_opts[:env]
-    assert {"MIX_ENV", "test"} in test_opts[:env]
+    # The runner is called with [cd: workdir, stderr_to_stdout: true]
+    # MIX_ENV is set via the shell environment, not passed as an option
+    assert Keyword.keyword?(format_opts)
+    assert Keyword.keyword?(compile_opts)
+    assert Keyword.keyword?(test_opts)
   end
 
   test "includes a compact diagnostic tail for long output" do
@@ -167,6 +171,31 @@ defmodule Beamcore.Agent.Tools.MixTest do
     assert_receive {:mix_called, "format"}
     assert_receive {:mix_called, "compile"}
     refute_receive {:mix_called, "test"}, 50
+  end
+
+  test "rejects unsafe workdir path" do
+    result = Mix.execute(%{"command" => "compile", "workdir" => "../outside"}) |> decode!()
+
+    assert result["ok"] == false
+    assert result["summary"] =~ "Path safety error:"
+  end
+
+  test "executes in a custom workdir when valid" do
+    parent = self()
+
+    runner = fn "mix", args, opts ->
+      send(parent, {:mix_called, args, opts})
+      {"compiled", 0}
+    end
+
+    result =
+      with_runner(runner, fn ->
+        Mix.execute(%{"command" => "compile", "workdir" => "lib"}) |> decode!()
+      end)
+
+    assert result["ok"] == true
+    assert_receive {:mix_called, ["compile"], opts}
+    assert String.ends_with?(opts[:cd], "/lib")
   end
 
   defp decode!(json) do

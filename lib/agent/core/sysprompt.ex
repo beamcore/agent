@@ -58,6 +58,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     - This is an Elixir project.
     - Prefer idiomatic Elixir.
     """
+
     build_details(build_system, base)
   end
 
@@ -69,6 +70,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     - This is a Python project.
     - Prefer idiomatic Python.
     """
+
     build_details(build_system, base)
   end
 
@@ -77,6 +79,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     - This is a JavaScript project.
     - Prefer idiomatic JavaScript.
     """
+
     build_details(build_system, base)
   end
 

@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.Tools.Python do
   Supports virtual environments, dependency management, testing, linting, formatting, and type checking.
   """
 
+  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @legacy_commands ~w(test lint format type-check deps install build publish clean validate venv)
@@ -69,6 +70,10 @@ defmodule Beamcore.Agent.Tools.Python do
               description:
                 "Virtual environment name or path to use. If not specified, uses project's default venv or system Python.",
               default: ""
+            },
+            workdir: %{
+              type: "string",
+              description: "Workspace-relative workdir (defaults to root)."
             }
           },
           required: ["command"]
@@ -81,16 +86,36 @@ defmodule Beamcore.Agent.Tools.Python do
     command = Map.fetch!(params, "command")
     args = Map.get(params, "args", "")
     venv = Map.get(params, "venv", "")
+    workdir = Map.get(params, "workdir", ".")
 
-    cond do
-      command == "validate" ->
-        validate(venv) |> encode()
+    with :ok <- ProjectPolicy.allowed_read_path?(workdir),
+         {:ok, safe_workdir} <- PathSafety.resolve(workdir) do
+      cond do
+        command == "validate" ->
+          validate(venv, safe_workdir) |> encode()
 
-      command in @allowed_commands ->
-        run_allowed(command, args, venv) |> encode()
+        command in @allowed_commands ->
+          run_allowed(command, args, venv, safe_workdir) |> encode()
 
-      true ->
-        unsupported(command, args) |> encode()
+        true ->
+          unsupported(command, args) |> encode()
+      end
+    else
+      {:error, reason} ->
+        %{
+          "ok" => false,
+          "command" => command,
+          "args" => args,
+          "venv" => venv,
+          "exit_code" => nil,
+          "stdout" => "",
+          "stderr" => "",
+          "output_tail" => reason,
+          "output_tail_lines" => 1,
+          "truncated" => false,
+          "summary" => "Path safety error: #{reason}"
+        }
+        |> encode()
     end
   end
 
@@ -98,20 +123,40 @@ defmodule Beamcore.Agent.Tools.Python do
     command = Map.fetch!(params, "command")
     args = Map.get(params, "args", "")
     venv = Map.get(params, "venv", "")
+    workdir = Map.get(params, "workdir", ".")
 
-    cond do
-      command == "validate" ->
-        validate(venv) |> encode()
+    with :ok <- ProjectPolicy.allowed_read_path?(workdir),
+         {:ok, safe_workdir} <- PathSafety.resolve(workdir) do
+      cond do
+        command == "validate" ->
+          validate(venv, safe_workdir) |> encode()
 
-      command in @legacy_commands ->
-        run(command, args, venv) |> encode()
+        command in @legacy_commands ->
+          run(command, args, venv, safe_workdir) |> encode()
 
-      true ->
-        disallowed(command, args) |> encode()
+        true ->
+          disallowed(command, args) |> encode()
+      end
+    else
+      {:error, reason} ->
+        %{
+          "ok" => false,
+          "command" => command,
+          "args" => args,
+          "venv" => venv,
+          "exit_code" => nil,
+          "stdout" => "",
+          "stderr" => "",
+          "output_tail" => reason,
+          "output_tail_lines" => 1,
+          "truncated" => false,
+          "summary" => "Path safety error: #{reason}"
+        }
+        |> encode()
     end
   end
 
-  defp validate(venv) do
+  defp validate(venv, workdir) do
     steps = [
       {"format", ""},
       {"lint", ""},
@@ -121,7 +166,7 @@ defmodule Beamcore.Agent.Tools.Python do
 
     {results, failed_step, skipped_steps} =
       Enum.reduce_while(steps, {[], nil, []}, fn {command, args}, {results, _failed, _skipped} ->
-        result = run(command, args, venv, command)
+        result = run(command, args, venv, workdir, command)
 
         if result["ok"] do
           {:cont, {results ++ [result], nil, []}}
@@ -154,17 +199,18 @@ defmodule Beamcore.Agent.Tools.Python do
     }
   end
 
-  defp run(command, args, venv), do: run(command, args, venv, nil)
+  defp run(command, args, venv, workdir), do: run(command, args, venv, workdir, nil)
 
-  defp run(command, args, venv, name) when name == nil, do: run(command, args, venv, command)
+  defp run(command, args, venv, workdir, name) when name == nil,
+    do: run(command, args, venv, workdir, command)
 
-  defp run(command, args, venv, name) do
+  defp run(command, args, venv, workdir, name) do
     # Handle virtual environment commands separately
     if command == "venv" do
-      run_venv_command(args, venv, name)
+      run_venv_command(args, venv, workdir, name)
     else
       # Resolve the virtual environment path
-      venv_path = get_venv_path(venv)
+      venv_path = get_venv_path(venv, workdir)
 
       # Resolve the actual command to run
       actual_command = resolve_command(command, args)
@@ -176,7 +222,9 @@ defmodule Beamcore.Agent.Tools.Python do
       env = build_environment(venv_path)
 
       # Execute the command
-      {output, exit_code} = runner().(base_cmd, cmd_args, stderr_to_stdout: true, env: env)
+      {output, exit_code} =
+        runner().(base_cmd, cmd_args, cd: workdir, stderr_to_stdout: true, env: env)
+
       ok = exit_code == 0
 
       output = truncate(output)
@@ -200,10 +248,15 @@ defmodule Beamcore.Agent.Tools.Python do
     end
   end
 
-  defp run_allowed("venv", args, venv), do: run_safe_venv_command(args, venv)
-  defp run_allowed(command, args, venv), do: run(command, args, venv)
+  defp run_allowed(command, args, venv, workdir) do
+    if command == "venv" do
+      run_safe_venv_command(args, venv, workdir)
+    else
+      run(command, args, venv, workdir)
+    end
+  end
 
-  defp run_safe_venv_command(args, venv) do
+  defp run_safe_venv_command(args, venv, workdir) do
     parts = String.split(args, " ", trim: true)
     subcommand = if parts != [], do: hd(parts), else: "list"
     args_tail = if parts != [], do: tl(parts), else: []
@@ -212,13 +265,13 @@ defmodule Beamcore.Agent.Tools.Python do
     result =
       case subcommand do
         "create" when length(args_tail) >= 1 ->
-          create_safe_venv(hd(args_tail))
+          create_safe_venv(hd(args_tail), workdir)
 
         "list" ->
-          list_venvs()
+          list_venvs(workdir)
 
         "" ->
-          list_venvs()
+          list_venvs(workdir)
 
         unsupported_subcommand ->
           unsupported("venv #{unsupported_subcommand}", args)
@@ -231,9 +284,9 @@ defmodule Beamcore.Agent.Tools.Python do
     |> maybe_put_venv(venv_name)
   end
 
-  defp create_safe_venv(venv_name) do
-    with {:ok, _path} <- PathSafety.resolve(venv_name, allow_missing: true) do
-      create_venv(venv_name)
+  defp create_safe_venv(venv_name, workdir) do
+    with {:ok, _path} <- PathSafety.resolve(Path.join(workdir, venv_name), allow_missing: true) do
+      create_venv(venv_name, workdir)
     else
       {:error, reason} ->
         %{
@@ -241,7 +294,7 @@ defmodule Beamcore.Agent.Tools.Python do
           "exit_code" => nil,
           "stdout" => "",
           "stderr" => "",
-          "output_tail" => "",
+          "output_tail" => reason,
           "output_tail_lines" => 0,
           "truncated" => false,
           "summary" => reason
@@ -252,7 +305,7 @@ defmodule Beamcore.Agent.Tools.Python do
   defp maybe_put_venv(result, ""), do: result
   defp maybe_put_venv(result, venv_name), do: Map.put(result, "venv", venv_name)
 
-  defp run_venv_command(args, venv, name) do
+  defp run_venv_command(args, venv, workdir, name) do
     # Parse venv subcommand
     parts = String.split(args, " ", trim: true)
 
@@ -262,11 +315,11 @@ defmodule Beamcore.Agent.Tools.Python do
 
     result =
       case subcommand do
-        "create" when length(args_tail) >= 1 -> create_venv(hd(args_tail))
-        "activate" -> activate_venv(venv_name)
-        "list" -> list_venvs()
-        "remove" when args_tail != [] -> remove_venv(hd(args_tail))
-        _ -> list_venvs()
+        "create" when length(args_tail) >= 1 -> create_venv(hd(args_tail), workdir)
+        "activate" -> activate_venv(venv_name, workdir)
+        "list" -> list_venvs(workdir)
+        "remove" when args_tail != [] -> remove_venv(hd(args_tail), workdir)
+        _ -> list_venvs(workdir)
       end
 
     result
@@ -287,16 +340,16 @@ defmodule Beamcore.Agent.Tools.Python do
     end
   end
 
-  defp get_venv_path("") do
+  defp get_venv_path("", workdir) do
     cond do
-      File.exists?(".venv") -> ".venv"
-      File.exists?("venv") -> "venv"
+      File.exists?(Path.join(workdir, ".venv")) -> Path.join(workdir, ".venv")
+      File.exists?(Path.join(workdir, "venv")) -> Path.join(workdir, "venv")
       true -> nil
     end
   end
 
-  defp get_venv_path(venv) do
-    resolve_venv_path(venv) || venv
+  defp get_venv_path(venv, workdir) do
+    resolve_venv_path(venv, workdir) || Path.join(workdir, venv)
   end
 
   defp build_command(command_string, venv_path) do
@@ -357,19 +410,22 @@ defmodule Beamcore.Agent.Tools.Python do
     end
   end
 
-  defp resolve_venv_path(""), do: nil
+  defp resolve_venv_path("", _workdir), do: nil
 
-  defp resolve_venv_path(venv) do
+  defp resolve_venv_path(venv, workdir) do
     if String.starts_with?(venv, "/") || String.starts_with?(venv, "./") do
-      if File.exists?(venv), do: venv, else: nil
+      full_path = Path.expand(venv, workdir)
+      if File.exists?(full_path), do: full_path, else: nil
     else
-      locations = [
-        venv,
-        ".venv",
-        "venv",
-        "env",
-        ".python-venv"
-      ]
+      locations =
+        [
+          venv,
+          ".venv",
+          "venv",
+          "env",
+          ".python-venv"
+        ]
+        |> Enum.map(&Path.join(workdir, &1))
 
       Enum.find_value(locations, fn path ->
         expanded = String.replace(path, "~", System.get_env("HOME") || "")
@@ -378,8 +434,8 @@ defmodule Beamcore.Agent.Tools.Python do
     end
   end
 
-  defp create_venv(venv_name) do
-    venv_path = resolve_venv_path(venv_name) || venv_name
+  defp create_venv(venv_name, workdir) do
+    venv_path = resolve_venv_path(venv_name, workdir) || Path.join(workdir, venv_name)
 
     case runner().(python_executable(), ["-m", "venv", venv_path],
            stderr_to_stdout: true,
@@ -406,8 +462,8 @@ defmodule Beamcore.Agent.Tools.Python do
     end
   end
 
-  defp activate_venv(venv_name) do
-    venv_path = resolve_venv_path(venv_name)
+  defp activate_venv(venv_name, workdir) do
+    venv_path = resolve_venv_path(venv_name, workdir)
 
     if venv_path && File.exists?(venv_path) do
       %{
@@ -429,14 +485,19 @@ defmodule Beamcore.Agent.Tools.Python do
     end
   end
 
-  defp list_venvs do
+  defp list_venvs(workdir) do
     # Look for venvs in common locations
-    locations = [".venv", "venv", "env", ".python-venv"]
+    locations =
+      [".venv", "venv", "env", ".python-venv"]
+      |> Enum.map(&Path.join(workdir, &1))
 
     found =
       locations
       |> Enum.filter(&File.exists?/1)
-      |> Enum.map(fn path -> %{"name" => path, "path" => path} end)
+      |> Enum.map(fn path ->
+        rel = Path.relative_to(path, PathSafety.workspace_root())
+        %{"name" => rel, "path" => rel}
+      end)
 
     %{
       "ok" => true,
@@ -448,8 +509,8 @@ defmodule Beamcore.Agent.Tools.Python do
     }
   end
 
-  defp remove_venv(venv_name) do
-    venv_path = resolve_venv_path(venv_name)
+  defp remove_venv(venv_name, workdir) do
+    venv_path = resolve_venv_path(venv_name, workdir)
 
     if venv_path && File.exists?(venv_path) do
       case File.rm_rf(venv_path) do

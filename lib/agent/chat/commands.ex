@@ -22,6 +22,7 @@ defmodule Beamcore.Agent.Chat.Commands do
       "yolo" -> handle_yolo(session, output)
       "yolo on" -> enable_yolo(session, output)
       "yolo off" -> disable_yolo(session, output)
+      "env" -> handle_env(session, output)
       "help" -> handle_help(session, output)
       "policy" -> handle_policy([], session, output)
       "policy " <> args -> handle_policy(String.split(args, " ", trim: true), session, output)
@@ -62,6 +63,16 @@ defmodule Beamcore.Agent.Chat.Commands do
     %{session | policy_override: nil, project_policy_bypassed?: false}
   end
 
+  defp handle_env(session, output) do
+    env_str =
+      System.get_env()
+      |> Enum.sort()
+      |> Enum.map_join("\n", fn {key, value} -> "#{key}=#{value}" end)
+
+    output.(env_str)
+    session
+  end
+
   defp handle_help(session, output) do
     output.("""
     Available commands:
@@ -79,6 +90,7 @@ defmodule Beamcore.Agent.Chat.Commands do
       /yolo - Toggle freedom mode for this session
       /yolo on - Bypass project policy for this session
       /yolo off - Restore project policy for this session
+      /env  - Print full env variables
       /help - Show this help message
     """)
 

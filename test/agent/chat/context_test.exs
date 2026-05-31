@@ -42,7 +42,8 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     result = Jason.encode!(%{"ok" => true, "summary" => "Validation passed."})
 
     context =
-      Context.new(:elixir, :mix) |> Context.update_from_tool("mix", %{"command" => "validate"}, result)
+      Context.new(:elixir, :mix)
+      |> Context.update_from_tool("mix", %{"command" => "validate"}, result)
 
     assert context.last_validation == %{
              command: "validate",

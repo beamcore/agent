@@ -111,7 +111,9 @@ defmodule Beamcore.Agent.Discovery.DetectorTest do
     assert Detector.detect_build_system(test_dir) == :pip
   end
 
-  test "detects npm build system when package.json and package-lock.json exist", %{test_dir: test_dir} do
+  test "detects npm build system when package.json and package-lock.json exist", %{
+    test_dir: test_dir
+  } do
     File.touch!(Path.join(test_dir, "package.json"))
     File.touch!(Path.join(test_dir, "package-lock.json"))
     assert Detector.detect_build_system(test_dir) == :npm

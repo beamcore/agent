@@ -544,7 +544,6 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert String.length(event.summary) < 260
   end
 
-
   test "policy activity event is compact" do
     event =
       State.compact_activity("policy", %{"action" => "deny", "target" => "secrets/**"}, :done)

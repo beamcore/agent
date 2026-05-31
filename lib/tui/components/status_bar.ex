@@ -50,5 +50,4 @@ defmodule Beamcore.TUI.Components.StatusBar do
       ]
     end
   end
-
 end

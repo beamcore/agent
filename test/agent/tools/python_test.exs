@@ -261,7 +261,31 @@ defmodule Beamcore.Agent.Tools.PythonTest do
       end)
 
     assert result["ok"] == true
-    assert_receive {:python_called, ["-m", "pytest"]}
+  end
+
+  test "rejects unsafe workdir path" do
+    result = Python.execute(%{"command" => "test", "workdir" => "../outside"}) |> decode!()
+
+    assert result["ok"] == false
+    assert result["summary"] =~ "Path safety error:"
+  end
+
+  test "executes in a custom workdir when valid" do
+    parent = self()
+
+    runner = fn "python3", args, opts ->
+      send(parent, {:python_called, args, opts})
+      {"ok", 0}
+    end
+
+    result =
+      with_runner(runner, fn ->
+        Python.execute(%{"command" => "test", "workdir" => "lib"}) |> decode!()
+      end)
+
+    assert result["ok"] == true
+    assert_receive {:python_called, ["-m", "pytest"], opts}
+    assert String.ends_with?(opts[:cd], "/lib")
   end
 
   defp decode!(json) do

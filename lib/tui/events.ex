@@ -11,6 +11,7 @@ defmodule Beamcore.TUI.Events do
 
   @commands [
     %Command{name: "help", description: "Show commands and keybindings"},
+    %Command{name: "env", description: "Print full env variables"},
     %Command{name: "new", description: "Start a fresh session"},
     %Command{name: "context", description: "Show compact session context"},
     %Command{name: "context clear", description: "Clear compact session context"},
