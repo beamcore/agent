@@ -4,7 +4,6 @@ INSTALL_DIR ?= $(HOME)/.beamcore/app
 BIN_DIR ?= $(HOME)/.local/bin
 LAUNCHER ?= $(BIN_DIR)/beamcore
 CONFIG_DIR ?= $(HOME)/.beamcore
-CONFIG_ENV ?= $(CONFIG_DIR)/.env
 
 DRY_RUN ?= 0
 PATH_UPDATE ?= 0
@@ -47,12 +46,8 @@ install:
 		echo ""; \
 		echo "Would remove/create app dir and copy release files."; \
 		echo "Would write launcher:"; \
-		printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+		printf '%s\n%s\n%s\n%s\n%s\n' \
 			'#!/bin/sh' \
-			'set -a' \
-			'[ ! -f "$$HOME/.beamcore/.env" ] || . "$$HOME/.beamcore/.env"' \
-			'[ ! -f ".env" ] || . ".env"' \
-			'set +a' \
 			'if [ "$$#" -eq 0 ]; then' \
 			'  exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
 			'fi' \
@@ -63,12 +58,8 @@ install:
 		mkdir -p "$(INSTALL_DIR)"; \
 		cp -a _build/prod/rel/agent/. "$(INSTALL_DIR)/"; \
 		mkdir -p "$(BIN_DIR)"; \
-		printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+		printf '%s\n%s\n%s\n%s\n%s\n' \
 			'#!/bin/sh' \
-			'set -a' \
-			'[ ! -f "$$HOME/.beamcore/.env" ] || . "$$HOME/.beamcore/.env"' \
-			'[ ! -f ".env" ] || . ".env"' \
-			'set +a' \
 			'if [ "$$#" -eq 0 ]; then' \
 			'  exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
 			'fi' \
@@ -134,14 +125,14 @@ install:
 	@$(MAKE) --no-print-directory config-status
 
 # Uninstall Beamcore app and launcher.
-# User config is intentionally preserved.
+# User config directory is intentionally preserved.
 uninstall:
 	@echo "==> Uninstalling Beamcore"
 	@rm -rf "$(INSTALL_DIR)"
 	@rm -f "$(LAUNCHER)"
 	@echo "removed app:      $(INSTALL_DIR)"
 	@echo "removed launcher: $(LAUNCHER)"
-	@echo "kept config:      $(CONFIG_ENV)"
+	@echo "kept config dir:  $(CONFIG_DIR)"
 	@echo "✓ Uninstalled"
 
 # Build the release.
@@ -159,57 +150,33 @@ compile:
 chat: compile
 	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
 
-# Create global Beamcore config for installed mode.
-# If local .env exists, use it. Otherwise create from .env.example.
+# Create global Beamcore config directory.
 init: .env.example
 	@echo "==> Configuring Beamcore"
 	@if [ "$(DRY_RUN)" = "1" ]; then \
 		echo "DRY_RUN mkdir -p $(CONFIG_DIR)"; \
-		if [ -f "$(CONFIG_ENV)" ]; then \
-			echo "DRY_RUN keep existing $(CONFIG_ENV)"; \
-			if ! grep -Eq '^[[:space:]]*MISTRAL_API_KEY=.+$$' "$(CONFIG_ENV)" 2>/dev/null; then \
-				echo "DRY_RUN warning: MISTRAL_API_KEY is not set in $(CONFIG_ENV)"; \
-			fi; \
-		elif [ -f .env ]; then \
-			echo "DRY_RUN create $(CONFIG_ENV) from local .env"; \
+		if [ -d "$(CONFIG_DIR)" ]; then \
+			echo "DRY_RUN config directory already exists"; \
 		else \
-			echo "DRY_RUN create $(CONFIG_ENV) from .env.example"; \
+			echo "DRY_RUN would create config directory"; \
 		fi; \
-	elif [ -f "$(CONFIG_ENV)" ]; then \
-		echo "$(CONFIG_ENV) already exists; not overwriting."; \
-		if ! grep -Eq '^[[:space:]]*MISTRAL_API_KEY=.+$$' "$(CONFIG_ENV)"; then \
-			echo "⚠ MISTRAL_API_KEY is not set in $(CONFIG_ENV)."; \
-			echo "Edit it before running beamcore from other projects."; \
-		fi; \
+	elif [ -d "$(CONFIG_DIR)" ]; then \
+		echo "Config directory $(CONFIG_DIR) already exists."; \
 	else \
 		mkdir -p "$(CONFIG_DIR)"; \
-		if [ -f .env ]; then \
-			cp .env "$(CONFIG_ENV)"; \
-			echo "Created $(CONFIG_ENV) from local .env."; \
-		else \
-			cp .env.example "$(CONFIG_ENV)"; \
-			echo "Created $(CONFIG_ENV) from .env.example."; \
-			echo "Edit $(CONFIG_ENV) and set MISTRAL_API_KEY before real chat/API usage."; \
-		fi; \
+		echo "Created config directory: $(CONFIG_DIR)"; \
 	fi
 
 config-status:
 	@echo ""
 	@echo "==> Config"
-	@if [ ! -f "$(CONFIG_ENV)" ]; then \
-		echo "⚠ Beamcore global config is missing: $(CONFIG_ENV)"; \
+	@if [ ! -d "$(CONFIG_DIR)" ]; then \
+		echo "⚠ Beamcore config directory is missing: $(CONFIG_DIR)"; \
 		echo ""; \
 		echo "Create it with:"; \
 		echo "  make init"; \
-		echo ""; \
-		echo "Then edit it and set MISTRAL_API_KEY."; \
-	elif ! grep -Eq '^[[:space:]]*MISTRAL_API_KEY=.+$$' "$(CONFIG_ENV)"; then \
-		echo "⚠ MISTRAL_API_KEY is not set in $(CONFIG_ENV)"; \
-		echo ""; \
-		echo "Edit config:"; \
-		echo "  $(CONFIG_ENV)"; \
 	else \
-		echo "✓ Config: $(CONFIG_ENV)"; \
+		echo "✓ Config directory: $(CONFIG_DIR)"; \
 	fi
 
 .env.example:

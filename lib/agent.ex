@@ -150,11 +150,7 @@ defmodule Beamcore.Agent do
     Missing:
       MISTRAL_API_KEY
 
-    Set it globally:
-      make init
-      edit ~/.beamcore/.env
-
-    Or for this project:
+    For local development, create a .env file in this project:
       echo 'MISTRAL_API_KEY=...' > .env
 
     Then run:
