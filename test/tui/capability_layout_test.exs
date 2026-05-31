@@ -50,7 +50,7 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
       assert output =~ "Beamcore is not configured yet."
       assert output =~ "Missing:"
       assert output =~ "MISTRAL_API_KEY"
-      assert output =~ "edit ~/.beamcore/.env"
+      assert output =~ "echo 'MISTRAL_API_KEY=...' > .env"
       refute output =~ "TUI unavailable"
       refute output =~ "Starting plain emergency fallback"
       refute output =~ "** ("
