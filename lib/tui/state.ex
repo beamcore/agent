@@ -26,6 +26,7 @@ defmodule Beamcore.TUI.State do
             last_animation_tick_ms: 0,
             render_dirty?: true,
             worker: nil,
+            pending_login?: false,
             unicode?: true,
             history: [],
             history_index: nil,
@@ -33,15 +34,21 @@ defmodule Beamcore.TUI.State do
             memory_total: nil
 
   def new(terminal, textarea, opts \\ []) do
-    client = Keyword.get(opts, :client, Beamcore.OpenAI.client())
+    client = client(opts)
     history = Keyword.get(opts, :history, Beamcore.TUI.History.load())
 
     memory_total = compute_memory_total()
 
+    messages =
+      if client,
+        do: [],
+        else: [%{role: :system, content: Beamcore.OpenAI.missing_config_message()}]
+
     %__MODULE__{
       terminal: terminal,
       textarea: textarea,
-      session: Session.new(client),
+      session: Session.new(client, opts),
+      messages: messages,
       last_animation_tick_ms: System.monotonic_time(:millisecond),
       unicode?: Beamcore.TUI.Capability.unicode?(opts),
       history: history,
@@ -49,6 +56,13 @@ defmodule Beamcore.TUI.State do
       history_draft: "",
       memory_total: memory_total
     }
+  end
+
+  defp client(opts) do
+    case Keyword.fetch(opts, :client) do
+      {:ok, client} -> client
+      :error -> if Beamcore.OpenAI.configured?(), do: Beamcore.OpenAI.client()
+    end
   end
 
   defp compute_memory_total() do

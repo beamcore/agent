@@ -4,19 +4,33 @@ defmodule Beamcore.Agent.OpenAITest do
   alias Beamcore.OpenAI
   alias Beamcore.Agent.TestEnv
 
+  setup do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_openai_config_#{System.unique_integer([:positive])}.dets"
+      )
+
+    previous = Application.get_env(:agent, :config_dets_path)
+    Application.put_env(:agent, :config_dets_path, path)
+
+    on_exit(fn ->
+      restore_config_path(previous)
+      File.rm(path)
+    end)
+
+    %{config_path: path}
+  end
+
   test "client/0 requires MISTRAL_API_KEY" do
     TestEnv.with_env(%{"MISTRAL_API_KEY" => nil}, fn ->
-      assert_raise RuntimeError,
-                   "MISTRAL_API_KEY environment variable is required for Mistral API calls.",
-                   fn -> OpenAI.client() end
+      assert_raise OpenAI.MissingConfigError, ~r/Run \/login/, fn -> OpenAI.client() end
     end)
   end
 
   test "client/0 treats a blank MISTRAL_API_KEY as missing" do
     TestEnv.with_env(%{"MISTRAL_API_KEY" => "   "}, fn ->
-      assert_raise RuntimeError,
-                   "MISTRAL_API_KEY environment variable is required for Mistral API calls.",
-                   fn -> OpenAI.client() end
+      assert_raise OpenAI.MissingConfigError, ~r/Run \/login/, fn -> OpenAI.client() end
     end)
   end
 
@@ -43,4 +57,21 @@ defmodule Beamcore.Agent.OpenAITest do
       end
     )
   end
+
+  test "client/0 uses config token when OS env is missing" do
+    TestEnv.with_env(%{"MISTRAL_API_KEY" => nil, "MISTRAL_BASE_URL" => nil}, fn ->
+      assert :ok = Beamcore.Config.put_mistral_api_key("stored-token")
+      assert OpenAI.client().token == "stored-token"
+    end)
+  end
+
+  test "OS env token wins over stored config token" do
+    TestEnv.with_env(%{"MISTRAL_API_KEY" => "env-token", "MISTRAL_BASE_URL" => nil}, fn ->
+      assert :ok = Beamcore.Config.put_mistral_api_key("stored-token")
+      assert OpenAI.client().token == "env-token"
+    end)
+  end
+
+  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
 end

@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Tools.Mix do
   Safe, scoped wrapper for mix commands.
   """
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.Tools.{CommandRunner, PathSafety}
 
   @allowed_commands ~w(test compile format deps.get dialyzer hex.info validate)
   @output_tail_lines 40
@@ -127,14 +127,7 @@ defmodule Beamcore.Agent.Tools.Mix do
   defp run(command, args, workdir, name \\ nil) do
     extra = String.split(args, " ", trim: true)
 
-    env =
-      Map.new()
-      |> Map.put("PATH", System.get_env("PATH") || "")
-      |> Map.put("LANG", System.get_env("LANG") || "")
-      |> Map.put("HOME", System.get_env("HOME") || "")
-      |> Map.put("MIX_ENV", mix_env(command))
-      # Convert back to keyword list format
-      |> Enum.into([])
+    env = CommandRunner.external_env([{"MIX_ENV", mix_env(command)}])
 
     {output, exit_code} =
       runner().("mix", [command | extra], cd: workdir, stderr_to_stdout: true, env: env)

@@ -75,42 +75,50 @@ defmodule Beamcore.Agent do
   def chat(mode \\ :auto, opts \\ [])
 
   def chat(:auto, opts) do
-    case ensure_chat_config(opts) do
-      :ok ->
-        if Beamcore.TUI.Capability.supported?(opts) do
-          start_tui(opts)
-        else
-          fallback_to_plain(Beamcore.TUI.Capability.unsupported_reason(opts), opts)
+    with_workspace(opts, fn opts ->
+      try do
+        case ensure_chat_config(opts) do
+          :ok ->
+            if Beamcore.TUI.Capability.supported?(opts) do
+              start_tui(opts)
+            else
+              fallback_to_plain(Beamcore.TUI.Capability.unsupported_reason(opts), opts)
+            end
+
+          error ->
+            error
         end
+      rescue
+        error ->
+          reason = Exception.message(error)
 
-      error ->
-        error
-    end
-  rescue
-    error ->
-      reason = Exception.message(error)
-
-      if missing_config_reason?(reason) do
-        print_missing_config_error()
-      else
-        fallback_to_plain(reason, opts)
+          if missing_config_reason?(reason) do
+            print_missing_config_error()
+          else
+            fallback_to_plain(reason, opts)
+          end
       end
+    end)
   end
 
   def chat(:tui, opts) do
-    case ensure_chat_config(opts),
-      do: (
-        :ok -> start_tui(opts)
-        error -> error
-      )
+    with_workspace(opts, fn opts ->
+      case ensure_chat_config(opts),
+        do: (
+          :ok -> start_tui(opts)
+          error -> error
+        )
+    end)
   end
 
   def chat(:plain, opts) do
-    case ensure_chat_config(opts),
-      do: (
-        :ok -> start_plain(opts)
-        error -> error
-      )
+    with_workspace(opts, fn opts ->
+      case ensure_chat_config(opts),
+        do: (
+          :ok -> start_plain(opts)
+          error -> error
+        )
+    end)
   end
 
   def chat(:classic, opts), do: chat(:plain, opts)
@@ -128,51 +136,57 @@ defmodule Beamcore.Agent do
 
   defp ensure_chat_config(opts) do
     cond do
-      Keyword.has_key?(opts, :client) or Keyword.has_key?(opts, :tui_start) or
-          Keyword.has_key?(opts, :plain_start) ->
+      Keyword.has_key?(opts, :client) ->
         :ok
 
-      configured_env?("MISTRAL_API_KEY") ->
+      Beamcore.OpenAI.configured?() ->
         :ok
 
       true ->
         print_missing_config_error()
+        :ok
     end
   end
 
   defp missing_config_reason?(reason) when is_binary(reason),
-    do: String.contains?(reason, "MISTRAL_API_KEY environment variable is required")
+    do:
+      String.contains?(reason, "MISTRAL_API_KEY environment variable is required") or
+        String.contains?(reason, "Beamcore is not configured yet")
 
   defp print_missing_config_error do
     IO.puts("""
     Beamcore is not configured yet.
 
-    Missing:
-      MISTRAL_API_KEY
+    Run /login and paste your Mistral API key (stored securely as hash).
 
-    For local development, create a .env file in this project:
-      echo 'MISTRAL_API_KEY=...' > .env
-
-    Then run:
-      beamcore
+    For development only, you may also set MISTRAL_API_KEY or use .env with make chat.
     """)
 
     {:error, :missing_config}
-  end
-
-  defp configured_env?(name) do
-    case System.get_env(name) do
-      nil -> false
-      value -> String.trim(value) != ""
-    end
   end
 
   defp start_tui(opts),
     do: call_start(Keyword.get(opts, :tui_start, &Beamcore.TUI.start/1), opts)
 
   defp start_plain(opts),
-    do: call_start(Keyword.get(opts, :plain_start, &Beamcore.Agent.Chat.start/0), opts)
+    do: call_start(Keyword.get(opts, :plain_start, &Beamcore.Agent.Chat.start/1), opts)
 
   defp call_start(fun, opts) when is_function(fun, 1), do: fun.(opts)
   defp call_start(fun, _opts) when is_function(fun, 0), do: fun.()
+
+  defp with_workspace(opts, fun) do
+    workspace_root =
+      opts
+      |> Keyword.get(:workspace_root, File.cwd!())
+      |> Beamcore.Agent.Tools.PathSafety.canonical_path()
+
+    previous = Beamcore.Agent.Tools.PathSafety.configure_workspace_root(workspace_root)
+    opts = Keyword.put(opts, :workspace_root, workspace_root)
+
+    try do
+      fun.(opts)
+    after
+      Beamcore.Agent.Tools.PathSafety.restore_workspace_root(previous)
+    end
+  end
 end

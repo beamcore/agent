@@ -12,6 +12,8 @@ defmodule Beamcore.TUI.Events do
   @commands [
     %Command{name: "help", description: "Show commands and keybindings"},
     %Command{name: "env", description: "Print full env variables"},
+    %Command{name: "login", description: "Configure your Mistral API key"},
+    %Command{name: "logout", description: "Clear stored Beamcore login"},
     %Command{name: "new", description: "Start a fresh session"},
     %Command{name: "context", description: "Show compact session context"},
     %Command{name: "context clear", description: "Clear compact session context"},
@@ -342,9 +344,13 @@ defmodule Beamcore.TUI.Events do
       value == "" ->
         state
 
+      state.pending_login? ->
+        ExRatatui.textarea_set_value(state.textarea, "")
+        complete_login(%{state | show_commands: false}, value)
+
       String.starts_with?(value, "/") ->
         ExRatatui.textarea_set_value(state.textarea, "")
-        state = record_history(state, value)
+        state = maybe_record_command_history(state, value)
         run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
 
       true ->
@@ -411,6 +417,9 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
+  defp maybe_record_command_history(state, "/login" <> _suffix), do: %{state | history_index: nil}
+  defp maybe_record_command_history(state, value), do: record_history(state, value)
+
   defp run_command(state, command) when command in ["quit", "exit", "q"],
     do: %{state | status: :quit}
 
@@ -460,6 +469,13 @@ defmodule Beamcore.TUI.Events do
     |> start_turn(content, policy)
   end
 
+  defp apply_command_result({:login_prompt, session}, state, _command) do
+    state
+    |> State.set_session(session)
+    |> Map.put(:pending_login?, true)
+    |> State.mark_dirty()
+  end
+
   defp apply_command_result(session, state, "new") do
     %{state | session: session, messages: [], activity: [], selected_activity: 0}
     |> State.add_message(:system, "Started a fresh session.")
@@ -478,6 +494,23 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp apply_command_result(session, state, _command), do: State.set_session(state, session)
+
+  defp complete_login(state, token) do
+    state = %{state | pending_login?: false, history_index: nil}
+
+    case Commands.store_login_token(token) do
+      :ok ->
+        state
+        |> State.set_session(%{state.session | client: Beamcore.OpenAI.client()})
+        |> State.add_message(:system, "Beamcore login saved.")
+
+      {:error, :empty_value} ->
+        State.add_message(state, :system, "Login token was empty; nothing was saved.")
+
+      {:error, reason} ->
+        State.add_message(state, :system, "Login failed: #{inspect(reason)}")
+    end
+  end
 
   defp policy_activity_args(command) do
     command

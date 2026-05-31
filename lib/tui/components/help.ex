@@ -25,6 +25,8 @@ defmodule Beamcore.TUI.Components.Help do
     /yolo            Toggle session freedom mode
     /yolo on         Bypass project policy for this session
     /yolo off        Restore project policy
+    /login           Configure your Mistral API key
+    /logout          Clear stored Beamcore login
     /quit /exit /q   Exit
 
     Keys

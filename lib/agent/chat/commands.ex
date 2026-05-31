@@ -23,6 +23,9 @@ defmodule Beamcore.Agent.Chat.Commands do
       "yolo on" -> enable_yolo(session, output)
       "yolo off" -> disable_yolo(session, output)
       "env" -> handle_env(session, output)
+      "login" -> handle_login_prompt(session, output)
+      "login " <> token -> handle_login_token(token, session, output)
+      "logout" -> handle_logout(session, output)
       "help" -> handle_help(session, output)
       "policy" -> handle_policy([], session, output)
       "policy " <> args -> handle_policy(String.split(args, " ", trim: true), session, output)
@@ -34,7 +37,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     output.("Starting new session...")
 
     session.client
-    |> Session.new()
+    |> Session.new(workspace_root: session.workspace_root)
     |> then(& &1)
   end
 
@@ -67,9 +70,42 @@ defmodule Beamcore.Agent.Chat.Commands do
     env_str =
       System.get_env()
       |> Enum.sort()
-      |> Enum.map_join("\n", fn {key, value} -> "#{key}=#{value}" end)
+      |> Enum.map_join("\n", fn {key, value} -> "#{key}=#{redact_env_value(key, value)}" end)
 
     output.(env_str)
+    session
+  end
+
+  def store_login_token(token) when is_binary(token),
+    do: Beamcore.Config.put_mistral_api_key(token)
+
+  defp handle_login_prompt(session, output) do
+    output.(
+      "Paste your Mistral API key. It will be securely hashed and stored locally in ~/.beamcore/config.dets."
+    )
+
+    {:login_prompt, session}
+  end
+
+  defp handle_login_token(token, session, output) do
+    case store_login_token(token) do
+      :ok ->
+        output.("Beamcore login saved.")
+        %{session | client: Beamcore.OpenAI.client()}
+
+      {:error, :empty_value} ->
+        output.("Login token was empty; nothing was saved.")
+        session
+
+      {:error, reason} ->
+        output.("Login failed: #{inspect(reason)}")
+        session
+    end
+  end
+
+  defp handle_logout(session, output) do
+    :ok = Beamcore.Config.delete_mistral_api_key()
+    output.("Beamcore login cleared.")
     session
   end
 
@@ -90,7 +126,9 @@ defmodule Beamcore.Agent.Chat.Commands do
       /yolo - Toggle freedom mode for this session
       /yolo on - Bypass project policy for this session
       /yolo off - Restore project policy for this session
-      /env  - Print full env variables
+      /login - Configure your Mistral API key
+      /logout - Clear stored Beamcore login
+      /env  - Print env variables with secrets redacted
       /help - Show this help message
     """)
 
@@ -313,6 +351,28 @@ defmodule Beamcore.Agent.Chat.Commands do
   defp handle_unknown(command, session, output, true) do
     output.("Error: Unknown command: /#{command}")
     session
+  end
+
+  defp redact_env_value(key, value) do
+    if secret_env_key?(key), do: "[REDACTED]", else: value
+  end
+
+  defp secret_env_key?(key) do
+    key = String.upcase(key)
+
+    Enum.any?(
+      [
+        "MISTRAL_API_KEY",
+        "OPENAI_API_KEY",
+        "API_KEY",
+        "TOKEN",
+        "SECRET",
+        "PASSWORD",
+        "COOKIE",
+        "KEY"
+      ],
+      &String.contains?(key, &1)
+    )
   end
 
   defp confirmed_execution_content(original_request, pending_action) do

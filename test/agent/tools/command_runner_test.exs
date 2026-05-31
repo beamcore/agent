@@ -120,6 +120,65 @@ defmodule Beamcore.Agent.Tools.CommandRunnerTest do
            }
   end
 
+  test "external command env preserves user env and clears release internals" do
+    with_env(
+      %{
+        "PATH" => "/fake/beamcore/release/erts/bin:/fake/beamcore/release/bin:/usr/bin:/bin",
+        "HOME" => "/tmp/home",
+        "LANG" => "en_US.UTF-8",
+        "RELEASE_ROOT" => "/fake/beamcore/release",
+        "RELEASE_NAME" => "agent",
+        "RELEASE_VSN" => "0.1.0",
+        "RELEASE_COOKIE" => "secret-cookie",
+        "RELEASE_NODE" => "agent",
+        "RELEASE_DISTRIBUTION" => "sname",
+        "RELEASE_SYS_CONFIG" => "/fake/beamcore/release/sys",
+        "RELEASE_VM_ARGS" => "/fake/beamcore/release/vm.args",
+        "BINDIR" => "/fake/beamcore/release/bin",
+        "ROOTDIR" => "/fake/root",
+        "ERL_LIBS" => "/fake/beamcore/release/lib"
+      },
+      fn ->
+        env = CommandRunner.external_env([{"MIX_ENV", "test"}])
+        env_map = Map.new(env)
+
+        assert env_map["PATH"] == "/usr/bin:/bin"
+        assert env_map["HOME"] == "/tmp/home"
+        assert env_map["LANG"] == "en_US.UTF-8"
+        assert env_map["MIX_ENV"] == "test"
+
+        for key <- CommandRunner.release_env_keys() do
+          assert Map.fetch!(env_map, key) == nil
+        end
+      end
+    )
+  end
+
+  test "CommandRunner passes sanitized env to fake runners" do
+    parent = self()
+
+    with_env(%{"RELEASE_ROOT" => "/fake/release", "BINDIR" => "/fake/release/bin"}, fn ->
+      result =
+        with_command_runner(
+          fn exe, args, opts ->
+            send(parent, {:runner, exe, args, opts})
+            {"ok", 0}
+          end,
+          fn ->
+            CommandRunner.run("node", "test", "npm", ["test"])
+          end
+        )
+
+      assert result["ok"]
+      assert_receive {:runner, "npm", ["test"], opts}
+      env_map = Map.new(opts[:env])
+      assert env_map["PATH"]
+      assert env_map["HOME"]
+      assert env_map["RELEASE_ROOT"] == nil
+      assert env_map["BINDIR"] == nil
+    end)
+  end
+
   defp with_command_runner(runner, fun) do
     previous = Application.get_env(:agent, :command_runner)
     Application.put_env(:agent, :command_runner, runner)
@@ -149,6 +208,24 @@ defmodule Beamcore.Agent.Tools.CommandRunnerTest do
     case Process.whereis(Beamcore.Agent.TaskSupervisor) do
       nil -> Supervisor.restart_child(Beamcore.Agent.Supervisor, Beamcore.Agent.TaskSupervisor)
       _pid -> :ok
+    end
+  end
+
+  defp with_env(values, fun) do
+    previous = Map.new(Map.keys(values), &{&1, System.get_env(&1)})
+
+    Enum.each(values, fn
+      {key, nil} -> System.delete_env(key)
+      {key, value} -> System.put_env(key, value)
+    end)
+
+    try do
+      fun.()
+    after
+      Enum.each(previous, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
     end
   end
 end
