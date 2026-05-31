@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
   test "tracks inspected files from read-like tools without duplicates" do
     context =
-      Context.new(:elixir)
+      Context.new(:elixir, :mix)
       |> Context.update_from_tool("read", %{"filePath" => "README.md"}, "full content is ignored")
       |> Context.update_from_tool("read", %{"filePath" => "README.md"}, "full content is ignored")
       |> Context.update_from_tool("grep", %{"path" => "lib"}, "many matches")
@@ -23,7 +23,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     """
 
     context =
-      Context.new(:elixir)
+      Context.new(:elixir, :mix)
       |> Context.update_from_tool("write", %{"filePath" => "scratch/a.ex"}, "Successfully wrote")
       |> Context.update_from_tool(
         "edit",
@@ -42,7 +42,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     result = Jason.encode!(%{"ok" => true, "summary" => "Validation passed."})
 
     context =
-      Context.new(:elixir) |> Context.update_from_tool("mix", %{"command" => "validate"}, result)
+      Context.new(:elixir, :mix) |> Context.update_from_tool("mix", %{"command" => "validate"}, result)
 
     assert context.last_validation == %{
              command: "validate",
@@ -62,7 +62,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
         "validation" => "mix test scratch/policy_test.exs"
       })
 
-    context = Context.new(:elixir) |> Context.update_from_tool("plan", %{}, result)
+    context = Context.new(:elixir, :mix) |> Context.update_from_tool("plan", %{}, result)
 
     assert context.pending_action == nil
     refute Context.summary(context) =~ "Pending action"
@@ -71,7 +71,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
   test "records compact blocked attempts" do
     context =
-      Context.new(:elixir)
+      Context.new(:elixir, :mix)
       |> Context.update_from_tool(
         "write",
         %{"filePath" => "eval/a.ex"},
@@ -83,7 +83,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
   test "clear_policy_blocks removes stale blocked policy context" do
     context =
-      Context.new(:elixir)
+      Context.new(:elixir, :mix)
       |> Context.update_from_tool(
         "write",
         %{"filePath" => "scratch/a.ex"},
@@ -113,7 +113,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
   test "summary is compact and truncates large lists safely" do
     context =
-      Enum.reduce(1..30, Context.new(:elixir), fn i, context ->
+      Enum.reduce(1..30, Context.new(:elixir, :mix), fn i, context ->
         Context.update_from_tool(context, "read", %{"filePath" => "lib/file_#{i}.ex"}, "content")
       end)
 
@@ -136,7 +136,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     final = partial <> "\nImplement module."
 
     policy = ToolPolicy.from_user_message(final)
-    context = Context.from_user_request(Context.new(:elixir), final, policy)
+    context = Context.from_user_request(Context.new(:elixir, :mix), final, policy)
 
     assert context.current_task =~ "Implement module"
     assert context.active_constraints |> Enum.any?(&String.contains?(&1, "scratch/a.ex"))

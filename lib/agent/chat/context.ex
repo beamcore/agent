@@ -25,8 +25,8 @@ defmodule Beamcore.Agent.Chat.Context do
     "No real API calls from tools or tests."
   ]
 
-  def new(project_type \\ :unknown) do
-    %__MODULE__{project_type: project_type, active_constraints: @default_constraints}
+  def new(language \\ :unknown, build_system \\ :unknown) do
+    %__MODULE__{project_type: {language, build_system}, active_constraints: @default_constraints}
   end
 
   @doc """

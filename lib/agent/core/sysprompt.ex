@@ -20,7 +20,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
   @doc """
   Generates the full system prompt.
   """
-  def generate(project_nature \\ :unknown) do
+  def generate(language \\ :unknown, build_system \\ :unknown) do
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
 
     """
@@ -29,7 +29,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     Your function is to follow the user instruction.
 
     Workspace: .
-    #{project_nature_details(project_nature)}
+    #{project_nature_details(language, build_system)}
 
     Available tools:
     - #{formatted_tools}
@@ -53,19 +53,70 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     """
   end
 
-  defp project_nature_details(:elixir) do
-    """
+  defp project_nature_details(:elixir, build_system) do
+    base = """
     - This is an Elixir project.
     - Prefer idiomatic Elixir.
     """
+    build_details(build_system, base)
   end
 
-  defp project_nature_details(:erlang),
-    do: "- This is an Erlang project. Prefer idiomatic Erlang."
+  defp project_nature_details(:erlang, build_system),
+    do: build_details(build_system, "- This is an Erlang project. Prefer idiomatic Erlang.")
 
-  defp project_nature_details(_unknown) do
+  defp project_nature_details(:python, build_system) do
+    base = """
+    - This is a Python project.
+    - Prefer idiomatic Python.
+    """
+    build_details(build_system, base)
+  end
+
+  defp project_nature_details(:javascript, build_system) do
+    base = """
+    - This is a JavaScript project.
+    - Prefer idiomatic JavaScript.
+    """
+    build_details(build_system, base)
+  end
+
+  defp project_nature_details(_unknown, _build_system) do
     "- Project nature is not fully detected. Infer conventions from existing files before editing."
   end
+
+  defp build_details(:bazel, base) do
+    base <> "\n- Build system: Bazel."
+  end
+
+  defp build_details(:make, base) do
+    base <> "\n- Build system: Make."
+  end
+
+  defp build_details(:mix, base) do
+    base <> "\n- Build system: Mix."
+  end
+
+  defp build_details(:poetry, base) do
+    base <> "\n- Build system: Poetry."
+  end
+
+  defp build_details(:pip, base) do
+    base <> "\n- Build system: pip."
+  end
+
+  defp build_details(:npm, base) do
+    base <> "\n- Build system: npm."
+  end
+
+  defp build_details(:yarn, base) do
+    base <> "\n- Build system: Yarn."
+  end
+
+  defp build_details(:pnpm, base) do
+    base <> "\n- Build system: pnpm."
+  end
+
+  defp build_details(_unknown, base), do: base
 
   defp memory_index_details do
     {org, repo} = Beamcore.Memory.detect_org_repo()
