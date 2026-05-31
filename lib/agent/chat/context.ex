@@ -101,7 +101,7 @@ defmodule Beamcore.Agent.Chat.Context do
     lines =
       [
         "Known session context:",
-        "- Project type: #{context.project_type}",
+        "- Project type: #{format_project_type(context.project_type)}",
         list_line("Already inspected", context.inspected_files),
         list_line("Modified this session", context.modified_files),
         validation_line(context.last_validation),
@@ -262,6 +262,12 @@ defmodule Beamcore.Agent.Chat.Context do
     [item | Enum.reject(list, &(&1 == item))]
     |> Enum.take(@max_items)
   end
+
+  defp format_project_type({language, build_system}) do
+    "#{language} (#{build_system})"
+  end
+
+  defp format_project_type(type), do: to_string(type)
 
   defp list_line(_label, nil), do: nil
 
