@@ -405,6 +405,17 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     end)
   end
 
+  test "/env prints all environment variables sorted" do
+    session = Beamcore.OpenAI.client() |> Session.new()
+
+    output =
+      capture_io(fn ->
+        assert Commands.execute("env", session) == session
+      end)
+
+    assert output =~ "MISTRAL_API_KEY=test-api-key"
+  end
+
   defp with_tmp_cwd(fun) do
     tmp =
       Path.join(
