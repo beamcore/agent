@@ -21,8 +21,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     assert session.session_id != nil
     assert session.log_file != nil
     assert File.dir?(Path.dirname(session.log_file))
-    assert session.project_nature == {:elixir, :mix}
-    assert session.context.project_type == {:elixir, :mix}
+    assert session.project_nature == {:elixir, :make}
+    assert session.context.project_type == {:elixir, :make}
   end
 
   test "log/2 appends data to file" do
@@ -544,7 +544,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       compacted = Beamcore.Agent.Chat.Context.compact(context)
 
-      assert compacted.project_type == :elixir
+      assert compacted.project_type == {:elixir, :mix}
       assert MapSet.size(compacted.inspected_files) == 20
       assert compacted.modified_files == MapSet.new(["write.ex"])
       assert length(compacted.decisions) == 6

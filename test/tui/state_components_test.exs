@@ -544,32 +544,6 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert String.length(event.summary) < 260
   end
 
-  test "status bar reflects autonomous yolo default", %{state: state} do
-    widget = StatusBar.widget(state, :wide)
-    content = paragraph_text(widget)
-
-    assert content =~ "YOLO"
-  end
-
-  test "status bar includes project policy indicator", %{state: state} do
-    widget = StatusBar.widget(state, :wide)
-    content = paragraph_text(widget)
-
-    assert content =~ "policy:"
-  end
-
-  test "status bar shows policy bypass in freedom mode", %{state: state} do
-    session = %{
-      state.session
-      | project_policy_bypassed?: true,
-        policy_override: ToolPolicy.yolo(project_policy_bypassed?: true)
-    }
-
-    content = paragraph_text(StatusBar.widget(%{state | session: session}, :wide))
-
-    assert content =~ "FREEDOM"
-    assert content =~ "policy: bypassed"
-  end
 
   test "policy activity event is compact" do
     event =

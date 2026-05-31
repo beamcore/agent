@@ -51,11 +51,4 @@ defmodule Beamcore.TUI.Components.StatusBar do
     end
   end
 
-  defp status(:idle), do: "idle"
-  defp status(:thinking), do: "thinking"
-  defp status(:tool_running), do: "tool running"
-  defp status(:generating), do: "generating"
-  defp status(:waiting_for_confirmation), do: "waiting confirmation"
-  defp status(:error), do: "error"
-  defp status(other), do: to_string(other)
 end

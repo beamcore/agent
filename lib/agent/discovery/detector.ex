@@ -34,7 +34,7 @@ defmodule Beamcore.Agent.Discovery.Detector do
   Detects only the build system for a given directory.
   Returns :mix, :make, :bazel, :pip, :poetry, :npm, :yarn, :pnpm, or :unknown.
   """
-  def detect_build_system(dir \\ File.cwd!(), _language = nil) do
+  def detect_build_system(dir \\ File.cwd!(), _language \\ nil) do
     cond do
       bazel_project?(dir) -> :bazel
       make_project?(dir) -> :make
