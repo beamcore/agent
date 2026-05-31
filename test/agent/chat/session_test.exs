@@ -21,8 +21,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     assert session.session_id != nil
     assert session.log_file != nil
     assert File.dir?(Path.dirname(session.log_file))
-    assert session.project_nature == :elixir
-    assert session.context.project_type == :elixir
+    assert session.project_nature == {:elixir, :mix}
+    assert session.context.project_type == {:elixir, :mix}
   end
 
   test "log/2 appends data to file" do
@@ -504,7 +504,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     end
 
     test "Context.compact/1 trims context fields while preserving modified files" do
-      context = Beamcore.Agent.Chat.Context.new(:elixir)
+      context = Beamcore.Agent.Chat.Context.new(:elixir, :mix)
 
       # Populate fields
       context = %{

@@ -47,11 +47,11 @@ defmodule Beamcore.Agent.Chat.Session do
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
 
-    project_nature = Beamcore.Agent.Discovery.Detector.detect()
+    {language, build_system} = Beamcore.Agent.Discovery.Detector.detect()
 
     system_message = %{
       role: "system",
-      content: Beamcore.Agent.Core.SysPrompt.generate(project_nature)
+      content: Beamcore.Agent.Core.SysPrompt.generate(language, build_system)
     }
 
     %__MODULE__{
@@ -68,8 +68,8 @@ defmodule Beamcore.Agent.Chat.Session do
       correction_count: 0,
       policy_override: nil,
       project_policy_bypassed?: false,
-      project_nature: project_nature,
-      context: Beamcore.Agent.Chat.Context.new(project_nature),
+      project_nature: {language, build_system},
+      context: Beamcore.Agent.Chat.Context.new(language, build_system),
       pending_user_message: nil
     }
     |> then(&log(&1, system_message))
