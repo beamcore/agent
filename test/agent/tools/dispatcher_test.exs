@@ -68,7 +68,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
-    assert Enum.sort(names) == Enum.sort(~w(read grep glob tree git mix memory))
+    assert Enum.sort(names) == Enum.sort(~w(read grep glob tree git mix memory reflect))
     refute "task" in names
     refute "web_get" in names
     refute "write" in names
@@ -89,7 +89,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
-    assert Enum.sort(names) == Enum.sort(~w(read grep glob write edit patch fs mix memory))
+    assert Enum.sort(names) == Enum.sort(~w(read grep glob write edit patch fs mix memory reflect))
     refute "task" in names
     refute "web_get" in names
     refute "tree" in names

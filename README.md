@@ -174,7 +174,7 @@ rail instead of decorative UI.
 
 Tools are first-class UI events. The timeline shows compact labels for `plan`,
 `read`, `write`, `edit`, `patch`, `fs`, `grep`, `glob`, `tree`, `git`, `mix`,
-`image_generation`, blocked attempts, validation events, and errors.
+`image_generation`, `reflect`, blocked attempts, validation events, and errors.
 
 Examples:
 
@@ -333,6 +333,7 @@ Example:
 | `bazel` | Runs allowlisted Bazel commands: test, build, and query. |
 | `image_generation` | Uses Mistral Agents with the built-in `image_generation` tool, downloads generated files, and saves them to allowed workspace paths. |
 | `web_get` | Fetches external URLs using HTTP GET only when explicitly enabled, using a token-efficient HTML cleaning pipeline. |
+| `reflect` | Performs AI-powered self-reflection with scoped context to critically review user input and current iteration output. |
 | `task` | Delegates to sub-agents only when explicitly enabled. |
 
 The `make` tool parses `Makefile`, `makefile`, or `GNUmakefile` text for targets.

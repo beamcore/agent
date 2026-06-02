@@ -209,7 +209,6 @@ defmodule Beamcore.Config do
     hostname =
       case :inet.gethostname() do
         {:ok, host} -> to_string(host)
-        _ -> "unknown"
       end
 
     username = to_string(System.get_env("USER") || System.get_env("USERNAME") || "unknown")

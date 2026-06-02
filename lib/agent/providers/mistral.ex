@@ -67,7 +67,6 @@ defmodule Beamcore.Agent.Providers.Mistral do
       {:ok, json}
     else
       {:error, reason} -> {:error, reason}
-      _ -> {:error, "Unable to parse Mistral conversation response."}
     end
   end
 
