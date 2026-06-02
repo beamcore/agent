@@ -68,6 +68,14 @@ defmodule Beamcore.Agent.Chat.API do
                   maybe_print_debug(opts, messages, tools, model, error)
                   format_response(response, context, opts)
 
+                {:error, error} ->
+                  if is_binary(error) && (String.contains?(error, "bad_request") || String.contains?(error, "status_code: 400")) do
+                    maybe_print_debug(opts, messages, tools, model, error)
+                    format_response(response, context, opts)
+                  else
+                    format_response(response, context, opts)
+                  end
+
                 response ->
                   format_response(response, context, opts)
               end
@@ -261,6 +269,13 @@ defmodule Beamcore.Agent.Chat.API do
         Pretty.colorize("  Body: ", &Colors.bright_red/0) <> inspect(error.body, pretty: true)
       )
     end
+  end
+
+  defp print_extracted_error(error) when is_binary(error) do
+    alias Beamcore.Agent.Core.Pretty
+    alias Beamcore.Agent.Core.Pretty.Colors
+
+    IO.puts(Pretty.colorize("  Message: ", &Colors.bright_red/0) <> error)
   end
 
   # Validate message sequence and print warnings
