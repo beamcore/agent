@@ -54,7 +54,7 @@ defmodule Beamcore.Agent.Tools.TaskTest do
   test "execute/1 with custom model" do
     params = %{
       "prompt" => "Research the latest advancements in AI.",
-      "model" => "mistral-large-3.5"
+      "model" => "mistral-medium-3-5"
     }
 
     result = Task.execute(params)
