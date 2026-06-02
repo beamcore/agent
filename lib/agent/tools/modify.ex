@@ -6,10 +6,9 @@ defmodule Beamcore.Agent.Tools.Modify do
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Unified tool for all file modifications. 
-  To create a new file or overwrite an entire file, provide `content`.
-  To perform targeted edits in an existing file, provide the `edits` array.
-  The matching engine is robust to whitespace, quoting, indentation, and comment differences.
+  Unified tool to create, replace, or edit files.
+  - To create/replace: provide `content`.
+  - To edit: provide `edits` (search-and-replace blocks).
   """
 
   def name, do: "modify_file"
@@ -25,29 +24,29 @@ defmodule Beamcore.Agent.Tools.Modify do
           properties: %{
             path: %{
               type: "string",
-              description: "The workspace-relative path to the file to modify."
+              description: "Relative workspace path of the target file."
             },
             content: %{
               type: "string",
-              description: "Optional. Full content to write to the file. Used for creating or completely replacing a file."
+              description: "New file content (omit if using `edits`)."
             },
             dry_run: %{
               type: "boolean",
-              description: "Optional. If true, validates the changes without writing to disk. Defaults to false."
+              description: "Validate changes without writing to disk. Defaults to false."
             },
             edits: %{
               type: "array",
-              description: "Optional. Targeted search-and-replace blocks applied atomically. Do not include overlapping edits.",
+              description: "Targeted search-and-replace edits. Must be non-overlapping.",
               items: %{
                 type: "object",
                 properties: %{
                   search: %{
                     type: "string",
-                    description: "The exact or near-exact literal text to find."
+                    description: "Literal block of code to search for."
                   },
                   replace: %{
                     type: "string",
-                    description: "The replacement text."
+                    description: "New code to replace it with."
                   }
                 },
                 required: ["search", "replace"]

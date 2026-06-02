@@ -4,6 +4,7 @@ defmodule Beamcore.TUI.Components.Chat do
   alias Beamcore.TUI.Components.{Confirmation, EmptyState}
   alias Beamcore.TUI.{State, Theme, Wrap}
   alias ExRatatui.Layout.Rect
+  alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.{Block, Paragraph, Throbber, WidgetList}
 
   def widget(state, %Rect{} = area) do
@@ -55,39 +56,113 @@ defmodule Beamcore.TUI.Components.Chat do
 
   defp tool_bubble(label, content, wrap_width) do
     body_width = max(wrap_width - 2, 10)
-    lines = String.split(content, ~r/\r?\n/)
+    col_width = div(body_width - 5, 2) |> max(10)
 
-    formatted_items =
-      lines
-      |> Enum.flat_map(fn line ->
-        wrapped_sublines = Wrap.lines(line, body_width)
+    {header, diff_part} =
+      case String.split(content, "\n\n", parts: 2) do
+        [hdr, diff] -> {hdr, diff}
+        [hdr] -> {hdr, ""}
+      end
 
-        Enum.map(wrapped_sublines, fn subline ->
-          style = diff_line_style(line)
-          {"  #{subline}", style}
-        end)
+    header_lines =
+      header
+      |> String.split(~r/\r?\n/)
+      |> Enum.map(fn line ->
+        %Line{spans: [%Span{content: "  " <> line, style: Theme.style(:muted)}]}
       end)
+
+    diff_lines = String.split(diff_part, ~r/\r?\n/)
+
+    {parsed_diff_lines, pending_del, pending_add} =
+      Enum.reduce(diff_lines, {[], [], []}, fn line, {acc, dels, adds} ->
+        cond do
+          String.starts_with?(line, "---") or String.starts_with?(line, "+++") ->
+            {acc, dels, adds}
+
+          String.starts_with?(line, "@@") ->
+            acc = flush_changes(acc, dels, adds, col_width)
+            hunk_hdr = parse_hunk_line(line)
+            hunk_line = %Line{spans: [%Span{content: hunk_hdr, style: Theme.style(:accent)}]}
+            {acc ++ [hunk_line], [], []}
+
+          String.starts_with?(line, "-") ->
+            del_text = String.slice(line, 1..-1//1)
+            {acc, dels ++ [del_text], adds}
+
+          String.starts_with?(line, "+") ->
+            add_text = String.slice(line, 1..-1//1)
+            {acc, dels, adds ++ [add_text]}
+
+          true ->
+            # Context or empty line: flush changes and skip
+            acc = flush_changes(acc, dels, adds, col_width)
+            {acc, [], []}
+        end
+      end)
+
+    final_diff_lines = flush_changes(parsed_diff_lines, pending_del, pending_add, col_width)
 
     prefix = label_prefix(label)
-    first_item = {"#{prefix} #{label}", Theme.style(:accent)}
-    all_items = [first_item | formatted_items]
+    first_line = %Line{spans: [%Span{content: "#{prefix} #{label}", style: Theme.style(:accent)}]}
 
-    widgets =
-      Enum.map(all_items, fn {text, style} ->
-        {%Paragraph{text: text, style: style, wrap: false}, 1}
-      end)
+    all_lines = [first_line] ++ header_lines ++ final_diff_lines
 
-    widgets ++ [{%Paragraph{text: "", style: Theme.style(:subtle)}, 1}]
+    [
+      {%Paragraph{text: all_lines, style: Theme.style(:muted), wrap: false}, length(all_lines)},
+      {%Paragraph{text: "", style: Theme.style(:subtle)}, 1}
+    ]
   end
 
-  defp diff_line_style(line) do
+  defp flush_changes(lines_acc, [], [], _col_width), do: lines_acc
+
+  defp flush_changes(lines_acc, deletions, additions, col_width) do
+    max_len = max(length(deletions), length(additions))
+
+    new_lines =
+      Enum.map(0..(max_len - 1), fn i ->
+        del = Enum.at(deletions, i) || ""
+        add = Enum.at(additions, i) || ""
+
+        del_padded = pad_or_truncate(del, col_width)
+        add_padded = pad_or_truncate(add, col_width)
+
+        del_style = if del == "", do: Theme.style(:muted), else: Theme.style(:error)
+        add_style = if add == "", do: Theme.style(:muted), else: Theme.style(:done)
+
+        %Line{
+          spans: [
+            %Span{content: "  " <> del_padded, style: del_style},
+            %Span{content: " | ", style: Theme.style(:subtle)},
+            %Span{content: add_padded, style: add_style}
+          ]
+        }
+      end)
+
+    lines_acc ++ new_lines
+  end
+
+  defp parse_hunk_line(line) do
+    case Regex.run(~r/@@ -(\d+),?\d* \+(\d+),?\d* @@/, line) do
+      [_, orig_line, _new_line] ->
+        "  Line #{orig_line}:"
+
+      _ ->
+        "  Change:"
+    end
+  end
+
+  defp pad_or_truncate(text, width) do
+    text_len = String.length(text)
+
     cond do
-      String.starts_with?(line, "+++") -> Theme.style(:accent)
-      String.starts_with?(line, "---") -> Theme.style(:accent)
-      String.starts_with?(line, "+") -> Theme.style(:done)
-      String.starts_with?(line, "-") -> Theme.style(:error)
-      String.starts_with?(line, "@@") -> Theme.style(:accent)
-      true -> Theme.style(:muted)
+      text_len == width ->
+        text
+
+      text_len < width ->
+        text <> String.duplicate(" ", width - text_len)
+
+      true ->
+        String.slice(text, 0, max(width - 3, 0)) <> "..."
     end
   end
 
