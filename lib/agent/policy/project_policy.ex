@@ -13,8 +13,8 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   @example_path ".beamcore/policy.example.json"
   @protected_paths [@config_path]
   @process_bypass_key {__MODULE__, :bypassed}
-  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel reflect)
-  @write_tools ~w(write edit patch fs image_generation)
+  @known_tools ~w(read grep glob modify_file web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel reflect)
+  @write_tools ~w(modify_file fs image_generation)
   @read_tools ~w(read grep glob tree)
 
   defstruct loaded?: false,
@@ -328,21 +328,11 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     |> allow_all(policy, :read)
   end
 
-  defp allow_tool_paths(policy, "write", args),
-    do: args |> path_values(["filePath", "path"]) |> allow_all(policy, :write)
-
-  defp allow_tool_paths(policy, "edit", args),
+  defp allow_tool_paths(policy, "modify_file", args),
     do: args |> path_values(["path"]) |> allow_all(policy, :write)
 
   defp allow_tool_paths(policy, "image_generation", args),
     do: args |> path_values(["output_path"]) |> allow_all(policy, :write)
-
-  defp allow_tool_paths(policy, "patch", args) do
-    args
-    |> Map.get("patch_content", "")
-    |> patch_paths()
-    |> allow_all(policy, :write)
-  end
 
   defp allow_tool_paths(policy, "plan", args) do
     args
@@ -449,17 +439,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     |> Enum.reject(&(&1 in [nil, ""]))
   end
 
-  defp patch_paths(patch) when is_binary(patch) do
-    patch
-    |> String.split("\n")
-    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
-    |> Enum.map(&patch_line_path/1)
-    |> Enum.reject(&(&1 in [nil, "/dev/null"]))
-    |> Enum.map(&strip_patch_prefix/1)
-    |> Enum.uniq()
-  end
-
-  defp patch_paths(_patch), do: []
 
   defp plan_paths(args) do
     ["create_files", "modify_files", "delete_files"]
@@ -611,9 +590,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
         "grep" => "allow",
         "glob" => "allow",
         "tree" => "allow",
-        "write" => "allow",
-        "edit" => "allow",
-        "patch" => "allow",
+        "modify_file" => "allow",
         "fs" => "allow",
         "git" => "allow",
         "mix" => "allow",
@@ -633,15 +610,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     }
   end
 
-  defp patch_line_path(line) do
-    line
-    |> String.split(~r/\s+/, parts: 3, trim: true)
-    |> Enum.at(1)
-  end
 
-  defp strip_patch_prefix("a/" <> path), do: path
-  defp strip_patch_prefix("b/" <> path), do: path
-  defp strip_patch_prefix(path), do: path
 
   defp count_line(_label, []), do: nil
   defp count_line(label, values), do: "#{length(values)} #{label}."

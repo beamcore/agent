@@ -166,7 +166,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         Beamcore.Agent.Chat.Context.new(:elixir)
         |> Beamcore.Agent.Chat.Context.update_from_tool(
           "read",
-          %{"filePath" => "README.md"},
+          %{"path" => "README.md"},
           "file content should not appear"
         )
 
@@ -250,17 +250,17 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             %{
               "id" => "call_1",
               "function" => %{
-                "name" => "write",
+                "name" => "modify_file",
                 "arguments" =>
                   Jason.encode!(%{
-                    "filePath" => "scratch/big.ex",
+                    "path" => "scratch/big.ex",
                     "content" => large_content
                   })
               }
             }
           ]
         },
-        %{role: "tool", tool_call_id: "call_1", name: "write", content: "ok"}
+        %{role: "tool", tool_call_id: "call_1", name: "modify_file", content: "ok"}
       ]
 
       prepared = Session.prepare_for_api(messages)
@@ -268,7 +268,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       [tool_call] = assistant.tool_calls
       args = Jason.decode!(tool_call["function"]["arguments"])
 
-      assert args["filePath"] == "scratch/big.ex"
+      assert args["path"] == "scratch/big.ex"
       assert args["content"] == large_content
     end
 
@@ -289,7 +289,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             %{
               "id" => "call_1",
               "function" => %{
-                "name" => "patch",
+                "name" => "modify_file",
                 "arguments" =>
                   Jason.encode!(%{
                     "patch_content" => patch,
@@ -299,7 +299,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             }
           ]
         },
-        %{role: "tool", tool_call_id: "call_1", name: "patch", content: "ok"}
+        %{role: "tool", tool_call_id: "call_1", name: "modify_file", content: "ok"}
       ]
 
       prepared = Session.prepare_for_api(messages)
@@ -322,9 +322,9 @@ defmodule Beamcore.Agent.Chat.SessionTest do
                 %{
                   "id" => "call_1",
                   "function" => %{
-                    "name" => "write",
+                    "name" => "modify_file",
                     "arguments" =>
-                      Jason.encode!(%{"filePath" => "scratch/a.ex", "content" => content})
+                      Jason.encode!(%{"path" => "scratch/a.ex", "content" => content})
                   }
                 }
               ]
@@ -343,7 +343,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         |> get_in(["function", "arguments"])
         |> Jason.decode!()
 
-      assert args["filePath"] == "scratch/a.ex"
+      assert args["path"] == "scratch/a.ex"
       assert args["content"] == content
     end
 

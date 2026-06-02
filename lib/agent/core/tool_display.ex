@@ -49,11 +49,20 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   def label("policy", args, target, _status),
     do: compact_join(["policy", Map.get(args, "action"), target])
 
-  def label("write", args, target, _status),
-    do: compact_join(["write", target, byte_badge(args)])
 
-  def label("edit", args, target, _status), do: compact_join(["edit", target, edit_badge(args)])
-  def label("patch", args, _target, _status), do: compact_join(["patch", patch_file_badge(args)])
+
+  def label("modify_file", args, target, _status) do
+    cond do
+      Map.has_key?(args, "content") ->
+        compact_join(["modify_file (write)", target, byte_badge(args)])
+
+      Map.has_key?(args, "edits") ->
+        compact_join(["modify_file (edit)", target, modify_badge(args)])
+
+      true ->
+        compact_join(["modify_file", target])
+    end
+  end
 
   def label("fs", args, target, _status),
     do: compact_join(["fs", Map.get(args, "operation"), target])
@@ -124,10 +133,18 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
     |> Enum.join(" · ")
     |> compact_text()
   end
+  def summary("modify_file", args, _result) do
+    cond do
+      Map.has_key?(args, "content") ->
+        byte_summary(args)
 
-  def summary("write", args, _result), do: byte_summary(args)
-  def summary("edit", args, _result), do: edit_summary(args)
-  def summary("patch", args, _result), do: patch_summary(Map.get(args, "patch_content", ""))
+      Map.has_key?(args, "edits") ->
+        modify_summary(args)
+
+      true ->
+        ""
+    end
+  end
 
   def summary("fs", args, _result),
     do: key_values([{"op", Map.get(args, "operation")}, {"target", Map.get(args, "target")}])
@@ -212,28 +229,26 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   def result_summary(result), do: compact_text(inspect(result, limit: 4, printable_limit: 160))
 
   def byte_summary(args) do
-    content = Map.get(args, "content") || Map.get(args, "new_string") || ""
+    content = Map.get(args, "content") || ""
     if content == "", do: "", else: "#{byte_size(content)} bytes"
   end
 
-  def edit_summary(args) do
-    old = Map.get(args, "old_string", "")
-    new = Map.get(args, "new_string", "")
-    key_values([{"old", byte_size(old)}, {"new", byte_size(new)}], " chars")
+
+  def modify_summary(args) do
+    edits = Map.get(args, "edits") || []
+    count = length(edits)
+    "#{count} edits"
   end
 
-  def patch_summary(patch) do
-    "#{patch_file_count(patch)} files · #{patch |> to_string() |> String.split("\n") |> length()} patch lines"
+  def modify_badge(args) do
+    edits = Map.get(args, "edits") || []
+    count = length(edits)
+    "(#{count} edits)"
   end
 
   def byte_badge(args) do
     content = Map.get(args, "content", "")
     if content == "", do: nil, else: "(#{byte_size(content)} bytes)"
-  end
-
-  def edit_badge(args) do
-    new = Map.get(args, "new_string", "")
-    if new == "", do: nil, else: "(#{byte_size(new)} bytes)"
   end
 
   def model_badge(args) do
@@ -244,30 +259,7 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
     end
   end
 
-  def patch_file_badge(args), do: "#{patch_file_count(Map.get(args, "patch_content", ""))} files"
 
-  def patch_file_count(patch) do
-    patch
-    |> to_string()
-    |> String.split("\n")
-    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
-    |> Enum.map(&patch_line_path/1)
-    |> Enum.reject(&(&1 in [nil, "", "/dev/null"]))
-    |> Enum.map(&strip_patch_prefix/1)
-    |> Enum.uniq()
-    |> length()
-  end
-
-  def patch_paths(patch) do
-    patch
-    |> to_string()
-    |> String.split("\n")
-    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
-    |> Enum.map(&patch_line_path/1)
-    |> Enum.reject(&(&1 in [nil, "/dev/null"]))
-    |> Enum.map(&strip_patch_prefix/1)
-    |> Enum.uniq()
-  end
 
   def range_summary(args) do
     case {Map.get(args, "offset"), Map.get(args, "limit")} do
@@ -321,15 +313,7 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
 
   defp saved_path(_result), do: nil
 
-  defp patch_line_path(line) do
-    line
-    |> String.split(~r/\s+/, parts: 3, trim: true)
-    |> Enum.at(1)
-  end
 
-  defp strip_patch_prefix("a/" <> path), do: path
-  defp strip_patch_prefix("b/" <> path), do: path
-  defp strip_patch_prefix(path), do: path
 
   defp truncate(text, limit) when byte_size(text) <= limit, do: text
   defp truncate(text, limit), do: String.slice(text, 0, max(limit - 3, 0)) <> "..."

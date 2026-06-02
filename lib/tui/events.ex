@@ -31,6 +31,8 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "yolo", description: "Toggle freedom mode"},
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
+    %Command{name: "stop", description: "Pause the session to add improved direction"},
+    %Command{name: "continue", description: "Resume the paused session"},
     %Command{name: "quit", description: "Exit"},
     %Command{name: "exit", description: "Exit"},
     %Command{name: "q", description: "Exit"}
@@ -119,8 +121,15 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event({:tool_running, name, args}, state),
     do: State.add_activity(State.set_status(state, :tool_running), name, args, :running)
 
-  def handle_runtime_event({:tool_finished, name, args, result}, state),
-    do: State.update_activity(state, name, args, result)
+  def handle_runtime_event({:tool_finished, "modify_file", args, result}, state) do
+    state
+    |> State.update_activity("modify_file", args, result)
+    |> State.add_message(:tool, result)
+  end
+
+  def handle_runtime_event({:tool_finished, name, args, result}, state) do
+    State.update_activity(state, name, args, result)
+  end
 
   def handle_runtime_event(_event, state), do: state
 
@@ -337,6 +346,25 @@ defmodule Beamcore.TUI.Events do
   defp submit(%{worker: worker} = state) when not is_nil(worker),
     do: State.add_message(state, :system, "Agent is still working.")
 
+  defp submit(%{paused?: true} = state) do
+    # When paused, don't process regular messages - they'll be handled by /continue
+    value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
+
+    cond do
+      value == "" ->
+        state
+
+      String.starts_with?(value, "/") ->
+        ExRatatui.textarea_set_value(state.textarea, "")
+        state = maybe_record_command_history(state, value)
+        run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
+
+      true ->
+        # Keep the message in the textarea for /continue to pick up
+        state
+    end
+  end
+
   defp submit(state) do
     value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
 
@@ -436,6 +464,45 @@ defmodule Beamcore.TUI.Events do
         :system,
         "Cleared visible timeline activity. Session history was not changed."
       )
+
+  defp run_command(state, "stop") do
+    if state.worker != nil do
+      State.add_message(
+        state,
+        :system,
+        "Cannot pause while agent is working. Wait for current operation to complete."
+      )
+    else
+      State.add_message(
+        state,
+        :system,
+        "Session paused. Type your improved direction and use /continue to resume."
+      )
+      |> State.pause()
+    end
+  end
+
+  defp run_command(state, "continue") do
+    if State.paused?(state) do
+      value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
+
+      if value == "" do
+        State.add_message(state, :system, "Please enter some direction before continuing.")
+        |> State.pause()
+      else
+        ExRatatui.textarea_set_value(state.textarea, "")
+        state = record_history(state, value)
+
+        state
+        |> State.add_message(:user, value)
+        |> State.resume()
+        |> start_turn(value, nil)
+        |> Map.put(:show_commands, false)
+      end
+    else
+      State.add_message(state, :system, "Session is not paused. Use /stop to pause first.")
+    end
+  end
 
   defp run_command(state, command) do
     result =

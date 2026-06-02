@@ -29,6 +29,8 @@ defmodule Beamcore.Agent.Chat.Commands do
       "help" -> handle_help(session, output)
       "policy" -> handle_policy([], session, output)
       "policy " <> args -> handle_policy(String.split(args, " ", trim: true), session, output)
+      "stop" -> handle_stop(session, output)
+      "continue" -> handle_continue(session, output)
       _ -> handle_unknown(command, session, output, custom_output?)
     end
   end
@@ -122,6 +124,8 @@ defmodule Beamcore.Agent.Chat.Commands do
       /yolo - Toggle freedom mode for this session
       /yolo on - Bypass project policy for this session
       /yolo off - Restore project policy for this session
+      /stop - Pause the session to add improved direction
+      /continue - Resume the paused session
       /login - Configure your Mistral API key
       /logout - Clear stored Beamcore login
       /env  - Print env variables with secrets redacted
@@ -430,5 +434,15 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   defp list_block(key, values) do
     ["#{key}:" | Enum.map(values, &"- #{&1}")]
+  end
+
+  defp handle_stop(session, output) do
+    output.("Session paused. Type your improved direction and use /continue to resume.")
+    session
+  end
+
+  defp handle_continue(session, output) do
+    output.("Session resumed. Your message will be processed.")
+    session
   end
 end

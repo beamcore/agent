@@ -173,7 +173,7 @@ rail instead of decorative UI.
 ## Activity timeline
 
 Tools are first-class UI events. The timeline shows compact labels for `plan`,
-`read`, `write`, `edit`, `patch`, `fs`, `grep`, `glob`, `tree`, `git`, `mix`,
+`read`, `modify_file`, `fs`, `grep`, `glob`, `tree`, `git`, `mix`,
 `image_generation`, `reflect`, blocked attempts, validation events, and errors.
 
 Examples:
@@ -316,9 +316,7 @@ Example:
 | `grep` | Searches file content with workspace boundary checks and fallback if `rg` is unavailable. |
 | `glob` | Finds files by glob pattern with workspace boundary checks and fallback if `rg` is unavailable. |
 | `tree` | Prints a compact workspace tree. |
-| `write` | Writes full file content to an allowed workspace-relative path. |
-| `edit` | Replaces exact text in an allowed file. |
-| `patch` | Applies a patch only when every touched path is allowed. |
+| `modify_file` | Unified tool to create, overwrite, and edit files robustly. |
 | `fs` | Performs limited filesystem operations; destructive actions require explicit confirmation. |
 | `git` | Performs bounded git operations inside the workspace. |
 | `mix` | Runs safe Mix commands such as `format --check-formatted`, `compile`, `test`, and `validate`. |

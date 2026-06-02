@@ -16,9 +16,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert "read" in names
     assert "plan" in names
     assert "mix" in names
-    assert "write" in names
-    assert "edit" in names
-    assert "patch" in names
+    assert "modify_file" in names
     assert "fs" in names
     assert "task" in names
     assert "web_get" in names
@@ -71,9 +69,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert Enum.sort(names) == Enum.sort(~w(read grep glob tree git mix memory reflect))
     refute "task" in names
     refute "web_get" in names
-    refute "write" in names
-    refute "edit" in names
-    refute "patch" in names
+    refute "modify_file" in names
     refute "fs" in names
   end
 
@@ -89,7 +85,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
-    assert Enum.sort(names) == Enum.sort(~w(read grep glob write edit patch fs mix memory reflect))
+    assert Enum.sort(names) == Enum.sort(~w(read grep glob modify_file fs mix memory reflect))
     refute "task" in names
     refute "web_get" in names
     refute "tree" in names
@@ -120,7 +116,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
       mode: read_only
       """)
 
-    result = Dispatcher.execute("write", %{"filePath" => "tmp.txt", "content" => "bad"}, policy)
+    result = Dispatcher.execute("modify_file", %{"path" => "tmp.txt", "content" => "bad"}, policy)
 
     assert result =~ "read-only policy"
   end
@@ -129,7 +125,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     path = "scratch/dispatcher_autonomous_write.txt"
     on_exit(fn -> File.rm_rf!("scratch/dispatcher_autonomous_write.txt") end)
 
-    result = Dispatcher.execute("write", %{"filePath" => path, "content" => "ok"})
+    result = Dispatcher.execute("modify_file", %{"path" => path, "content" => "ok"})
 
     assert result =~ "Successfully wrote"
     assert File.read!(path) == "ok"
@@ -183,7 +179,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
       - scratch/a.ex
       """)
 
-    result = Dispatcher.execute("write", %{"filePath" => "eval/a.ex", "content" => "bad"}, policy)
+    result = Dispatcher.execute("modify_file", %{"path" => "eval/a.ex", "content" => "bad"}, policy)
 
     assert result =~ "restricted-write policy"
     assert result =~ "eval/a.ex is not in allowed_write_paths"
@@ -194,7 +190,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
       Dispatcher.execute("plan", %{
         "summary" => "Create a scratch module",
         "create_files" => ["scratch/policy_test.ex"],
-        "allowed_tools" => ["write", "mix"],
+        "allowed_tools" => ["modify_file", "mix"],
         "validation" => "mix test scratch/policy_test.exs"
       })
 
@@ -210,7 +206,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
       Dispatcher.execute("plan", %{
         "summary" => "Unsafe plan",
         "create_files" => ["../outside.ex"],
-        "allowed_tools" => ["write"]
+        "allowed_tools" => ["modify_file"]
       })
 
     assert {:ok, decoded} = Jason.decode(result)

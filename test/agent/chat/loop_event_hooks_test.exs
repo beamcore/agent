@@ -106,7 +106,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     session: session
   } do
     path = "tmp/loop_event_large.txt"
-    args = %{"filePath" => path, "limit" => 160}
+    args = %{"path" => path, "limit" => 160}
     File.mkdir_p!("tmp")
     File.write!(path, Enum.map_join(1..160, "\n", &("line #{&1} " <> String.duplicate("x", 90))))
 
@@ -176,7 +176,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
 
   test "tool_finished event preserves short output", %{session: session} do
     path = "tmp/loop_event_small.txt"
-    args = %{"filePath" => path}
+    args = %{"path" => path}
     File.mkdir_p!("tmp")
     File.write!(path, "small output\n")
 
@@ -277,7 +277,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     end)
 
     write_args = %{
-      "filePath" => "scratch/yolo_test.ex",
+      "path" => "scratch/yolo_test.ex",
       "content" => "defmodule Scratch.YoloTest do\n  def hello, do: :ok\nend\n"
     }
 
@@ -286,12 +286,12 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
       %{
         role: "assistant",
         content: "I will try to write it.",
-        tool_calls: [tool_call("stale_write", "write", write_args)]
+        tool_calls: [tool_call("stale_write", "modify_file", write_args)]
       },
       %{
         role: "tool",
         tool_call_id: "stale_write",
-        name: "write",
+        name: "modify_file",
         content: "Error: Tool call blocked by project policy: scratch/yolo_test.ex is denied."
       },
       %{
@@ -331,7 +331,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
                  "message" => %{
                    "role" => "assistant",
                    "content" => "Writing file.",
-                   "tool_calls" => [tool_call("call_write", "write", write_args)]
+                   "tool_calls" => [tool_call("call_write", "modify_file", write_args)]
                  }
                }
              ]
@@ -358,7 +358,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     refute Enum.any?(api_messages, &is_list(&1[:tool_calls] || &1["tool_calls"]))
 
     assert File.exists?("scratch/yolo_test.ex")
-    assert_receive {:event, {:tool_finished, "write", ^write_args, result}}
+    assert_receive {:event, {:tool_finished, "modify_file", ^write_args, result}}
     assert result =~ "Successfully wrote"
     assert updated.project_policy_bypassed?
   end
@@ -374,7 +374,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     end)
 
     args = %{
-      "filePath" => "scratch/yolo_test.ex",
+      "path" => "scratch/yolo_test.ex",
       "content" => "defmodule Scratch.YoloTest do\n  def hello, do: :ok\nend\n"
     }
 
@@ -395,7 +395,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
                  "message" => %{
                    "role" => "assistant",
                    "content" => "Writing file.",
-                   "tool_calls" => [tool_call("call_write", "write", args)]
+                   "tool_calls" => [tool_call("call_write", "modify_file", args)]
                  }
                }
              ]
@@ -419,7 +419,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
 
     assert File.exists?("scratch/yolo_test.ex")
     assert File.read!("scratch/yolo_test.ex") =~ "def hello, do: :ok"
-    assert_receive {:event, {:tool_finished, "write", ^args, result}}
+    assert_receive {:event, {:tool_finished, "modify_file", ^args, result}}
     assert result =~ "Successfully wrote"
     assert updated.project_policy_bypassed?
   end

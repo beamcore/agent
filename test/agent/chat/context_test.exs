@@ -6,8 +6,8 @@ defmodule Beamcore.Agent.Chat.ContextTest do
   test "tracks inspected files from read-like tools without duplicates" do
     context =
       Context.new(:elixir, :mix)
-      |> Context.update_from_tool("read", %{"filePath" => "README.md"}, "full content is ignored")
-      |> Context.update_from_tool("read", %{"filePath" => "README.md"}, "full content is ignored")
+      |> Context.update_from_tool("read", %{"path" => "README.md"}, "full content is ignored")
+      |> Context.update_from_tool("read", %{"path" => "README.md"}, "full content is ignored")
       |> Context.update_from_tool("grep", %{"path" => "lib"}, "many matches")
 
     assert MapSet.to_list(context.inspected_files) |> Enum.sort() == ["README.md", "lib"]
@@ -24,14 +24,14 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
     context =
       Context.new(:elixir, :mix)
-      |> Context.update_from_tool("write", %{"filePath" => "scratch/a.ex"}, "Successfully wrote")
+      |> Context.update_from_tool("modify_file", %{"path" => "scratch/a.ex"}, "Successfully wrote")
       |> Context.update_from_tool(
-        "edit",
+        "modify_file",
         %{"path" => "scratch/a_test.exs"},
         "Successfully updated"
       )
       |> Context.update_from_tool("fs", %{"operation" => "mkdir", "path" => "scratch"}, "ok")
-      |> Context.update_from_tool("patch", %{"patch_content" => patch}, "Patch applied")
+      |> Context.update_from_tool("modify_file", %{"patch_content" => patch}, "Patch applied")
 
     assert "scratch/a.ex" in context.modified_files
     assert "scratch/a_test.exs" in context.modified_files
@@ -59,7 +59,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
       Beamcore.Agent.Tools.Plan.execute(%{
         "summary" => "Create a scratch module",
         "create_files" => ["scratch/policy_test.ex"],
-        "allowed_tools" => ["write", "mix"],
+        "allowed_tools" => ["modify_file", "mix"],
         "validation" => "mix test scratch/policy_test.exs"
       })
 
@@ -74,20 +74,20 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     context =
       Context.new(:elixir, :mix)
       |> Context.update_from_tool(
-        "write",
-        %{"filePath" => "eval/a.ex"},
+        "modify_file",
+        %{"path" => "eval/a.ex"},
         "Error: Tool call blocked by restricted-write policy: eval/a.ex is not allowed."
       )
 
-    assert ["write eval/a.ex"] == context.blocked_attempts
+    assert ["modify_file eval/a.ex"] == context.blocked_attempts
   end
 
   test "clear_policy_blocks removes stale blocked policy context" do
     context =
       Context.new(:elixir, :mix)
       |> Context.update_from_tool(
-        "write",
-        %{"filePath" => "scratch/a.ex"},
+        "modify_file",
+        %{"path" => "scratch/a.ex"},
         "Error: Tool call blocked by project policy: scratch/a.ex is denied."
       )
 
@@ -115,7 +115,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
   test "summary is compact and truncates large lists safely" do
     context =
       Enum.reduce(1..30, Context.new(:elixir, :mix), fn i, context ->
-        Context.update_from_tool(context, "read", %{"filePath" => "lib/file_#{i}.ex"}, "content")
+        Context.update_from_tool(context, "read", %{"path" => "lib/file_#{i}.ex"}, "content")
       end)
 
     summary = Context.summary(context)

@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Tools.Plan do
 
   alias Beamcore.Agent.Tools.PathSafety
 
-  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel)
+  @known_tools ~w(read grep glob modify_file web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel)
   @description """
   Propose a compact, non-mutating plan for a user request. This is informational
   only; it does not gate execution or require confirmation.
@@ -124,9 +124,7 @@ defmodule Beamcore.Agent.Tools.Plan do
 
     inferred =
       []
-      |> maybe_add_tool("write", create_files != [])
-      |> maybe_add_tool("edit", modify_files != [])
-      |> maybe_add_tool("patch", modify_files != [])
+      |> maybe_add_tool("modify_file", create_files != [] or modify_files != [])
       |> maybe_add_tool("mix", compact_string(Map.get(params, "validation", "")) != "")
 
     (["read"] ++ requested ++ inferred)

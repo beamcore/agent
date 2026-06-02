@@ -39,7 +39,7 @@ defmodule Beamcore.Agent.OpenAITest do
       client = OpenAI.client()
 
       assert client.token == "test-api-key"
-      assert client.base_url == "https://api.mistral.ai/v1"
+      assert client.base_url == "https://codestral.mistral.ai/v1"
     end)
   end
 

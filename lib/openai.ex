@@ -11,7 +11,7 @@ defmodule Beamcore.OpenAI do
   """
 
   @http_client Application.compile_env(:agent, :http_client, :httpc)
-  @base_url "https://api.mistral.ai/v1"
+  @base_url "https://codestral.mistral.ai/v1"
   @receive_timeout 30_000
   @http_timeout 120_000
 

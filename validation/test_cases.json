@@ -1,0 +1,95 @@
+[
+  {
+    "id": "whitespace_insensitivity",
+    "file": "validation/examples/hello.ex",
+    "description": "Edits a function head with different whitespace layout and indentation",
+    "edits": [
+      {
+        "search": "  def greet(name) do\n    IO.puts(\"Hello, \" <> name <> \"!\")\n  end",
+        "replace": "  def greet(name, prefix \\\\ \"Hello\") do\n    IO.puts(prefix <> \", \" <> name <> \"!\")\n  end"
+      }
+    ],
+    "expected_success": true,
+    "contains": "def greet(name, prefix \\\\ \"Hello\")"
+  },
+  {
+    "id": "punctuation_spacing_parentheses",
+    "file": "validation/examples/hello.ex",
+    "description": "Edits function definition using relaxed spaces around punctuation",
+    "edits": [
+      {
+        "search": "def sum( a , b ) do",
+        "replace": "def sum(a, b, c \\\\ 0) do"
+      }
+    ],
+    "expected_success": true,
+    "contains": "def sum(a, b, c \\\\ 0) do"
+  },
+  {
+    "id": "quote_insensitivity_js",
+    "file": "validation/examples/hello.js",
+    "description": "Matches single quotes using double quotes in the search pattern",
+    "edits": [
+      {
+        "search": "console.log(\"Hello, \" + name + \"!\");",
+        "replace": "console.log(`Bonjour, ${name}!`);"
+      }
+    ],
+    "expected_success": true,
+    "contains": "console.log(`Bonjour, ${name}!`);"
+  },
+  {
+    "id": "comment_insensitivity_py",
+    "file": "validation/examples/hello.py",
+    "description": "Edits code around comments and matches ignoring comments",
+    "edits": [
+      {
+        "search": "def greet(name):\n    # Some comment\n    print(f\"Hello, {name}!\")",
+        "replace": "def greet(name):\n    # Comment preserved or new comment\n    print(f\"Hi, {name}!\")"
+      }
+    ],
+    "expected_success": true,
+    "contains": "Hi, "
+  },
+  {
+    "id": "multi_edit_atomic",
+    "file": "validation/examples/hello.py",
+    "description": "Performs multiple non-contiguous edits atomically in Python",
+    "edits": [
+      {
+        "search": "def sum_two_numbers(a, b):\n    return a + b",
+        "replace": "def sum_two_numbers(a, b):\n    # Sum function updated\n    return a + b + 1"
+      },
+      {
+        "search": "def list_comprehension(items):\n    return [ x * 2 for x in items if x is not None ]",
+        "replace": "def list_comprehension(items):\n    return [item * 3 for item in items if item is not None]"
+      }
+    ],
+    "expected_success": true,
+    "contains": "return a + b + 1"
+  },
+  {
+    "id": "no_match_failure",
+    "file": "validation/examples/hello.ex",
+    "description": "Fails when the search block is not found anywhere in the file",
+    "edits": [
+      {
+        "search": "def non_existent_function() do\n  :error\nend",
+        "replace": "def non_existent_function() do\n  :ok\nend"
+      }
+    ],
+    "expected_success": false
+  },
+  {
+    "id": "ambiguous_match_failure",
+    "file": "validation/examples/hello.ex",
+    "description": "Fails when the search block is too short or generic and matches multiple spots",
+    "edits": [
+      {
+        "search": "  end",
+        "replace": "# ending"
+      }
+    ],
+    "expected_success": false
+  }
+]

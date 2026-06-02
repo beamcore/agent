@@ -30,7 +30,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.update!(:context, fn context ->
-        Context.update_from_tool(context, "read", %{"filePath" => "README.md"}, "content")
+        Context.update_from_tool(context, "read", %{"path" => "README.md"}, "content")
       end)
 
     assert "README.md" in session.context.inspected_files
@@ -51,7 +51,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.update!(:context, fn context ->
-        Context.update_from_tool(context, "read", %{"filePath" => "mix.exs"}, "content")
+        Context.update_from_tool(context, "read", %{"path" => "mix.exs"}, "content")
       end)
 
     output = capture_io(fn -> assert Commands.execute("context", session) == session end)
@@ -65,7 +65,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       Beamcore.OpenAI.client()
       |> Session.new()
       |> Map.update!(:context, fn context ->
-        Context.update_from_tool(context, "read", %{"filePath" => "mix.exs"}, "content")
+        Context.update_from_tool(context, "read", %{"path" => "mix.exs"}, "content")
       end)
 
     cleared =
@@ -210,15 +210,15 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert message =~ "allowed_write_paths:"
     assert message =~ "- scratch/policy_test.ex"
     assert message =~ "allowed_tools:"
-    assert message =~ "- write"
+    assert message =~ "- modify_file"
     assert message =~ "blocked_tools:"
     assert message =~ "- task"
     assert message =~ "Original user request:"
     assert message =~ "Create scratch/policy_test.ex"
 
     assert :ok ==
-             Beamcore.Agent.Chat.ToolPolicy.allow_tool_call(policy, "write", %{
-               "filePath" => "scratch/policy_test.ex"
+             Beamcore.Agent.Chat.ToolPolicy.allow_tool_call(policy, "modify_file", %{
+               "path" => "scratch/policy_test.ex"
              })
 
     cleared = Session.clear_pending_action(confirmed_session)
@@ -227,14 +227,14 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   end
 
   defp pending_action do
-    policy = ToolPolicy.restricted_write_policy(["scratch/policy_test.ex"], ["write"])
+    policy = ToolPolicy.restricted_write_policy(["scratch/policy_test.ex"], ["modify_file"])
 
     %{
       summary: "Create a scratch module",
       create_files: ["scratch/policy_test.ex"],
       modify_files: [],
       delete_files: [],
-      allowed_tools: ["write"],
+      allowed_tools: ["modify_file"],
       validation: "",
       risks: [],
       allowed_write_paths: ["scratch/policy_test.ex"],
@@ -280,13 +280,13 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       |> Map.update!(:context, fn context ->
         Context.update_from_tool(
           context,
-          "write",
-          %{"filePath" => "scratch/a.ex"},
+          "modify_file",
+          %{"path" => "scratch/a.ex"},
           "Error: Tool call blocked by project policy: scratch/a.ex is denied."
         )
       end)
 
-    assert session.context.blocked_attempts == ["write scratch/a.ex"]
+    assert session.context.blocked_attempts == ["modify_file scratch/a.ex"]
 
     capture_io(fn ->
       result = Commands.execute("yolo on", session)
@@ -311,8 +311,8 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
             "id" => "call_write",
             "type" => "function",
             "function" => %{
-              "name" => "write",
-              "arguments" => Jason.encode!(%{"filePath" => "scratch/a.ex", "content" => "x"})
+              "name" => "modify_file",
+              "arguments" => Jason.encode!(%{"path" => "scratch/a.ex", "content" => "x"})
             }
           }
         ]
@@ -320,7 +320,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       %{
         role: "tool",
         tool_call_id: "call_write",
-        name: "write",
+        name: "modify_file",
         content: "Error: Tool call blocked by project policy: scratch/a.ex is denied."
       },
       %{

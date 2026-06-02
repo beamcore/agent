@@ -43,7 +43,7 @@ defmodule Beamcore.TUI.Components.Chat do
         bubble("Agent", content, Theme.style(:accent), wrap_width, :markdown)
 
       %{role: :tool, content: content} ->
-        bubble("Tool", content, Theme.style(:queued), wrap_width, :plain)
+        tool_bubble("Modify File", content, wrap_width)
 
       %{role: :error, content: content} ->
         bubble("Error", content, Theme.style(:error), wrap_width, :plain)
@@ -51,6 +51,44 @@ defmodule Beamcore.TUI.Components.Chat do
       %{content: content} ->
         bubble("System", content, Theme.style(:muted), wrap_width, :plain)
     end)
+  end
+
+  defp tool_bubble(label, content, wrap_width) do
+    body_width = max(wrap_width - 2, 10)
+    lines = String.split(content, ~r/\r?\n/)
+
+    formatted_items =
+      lines
+      |> Enum.flat_map(fn line ->
+        wrapped_sublines = Wrap.lines(line, body_width)
+
+        Enum.map(wrapped_sublines, fn subline ->
+          style = diff_line_style(line)
+          {"  #{subline}", style}
+        end)
+      end)
+
+    prefix = label_prefix(label)
+    first_item = {"#{prefix} #{label}", Theme.style(:accent)}
+    all_items = [first_item | formatted_items]
+
+    widgets =
+      Enum.map(all_items, fn {text, style} ->
+        {%Paragraph{text: text, style: style, wrap: false}, 1}
+      end)
+
+    widgets ++ [{%Paragraph{text: "", style: Theme.style(:subtle)}, 1}]
+  end
+
+  defp diff_line_style(line) do
+    cond do
+      String.starts_with?(line, "+++") -> Theme.style(:accent)
+      String.starts_with?(line, "---") -> Theme.style(:accent)
+      String.starts_with?(line, "+") -> Theme.style(:done)
+      String.starts_with?(line, "-") -> Theme.style(:error)
+      String.starts_with?(line, "@@") -> Theme.style(:accent)
+      true -> Theme.style(:muted)
+    end
   end
 
   defp bubble(label, content, style, wrap_width, kind) do
