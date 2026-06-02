@@ -30,13 +30,10 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
 
   def target("image_generation", args), do: Map.get(args, "output_path")
   def target("policy", args), do: Map.get(args, "target") || Map.get(args, "action")
-  def target("mix", args), do: compact_join([Map.get(args, "command"), Map.get(args, "args")])
+  def target("test_tool", args), do: Map.get(args, "args")
   def target("git", args), do: Map.get(args, "operation") || Map.get(args, "command")
   def target("fs", args), do: Map.get(args, "path") || Map.get(args, "target")
   def target("task", args), do: Map.get(args, "name")
-
-  def target(name, args) when name in ~w(python node make go rust terraform ruby bazel),
-    do: compact_join([Map.get(args, "command"), Map.get(args, "target")])
 
   def target(_name, args),
     do: Map.get(args, "filePath") || Map.get(args, "path") || Map.get(args, "pattern")
@@ -73,18 +70,8 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
         Map.get(args, "path")
       ])
 
-  def label("mix", args, _target, _status),
-    do: compact_join(["mix", Map.get(args, "command"), Map.get(args, "args")])
-
-  def label(name, args, _target, _status)
-      when name in ~w(python node make go rust terraform ruby bazel),
-      do:
-        compact_join([
-          name,
-          Map.get(args, "command"),
-          Map.get(args, "target"),
-          Map.get(args, "args")
-        ])
+  def label("test_tool", args, _target, _status),
+    do: compact_join(["test_tool", Map.get(args, "args")])
 
   def label("task", args, target, _status),
     do: compact_join(["task", target || "sub-agent", model_badge(args)])
@@ -157,18 +144,8 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
         {"workdir", Map.get(args, "workdir")}
       ])
 
-  def summary("mix", args, _result),
-    do: key_values([{"command", Map.get(args, "command")}, {"args", Map.get(args, "args")}])
-
-  def summary(name, args, _result)
-      when name in ~w(python node make go rust terraform ruby bazel),
-      do:
-        key_values([
-          {"command", Map.get(args, "command")},
-          {"target", Map.get(args, "target")},
-          {"args", Map.get(args, "args")},
-          {"workdir", Map.get(args, "workdir")}
-        ])
+  def summary("test_tool", args, _result),
+    do: key_values([{"args", Map.get(args, "args")}, {"workdir", Map.get(args, "workdir")}])
 
   def summary("task", args, _result),
     do:

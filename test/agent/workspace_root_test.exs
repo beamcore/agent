@@ -2,7 +2,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.{Git, Make, Modify, PathSafety, Read}
+  alias Beamcore.Agent.Tools.{Git, TestTool, Modify, PathSafety, Read}
   alias Beamcore.Agent.Chat.Session
 
   setup do
@@ -81,15 +81,28 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     end)
   end
 
-  test "make tool reads the user project Makefile", %{root: root} do
-    File.write!(Path.join(root, "Makefile"), ".PHONY: user-target\nuser-target:\n\t@echo user\n")
+  test "test_tool runs tests inside the user project workspace", %{root: root} do
+    File.write!(Path.join(root, "Makefile"), "test:\n\t@echo testing\n")
 
+    parent = self()
     with_workspace(root, fn ->
-      result = Make.execute(%{"command" => "list"}) |> Jason.decode!()
+      previous = Application.get_env(:agent, :command_runner)
+      Application.put_env(:agent, :command_runner, fn exe, args, _opts ->
+        send(parent, {:called, exe, args})
+        {"ok", 0}
+      end)
 
-      assert result["ok"]
-      assert result["makefile"] == "Makefile"
-      assert result["targets"] == ["user-target"]
+      try do
+        result = TestTool.execute(%{}) |> Jason.decode!()
+        assert result["ok"]
+        assert_receive {:called, "make", ["test"]}
+      after
+        if previous do
+          Application.put_env(:agent, :command_runner, previous)
+        else
+          Application.delete_env(:agent, :command_runner)
+        end
+      end
     end)
   end
 
