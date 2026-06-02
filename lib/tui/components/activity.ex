@@ -2,14 +2,29 @@ defmodule Beamcore.TUI.Components.Activity do
   @moduledoc false
 
   alias Beamcore.TUI.{Theme, Wrap}
+  alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, Paragraph, Popup, WidgetList}
 
-  def widget(state, variant \\ :sidebar) do
+  def widget(state, variant_or_area \\ :sidebar) do
+    {variant, area} =
+      case variant_or_area do
+        {:sidebar, %Rect{} = area} -> {:sidebar, area}
+        {:strip, %Rect{} = area} -> {:strip, area}
+        %Rect{} = area -> {:sidebar, area}
+        variant when is_atom(variant) -> {variant, nil}
+      end
+
+    wrap_width =
+      if area do
+        max(area.width - 4, 10)
+      else
+        if variant == :strip, do: 96, else: 72
+      end
+
     items =
       state.activity
       |> Enum.reverse()
-      |> Enum.take(limit(variant))
-      |> Enum.flat_map(&event_items(&1, variant, state.spinner_step))
+      |> Enum.flat_map(&event_items(&1, variant, wrap_width, state.spinner_step))
 
     items =
       if items == [] do
@@ -18,9 +33,16 @@ defmodule Beamcore.TUI.Components.Activity do
         items
       end
 
+    scroll_offset =
+      if area do
+        scroll_offset(items, max(area.height - 2, 1), state.activity_scroll_offset)
+      else
+        0
+      end
+
     %WidgetList{
       items: items,
-      scroll_offset: 0,
+      scroll_offset: scroll_offset,
       block: %Block{
         title: title(variant),
         borders: [:all],
@@ -61,30 +83,68 @@ defmodule Beamcore.TUI.Components.Activity do
     end
   end
 
-  defp event_items(event, :strip, step) do
+  defp event_items(event, :strip, wrap_width, step) do
     [
       {%Paragraph{
-         text: Wrap.truncate_line("#{marker(event, step)} #{event.label}", 96),
+         text: Wrap.truncate_line("#{marker(event, step)} #{event.label}", wrap_width),
          style: style(event.status),
-         wrap: true
+         wrap: false
        }, 1}
     ]
   end
 
-  defp event_items(event, _variant, step) do
+  defp event_items(event, _variant, wrap_width, step) do
+    label_text = "#{marker(event, step)} #{event.label}"
+    label_lines = Wrap.lines(label_text, wrap_width)
+    label_height = length(label_lines)
+
+    args_text = format_tool_args(event[:args])
+
+    {args_lines, args_height} =
+      if args_text != "" do
+        lines = Wrap.lines(args_text, wrap_width)
+        {lines, length(lines)}
+      else
+        {[], 0}
+      end
+
+    summary_text = event.summary || ""
+
+    {summary_lines, summary_height} =
+      if summary_text != "" do
+        lines = Wrap.lines(summary_text, wrap_width) |> Enum.take(3)
+        {lines, length(lines)}
+      else
+        {[], 0}
+      end
+
     [
       {%Paragraph{
-         text: Wrap.truncate_line("#{marker(event, step)} #{event.label}", 72),
+         text: Enum.join(label_lines, "\n"),
          style: style(event.status),
-         wrap: true
-       }, 1},
-      {%Paragraph{
-         text: Wrap.truncate_line(event.summary || "", 96),
-         style: Theme.style(:subtitle),
-         wrap: true
-       }, summary_height(event.summary)}
+         wrap: false
+       }, label_height},
+      if(args_height > 0,
+        do:
+          {%Paragraph{
+             text: Enum.join(args_lines, "\n"),
+             style: Theme.style(:subtle),
+             wrap: false
+           }, args_height},
+        else: nil
+      ),
+      if(summary_height > 0,
+        do:
+          {%Paragraph{
+             text: Enum.join(summary_lines, "\n"),
+             style: Theme.style(:subtitle),
+             wrap: false
+           }, summary_height},
+        else: nil
+      ),
+      {%Paragraph{text: "", style: Theme.style(:subtle)}, 1}
     ]
-    |> Enum.reject(fn {_widget, height} -> height == 0 end)
+    |> Enum.reject(&is_nil/1)
   end
 
   defp details_text(nil, _index, _total), do: "No timeline activity yet."
@@ -121,11 +181,6 @@ defmodule Beamcore.TUI.Components.Activity do
   defp empty_text(_variant),
     do: "◇ Tool calls, blocked attempts, validation, and images appear here."
 
-  defp limit(:strip), do: 4
-  defp limit(_variant), do: 14
-  defp summary_height(nil), do: 0
-  defp summary_height(""), do: 0
-  defp summary_height(text), do: min(3, length(String.split(text, "\n")))
   defp status_prefix(:queued), do: "queued"
   defp status_prefix(:running), do: "run"
   defp status_prefix(:done), do: "done"
@@ -145,4 +200,45 @@ defmodule Beamcore.TUI.Components.Activity do
   defp style(:running), do: Theme.style(:running)
   defp style(:queued), do: Theme.style(:queued)
   defp style(_), do: Theme.style(:accent)
+
+  defp scroll_offset(items, viewport_height, distance_from_bottom) do
+    content_height =
+      items
+      |> Enum.map(fn {_widget, item_height} -> item_height end)
+      |> Enum.sum()
+
+    max_scroll = max(content_height - viewport_height, 0)
+    max(max_scroll - distance_from_bottom, 0)
+  end
+
+  defp format_tool_args(args) when is_map(args) do
+    args
+    |> Enum.reject(fn {key, _val} ->
+      key_str = key |> to_string() |> String.downcase()
+
+      key_str in ~w(content codecontent replacementcontent targetcontent replacementchunk replacementchunks imagepaths toolaction toolsummary metadata artifactmetadata)
+    end)
+    |> Enum.map(fn {key, val} ->
+      val_str =
+        cond do
+          is_binary(val) ->
+            if String.length(val) > 40 do
+              String.slice(val, 0, 37) <> "..."
+            else
+              val
+            end
+
+          is_list(val) or is_map(val) ->
+            inspect(val, limit: 3, printable_limit: 40)
+
+          true ->
+            to_string(val)
+        end
+
+      "#{key}: #{val_str}"
+    end)
+    |> Enum.join(" · ")
+  end
+
+  defp format_tool_args(_), do: ""
 end

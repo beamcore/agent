@@ -238,16 +238,17 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-
-
   defp format_tool_args("modify_file", args, _context) do
     path = Map.get(args, "path", "unknown")
-    badge = 
+
+    badge =
       cond do
         Map.has_key?(args, "content") ->
           ToolDisplay.byte_badge(%{"content" => Map.get(args, "content")}) || "(0 bytes)"
+
         Map.has_key?(args, "edits") ->
           ToolDisplay.modify_badge(args)
+
         true ->
           ""
       end
@@ -271,8 +272,6 @@ defmodule Beamcore.Agent.Core.Pretty do
         colorize(" (offset: #{offset || 1}, limit: #{limit || 200})", &Colors.dim/0)
     )
   end
-
-
 
   defp format_tool_args("grep", %{"pattern" => pattern} = args, _context) do
     path = Map.get(args, "path", ".")

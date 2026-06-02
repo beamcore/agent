@@ -27,8 +27,6 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
 
     """
-    You are Beamcore.Agent: a general-purpose coding agent.
-
     Your function is to follow the user instruction.
 
     Workspace: .
@@ -39,7 +37,10 @@ defmodule Beamcore.Agent.Core.SysPrompt do
 
     #{memory_guidelines_and_index()}
 
-    Response style: concise, factual, robotic, professional. Take initiative.
+    Response style: concise, factual, robotic, professional.
+    Take initiative.
+    Research before taking action.
+    Before making a change, trace dependencies and potential impacts.
     """
   end
 

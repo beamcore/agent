@@ -101,18 +101,14 @@ defmodule Beamcore.Agent do
   def chat(:tui, opts) do
     with_workspace(opts, fn opts ->
       case ensure_chat_config(opts),
-        do: (
-          :ok -> start_tui(opts)
-        )
+        do: (:ok -> start_tui(opts))
     end)
   end
 
   def chat(:plain, opts) do
     with_workspace(opts, fn opts ->
       case ensure_chat_config(opts),
-        do: (
-          :ok -> start_plain(opts)
-        )
+        do: (:ok -> start_plain(opts))
     end)
   end
 

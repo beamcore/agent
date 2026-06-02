@@ -49,8 +49,6 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   def label("policy", args, target, _status),
     do: compact_join(["policy", Map.get(args, "action"), target])
 
-
-
   def label("modify_file", args, target, _status) do
     cond do
       Map.has_key?(args, "content") ->
@@ -133,6 +131,7 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
     |> Enum.join(" · ")
     |> compact_text()
   end
+
   def summary("modify_file", args, _result) do
     cond do
       Map.has_key?(args, "content") ->
@@ -233,7 +232,6 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
     if content == "", do: "", else: "#{byte_size(content)} bytes"
   end
 
-
   def modify_summary(args) do
     edits = Map.get(args, "edits") || []
     count = length(edits)
@@ -258,8 +256,6 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
       model -> "(#{model})"
     end
   end
-
-
 
   def range_summary(args) do
     case {Map.get(args, "offset"), Map.get(args, "limit")} do
@@ -312,8 +308,6 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   end
 
   defp saved_path(_result), do: nil
-
-
 
   defp truncate(text, limit) when byte_size(text) <= limit, do: text
   defp truncate(text, limit), do: String.slice(text, 0, max(limit - 3, 0)) <> "..."

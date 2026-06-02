@@ -60,7 +60,9 @@ defmodule Beamcore.Agent.Tools.Modify do
   end
 
   def execute(params) do
-    file_path = Map.get(params, "path") || Map.get(params, "filePath") || raise(KeyError, key: "path")
+    file_path =
+      Map.get(params, "path") || Map.get(params, "filePath") || raise(KeyError, key: "path")
+
     content = Map.get(params, "content")
     edits = Map.get(params, "edits")
     dry_run = Map.get(params, "dry_run", false)
@@ -240,7 +242,9 @@ defmodule Beamcore.Agent.Tools.Modify do
     sorted_reverse = Enum.sort_by(matched_ranges, & &1.start_line, :desc)
 
     Enum.reduce(sorted_reverse, file_lines, fn match, acc ->
-      aligned_replace = align_indentation(match.orig_first, match.search_first, match.replace_lines)
+      aligned_replace =
+        align_indentation(match.orig_first, match.search_first, match.replace_lines)
+
       replace_range(acc, match.start_line, match.end_line, aligned_replace)
     end)
   end
@@ -267,6 +271,7 @@ defmodule Beamcore.Agent.Tools.Modify do
     cond do
       diff > 0 ->
         spaces = String.duplicate(" ", diff)
+
         Enum.map(replace_lines, fn line ->
           if line == "", do: "", else: spaces <> line
         end)
@@ -369,7 +374,10 @@ defmodule Beamcore.Agent.Tools.Modify do
   defp normalize_tier2(line) do
     cleaned =
       line
-      |> String.replace(~r/[\x{2018}\x{2019}\x{201A}\x{201B}\x{201C}\x{201D}\x{201E}\x{201F}]/u, "'")
+      |> String.replace(
+        ~r/[\x{2018}\x{2019}\x{201A}\x{201B}\x{201C}\x{201D}\x{201E}\x{201F}]/u,
+        "'"
+      )
       |> String.replace(~r/["`]/, "'")
       |> String.replace(~r/,\s*$/, "")
       |> String.trim()

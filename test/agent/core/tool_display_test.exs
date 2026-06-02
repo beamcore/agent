@@ -6,8 +6,11 @@ defmodule Beamcore.Agent.Core.ToolDisplayTest do
   test "compact labels cover common tools" do
     cases = [
       {"read", %{"filePath" => "README.md"}, "read README.md"},
-      {"modify_file", %{"path" => "lib/foo.ex", "content" => "abc"}, "modify_file (write) lib/foo.ex (3 bytes)"},
-      {"modify_file", %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]}, "modify_file (edit) lib/foo.ex (1 edits)"},
+      {"modify_file", %{"path" => "lib/foo.ex", "content" => "abc"},
+       "modify_file (write) lib/foo.ex (3 bytes)"},
+      {"modify_file",
+       %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]},
+       "modify_file (edit) lib/foo.ex (1 edits)"},
       {"fs", %{"operation" => "mkdir", "path" => "generated"}, "fs mkdir generated"},
       {"git", %{"operation" => "status"}, "git status"},
       {"mix", %{"command" => "test", "args" => "test/agent_test.exs"},
@@ -26,7 +29,8 @@ defmodule Beamcore.Agent.Core.ToolDisplayTest do
   test "blocked labels reuse compact tool labels" do
     args = %{"path" => "scratch/a.ex", "content" => "bad"}
 
-    assert ToolDisplay.label("modify_file", args, :blocked) == "blocked modify_file (write) scratch/a.ex (3 bytes)"
+    assert ToolDisplay.label("modify_file", args, :blocked) ==
+             "blocked modify_file (write) scratch/a.ex (3 bytes)"
   end
 
   test "summaries stay compact and avoid raw maps" do

@@ -359,8 +359,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     end
   end
 
-
-
   defp allow_restricted_fs(policy, args) do
     operation = Map.get(args, "operation")
     path = Map.get(args, "path")

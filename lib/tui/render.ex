@@ -41,7 +41,7 @@ defmodule Beamcore.TUI.Render do
   defp wide(state, areas) do
     [
       {Chat.widget(state, areas.chat), areas.chat},
-      {Activity.widget(state, :sidebar), areas.activity},
+      {Activity.widget(state, {:sidebar, areas.activity}), areas.activity},
       {Input.widget(state), areas.input},
       {StatusBar.widget(state, :wide), areas.status}
     ]
@@ -50,7 +50,7 @@ defmodule Beamcore.TUI.Render do
   defp medium(state, areas) do
     [
       {Chat.widget(state, areas.chat), areas.chat},
-      {Activity.widget(state, :strip), areas.activity},
+      {Activity.widget(state, {:strip, areas.activity}), areas.activity},
       {Input.widget(state), areas.input},
       {StatusBar.widget(state, :medium), areas.status}
     ]

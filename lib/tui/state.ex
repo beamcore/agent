@@ -17,6 +17,7 @@ defmodule Beamcore.TUI.State do
             selected_activity: 0,
             status: :idle,
             scroll_offset: 0,
+            activity_scroll_offset: 0,
             show_help: false,
             show_activity_details: false,
             show_commands: false,
@@ -167,6 +168,21 @@ defmodule Beamcore.TUI.State do
 
   defp auto_scroll_on_new_message(state), do: state
 
+  def scroll_activity_up(state, amount \\ 1),
+    do: %{state | activity_scroll_offset: state.activity_scroll_offset + amount} |> mark_dirty()
+
+  def scroll_activity_down(state, amount \\ 1),
+    do:
+      %{state | activity_scroll_offset: max(state.activity_scroll_offset - amount, 0)}
+      |> mark_dirty()
+
+  def reset_activity_scroll(state), do: %{state | activity_scroll_offset: 0} |> mark_dirty()
+
+  defp auto_scroll_on_new_activity(%{activity_scroll_offset: offset} = state) when offset <= 2,
+    do: reset_activity_scroll(state)
+
+  defp auto_scroll_on_new_activity(state), do: state
+
   def pending_action(%{context: %{pending_action: action}}), do: action
   def pending_action(_session), do: nil
 
@@ -200,7 +216,10 @@ defmodule Beamcore.TUI.State do
 
   def add_activity(state, name, args, status \\ :queued) do
     event = compact_activity(name, args, status)
-    %{state | activity: Enum.take([event | state.activity], @max_activity)} |> mark_dirty()
+
+    %{state | activity: Enum.take([event | state.activity], @max_activity)}
+    |> auto_scroll_on_new_activity()
+    |> mark_dirty()
   end
 
   def update_activity(state, name, args, result) do
@@ -215,7 +234,9 @@ defmodule Beamcore.TUI.State do
           [event | other]
       end
 
-    %{state | activity: Enum.take(activity, @max_activity)} |> mark_dirty()
+    %{state | activity: Enum.take(activity, @max_activity)}
+    |> auto_scroll_on_new_activity()
+    |> mark_dirty()
   end
 
   def compact_activity(name, args, status, result \\ nil) do
@@ -229,9 +250,48 @@ defmodule Beamcore.TUI.State do
       status: display.status,
       label: display.label,
       summary: display.summary,
-      result: display.result
+      result: display.result,
+      args: compact_args(args)
     }
   end
+
+  def compact_args(args) when is_map(args) do
+    args
+    |> Enum.map(fn {key, val} ->
+      val_compact =
+        cond do
+          is_binary(val) ->
+            if String.length(val) > 60 do
+              String.slice(val, 0, 57) <> "..."
+            else
+              val
+            end
+
+          is_map(val) ->
+            compact_args(val)
+
+          is_list(val) ->
+            Enum.map(val, fn
+              item when is_map(item) ->
+                compact_args(item)
+
+              item when is_binary(item) ->
+                if String.length(item) > 60, do: String.slice(item, 0, 57) <> "...", else: item
+
+              item ->
+                item
+            end)
+
+          true ->
+            val
+        end
+
+      {key, val_compact}
+    end)
+    |> Map.new()
+  end
+
+  def compact_args(args), do: args
 
   def compact_text(value, limit \\ 180) do
     ToolDisplay.compact_text(value, limit)

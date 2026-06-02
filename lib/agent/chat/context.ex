@@ -309,8 +309,6 @@ defmodule Beamcore.Agent.Chat.Context do
 
   defp atomize_pending_action(_action), do: nil
 
-
-
   defp decode_json(value) when is_binary(value) do
     case Jason.decode(value) do
       {:ok, decoded} when is_map(decoded) -> decoded
