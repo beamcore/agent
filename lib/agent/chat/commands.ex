@@ -96,10 +96,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       {:error, :empty_value} ->
         output.("Login token was empty; nothing was saved.")
         session
-
-      {:error, reason} ->
-        output.("Login failed: #{inspect(reason)}")
-        session
     end
   end
 

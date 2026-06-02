@@ -14,9 +14,11 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     "web_get: network fetch and system execution tasks.",
     "task: start sub agents to do parallel work.",
     "image_generation: Mistral image_generation agent tool.",
-    "memory: persistent memory service to remember, recall, list, and forget scoped knowledge."
+    "memory: persistent memory service to remember, recall, list, and forget scoped knowledge.",
+    "reflect: self-reflection to analyze current progress, identify issues, and propose improvements."
   ]
 
+  @spec generate() :: <<_::64, _::_*8>>
   @doc """
   Generates the full system prompt.
   """
@@ -36,7 +38,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
 
     #{memory_guidelines_and_index()}
 
-    Response style: concise, factual, robotic professional.
+    Response style: concise, factual, robotic, professional. Take initiative.
     """
   end
 

@@ -506,9 +506,6 @@ defmodule Beamcore.TUI.Events do
 
       {:error, :empty_value} ->
         State.add_message(state, :system, "Login token was empty; nothing was saved.")
-
-      {:error, reason} ->
-        State.add_message(state, :system, "Login failed: #{inspect(reason)}")
     end
   end
 

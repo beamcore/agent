@@ -89,10 +89,6 @@ defmodule Beamcore.Agent.Chat.Loop do
             {:error, :empty_value} ->
               IO.puts("Login token was empty; nothing was saved.")
               session
-
-            {:error, reason} ->
-              IO.puts("Login failed: #{inspect(reason)}")
-              session
           end
 
         loop(session, pid)

@@ -29,7 +29,8 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     Beamcore.Agent.Tools.Rust,
     Beamcore.Agent.Tools.Terraform,
     Beamcore.Agent.Tools.Ruby,
-    Beamcore.Agent.Tools.Bazel
+    Beamcore.Agent.Tools.Bazel,
+    Beamcore.Agent.Tools.Reflect
   ]
 
   @doc """

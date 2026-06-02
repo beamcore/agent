@@ -13,7 +13,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   @example_path ".beamcore/policy.example.json"
   @protected_paths [@config_path]
   @process_bypass_key {__MODULE__, :bypassed}
-  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel)
+  @known_tools ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel reflect)
   @write_tools ~w(write edit patch fs image_generation)
   @read_tools ~w(read grep glob tree)
 

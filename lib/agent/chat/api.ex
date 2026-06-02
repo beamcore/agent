@@ -68,14 +68,7 @@ defmodule Beamcore.Agent.Chat.API do
                   maybe_print_debug(opts, messages, tools, model, error)
                   format_response(response, context, opts)
 
-                {:error, reason} when is_binary(reason) ->
-                  if String.contains?(reason, "status_code: 400") do
-                    maybe_print_debug(opts, messages, tools, model, reason)
-                  end
-
-                  format_response(response, context, opts)
-
-                _ ->
+                response ->
                   format_response(response, context, opts)
               end
             rescue
@@ -128,9 +121,7 @@ defmodule Beamcore.Agent.Chat.API do
     {:error, reason}
   end
 
-  defp format_response(response, _context, _opts) do
-    {:error, "Unexpected response format: #{inspect(response)}"}
-  end
+
 
   defp format_response_with_context(response_map, message, _tool_calls, context, opts) do
     # Tool calls are intentionally not printed here.
@@ -270,10 +261,6 @@ defmodule Beamcore.Agent.Chat.API do
         Pretty.colorize("  Body: ", &Colors.bright_red/0) <> inspect(error.body, pretty: true)
       )
     end
-  end
-
-  defp print_extracted_error(error_info) do
-    IO.puts("  " <> inspect(error_info, pretty: true))
   end
 
   # Validate message sequence and print warnings

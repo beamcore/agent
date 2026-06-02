@@ -84,9 +84,6 @@ defmodule Beamcore.Agent do
             else
               fallback_to_plain(Beamcore.TUI.Capability.unsupported_reason(opts), opts)
             end
-
-          error ->
-            error
         end
       rescue
         error ->
@@ -106,7 +103,6 @@ defmodule Beamcore.Agent do
       case ensure_chat_config(opts),
         do: (
           :ok -> start_tui(opts)
-          error -> error
         )
     end)
   end
@@ -116,7 +112,6 @@ defmodule Beamcore.Agent do
       case ensure_chat_config(opts),
         do: (
           :ok -> start_plain(opts)
-          error -> error
         )
     end)
   end
