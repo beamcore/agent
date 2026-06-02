@@ -53,9 +53,31 @@ defmodule Beamcore.TUI.Components.Activity do
     }
   end
 
-  def details_widget(state) do
+  def details_widget(state, %Rect{} = screen_area) do
+    popup_width = div(screen_area.width * 64, 100)
+    popup_height = div(screen_area.height * 48, 100)
+    content_width = max(popup_width - 2, 10)
+    content_height = max(popup_height - 2, 2)
+
+    selected = Enum.at(state.activity, state.selected_activity) || List.first(state.activity)
+
+    lines =
+      details_lines(selected, state.selected_activity, length(state.activity), content_width)
+
+    items =
+      Enum.map(lines, fn line ->
+        {%Paragraph{text: line, style: Theme.style(:panel), wrap: false}, 1}
+      end)
+
+    max_scroll = max(length(items) - content_height, 0)
+    scroll_offset = min(state.details_scroll_offset, max_scroll)
+
     %Popup{
-      content: %Paragraph{text: details_text(state), style: Theme.style(:panel), wrap: true},
+      content: %WidgetList{
+        items: items,
+        scroll_offset: scroll_offset,
+        block: nil
+      },
       block: %Block{
         title: "Timeline details",
         borders: [:all],
@@ -66,11 +88,6 @@ defmodule Beamcore.TUI.Components.Activity do
       percent_width: 64,
       percent_height: 48
     }
-  end
-
-  def details_text(state) do
-    selected = Enum.at(state.activity, state.selected_activity) || List.first(state.activity)
-    details_text(selected, state.selected_activity, length(state.activity))
   end
 
   def compact_text(state) do
@@ -147,24 +164,32 @@ defmodule Beamcore.TUI.Components.Activity do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp details_text(nil, _index, _total), do: "No timeline activity yet."
+  def details_lines(nil, _index, _total, _width), do: ["No timeline activity yet."]
 
-  defp details_text(event, index, total) do
-    [
+  def details_lines(event, index, total, width) do
+    args_str =
+      if is_map(event.args) and map_size(event.args) > 0 do
+        inspect(event.args, pretty: true, limit: :infinity, printable_limit: :infinity)
+      else
+        "none"
+      end
+
+    lines = [
       "Timeline item #{min(index + 1, max(total, 1))}/#{max(total, 1)}",
       "#{status_prefix(event.status)} #{event.label}",
       "",
-      field("time", timestamp(event)),
-      field("tool", event.name),
-      field("state", event.status),
-      field("target", event.target || "none"),
-      field("summary", event.summary || "none"),
-      field("output", event.result || "none")
+      "time: #{timestamp(event)}",
+      "tool: #{event.name}",
+      "state: #{event.status}",
+      "target: #{event.target || "none"}",
+      "summary: #{event.summary || "none"}",
+      "arguments:\n#{args_str}",
+      "output:\n#{to_string(event.result || "none")}"
     ]
-    |> Enum.join("\n")
-  end
 
-  defp field(label, value), do: "#{label}: #{Wrap.truncate_line(to_string(value), 520)}"
+    lines
+    |> Enum.flat_map(fn line -> Wrap.lines(line, width) end)
+  end
 
   defp timestamp(%{timestamp_ms: timestamp}) when is_integer(timestamp) do
     timestamp

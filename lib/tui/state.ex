@@ -18,6 +18,7 @@ defmodule Beamcore.TUI.State do
             status: :idle,
             scroll_offset: 0,
             activity_scroll_offset: 0,
+            details_scroll_offset: 0,
             show_help: false,
             show_activity_details: false,
             show_commands: false,
@@ -178,6 +179,16 @@ defmodule Beamcore.TUI.State do
 
   def reset_activity_scroll(state), do: %{state | activity_scroll_offset: 0} |> mark_dirty()
 
+  def scroll_details_up(state, amount \\ 1),
+    do:
+      %{state | details_scroll_offset: max(state.details_scroll_offset - amount, 0)}
+      |> mark_dirty()
+
+  def scroll_details_down(state, amount \\ 1),
+    do: %{state | details_scroll_offset: state.details_scroll_offset + amount} |> mark_dirty()
+
+  def reset_details_scroll(state), do: %{state | details_scroll_offset: 0} |> mark_dirty()
+
   defp auto_scroll_on_new_activity(%{activity_scroll_offset: offset} = state) when offset <= 2,
     do: reset_activity_scroll(state)
 
@@ -250,8 +261,8 @@ defmodule Beamcore.TUI.State do
       status: display.status,
       label: display.label,
       summary: display.summary,
-      result: display.result,
-      args: compact_args(args)
+      result: result,
+      args: args
     }
   end
 
