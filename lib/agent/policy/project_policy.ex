@@ -439,7 +439,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     |> Enum.reject(&(&1 in [nil, ""]))
   end
 
-
   defp plan_paths(args) do
     ["create_files", "modify_files", "delete_files"]
     |> Enum.flat_map(&(Map.get(args, &1, []) |> List.wrap()))
@@ -609,8 +608,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
       }
     }
   end
-
-
 
   defp count_line(_label, []), do: nil
   defp count_line(label, values), do: "#{length(values)} #{label}."

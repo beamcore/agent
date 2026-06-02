@@ -486,8 +486,11 @@ defmodule Beamcore.TUI.StateComponentsTest do
   test "activity labels use very-pretty compact tool formatting" do
     cases = [
       {"read", %{"path" => "README.md"}, "read README.md"},
-      {"modify_file", %{"path" => "lib/foo.ex", "content" => "abc"}, "modify_file (write) lib/foo.ex (3 bytes)"},
-      {"modify_file", %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]}, "modify_file (edit) lib/foo.ex (1 edits)"},
+      {"modify_file", %{"path" => "lib/foo.ex", "content" => "abc"},
+       "modify_file (write) lib/foo.ex (3 bytes)"},
+      {"modify_file",
+       %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]},
+       "modify_file (edit) lib/foo.ex (1 edits)"},
       {"mix", %{"command" => "test", "args" => "test/agent_test.exs"},
        "mix test test/agent_test.exs"},
       {"git", %{"operation" => "status"}, "git status"},
@@ -722,10 +725,11 @@ defmodule Beamcore.TUI.StateComponentsTest do
             }
           ],
           selected_activity: 0,
+          activity_scroll_offset: 0,
           show_activity_details: false
         }
 
-        # Scroll up over activity pane -> moves to older/next activity item (index 1)
+        # Scroll up over activity pane -> increments activity_scroll_offset to 3
         mouse_up_activity = %ExRatatui.Event.Mouse{
           kind: "scroll_up",
           x: activity_rect.x,
@@ -733,16 +737,29 @@ defmodule Beamcore.TUI.StateComponentsTest do
         }
 
         {:noreply, state} = Events.handle_event(mouse_up_activity, state, event_opts)
-        assert state.selected_activity == 1
-        assert state.show_activity_details == true
+        assert state.activity_scroll_offset == 3
+        assert state.show_activity_details == false
 
-        # Scroll down over activity pane -> moves to newer/previous activity item (index 0)
+        # Scroll down over activity pane -> decrements activity_scroll_offset to 0
         mouse_down_activity = %ExRatatui.Event.Mouse{
           kind: "scroll_down",
           x: activity_rect.x,
           y: activity_rect.y
         }
 
+        {:noreply, state} = Events.handle_event(mouse_down_activity, state, event_opts)
+        assert state.activity_scroll_offset == 0
+        assert state.show_activity_details == false
+
+        # Test scrolling details when open
+        state = %{state | show_activity_details: true, selected_activity: 0}
+
+        # Scroll up -> moves to older/next activity item (index 1)
+        {:noreply, state} = Events.handle_event(mouse_up_activity, state, event_opts)
+        assert state.selected_activity == 1
+        assert state.show_activity_details == true
+
+        # Scroll down -> moves back to newer/previous activity item (index 0)
         {:noreply, state} = Events.handle_event(mouse_down_activity, state, event_opts)
         assert state.selected_activity == 0
         assert state.show_activity_details == true

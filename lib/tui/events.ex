@@ -32,7 +32,6 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
     %Command{name: "stop", description: "Pause the session to add improved direction"},
-
     %Command{name: "quit", description: "Exit"},
     %Command{name: "exit", description: "Exit"},
     %Command{name: "q", description: "Exit"}
@@ -233,7 +232,11 @@ defmodule Beamcore.TUI.Events do
         handle_text_key("up", mods, state)
 
       true ->
-        {:noreply, State.scroll_up(state)}
+        if shift?(mods) or alt?(mods) do
+          {:noreply, State.scroll_activity_up(state)}
+        else
+          {:noreply, State.scroll_up(state)}
+        end
     end
   end
 
@@ -249,7 +252,11 @@ defmodule Beamcore.TUI.Events do
         handle_text_key("down", mods, state)
 
       true ->
-        {:noreply, State.scroll_down(state)}
+        if shift?(mods) or alt?(mods) do
+          {:noreply, State.scroll_activity_down(state)}
+        else
+          {:noreply, State.scroll_down(state)}
+        end
     end
   end
 
@@ -324,15 +331,19 @@ defmodule Beamcore.TUI.Events do
   defp shift?(mods), do: "shift" in mods
 
   defp scroll_activity(state, :up) do
-    state
-    |> Map.put(:show_activity_details, true)
-    |> select_activity(1)
+    if state.show_activity_details do
+      select_activity(state, 1)
+    else
+      State.scroll_activity_up(state, 3)
+    end
   end
 
   defp scroll_activity(state, :down) do
-    state
-    |> Map.put(:show_activity_details, true)
-    |> select_activity(-1)
+    if state.show_activity_details do
+      select_activity(state, -1)
+    else
+      State.scroll_activity_down(state, 3)
+    end
   end
 
   defp insert_newline(state) do
@@ -459,7 +470,12 @@ defmodule Beamcore.TUI.Events do
   defp run_command(state, "timeline clear"),
     do:
       state
-      |> Map.merge(%{activity: [], selected_activity: 0, show_activity_details: false})
+      |> Map.merge(%{
+        activity: [],
+        selected_activity: 0,
+        activity_scroll_offset: 0,
+        show_activity_details: false
+      })
       |> State.add_message(
         :system,
         "Cleared visible timeline activity. Session history was not changed."
@@ -481,8 +497,6 @@ defmodule Beamcore.TUI.Events do
       |> State.pause()
     end
   end
-
-
 
   defp run_command(state, command) do
     result =
@@ -524,7 +538,14 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp apply_command_result(session, state, "new") do
-    %{state | session: session, messages: [], activity: [], selected_activity: 0}
+    %{
+      state
+      | session: session,
+        messages: [],
+        activity: [],
+        selected_activity: 0,
+        activity_scroll_offset: 0
+    }
     |> State.add_message(:system, "Started a fresh session.")
   end
 

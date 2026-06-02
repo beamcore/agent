@@ -246,8 +246,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert message =~ "eval is not in allowed_write_paths"
   end
 
-
-
   test "read_only blocks write even if allowed_tools includes write" do
     policy =
       ToolPolicy.from_user_message("""
@@ -357,7 +355,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert "git" in allowed
     assert "image_generation" in allowed
 
-    assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "any/path/here.ex"})
+    assert :ok ==
+             ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "any/path/here.ex"})
+
     assert :ok == ToolPolicy.allow_tool_call(policy, "task", %{"command" => "rm -rf /"})
   end
 end

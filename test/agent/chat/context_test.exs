@@ -24,7 +24,11 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
     context =
       Context.new(:elixir, :mix)
-      |> Context.update_from_tool("modify_file", %{"path" => "scratch/a.ex"}, "Successfully wrote")
+      |> Context.update_from_tool(
+        "modify_file",
+        %{"path" => "scratch/a.ex"},
+        "Successfully wrote"
+      )
       |> Context.update_from_tool(
         "modify_file",
         %{"path" => "scratch/a_test.exs"},

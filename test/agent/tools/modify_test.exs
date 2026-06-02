@@ -60,12 +60,13 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     path = Path.join(@test_dir, "edit.txt")
     File.write!(path, "line 1\nline 2\nline 3\n")
 
-    result = Modify.execute(%{
-      "path" => path,
-      "edits" => [
-        %{"search" => "line 2", "replace" => "updated line 2"}
-      ]
-    })
+    result =
+      Modify.execute(%{
+        "path" => path,
+        "edits" => [
+          %{"search" => "line 2", "replace" => "updated line 2"}
+        ]
+      })
 
     assert result =~ "Successfully updated"
     assert File.read!(path) == "line 1\nupdated line 2\nline 3\n"
@@ -81,15 +82,16 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     File.write!(path, "    def my_fun( a,   b ):\n        return \"success\"\n")
 
     # Search query has different spacing and single quotes
-    result = Modify.execute(%{
-      "path" => path,
-      "edits" => [
-        %{
-          "search" => "def my_fun(a, b):\n    return 'success'",
-          "replace" => "def my_fun(a, b):\n    return 'updated'"
-        }
-      ]
-    })
+    result =
+      Modify.execute(%{
+        "path" => path,
+        "edits" => [
+          %{
+            "search" => "def my_fun(a, b):\n    return 'success'",
+            "replace" => "def my_fun(a, b):\n    return 'updated'"
+          }
+        ]
+      })
 
     assert result =~ "Successfully updated"
     # Indentation was aligned (+4 spaces relative to search query block)
@@ -102,15 +104,16 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     File.write!(path, "def execute(args) do # some code comment\n  IO.puts(\"ok\")\nend")
 
     # Search block has no comments
-    result = Modify.execute(%{
-      "path" => path,
-      "edits" => [
-        %{
-          "search" => "def execute(args) do\n  IO.puts('ok')",
-          "replace" => "def execute(args) do\n  IO.puts('changed')"
-        }
-      ]
-    })
+    result =
+      Modify.execute(%{
+        "path" => path,
+        "edits" => [
+          %{
+            "search" => "def execute(args) do\n  IO.puts('ok')",
+            "replace" => "def execute(args) do\n  IO.puts('changed')"
+          }
+        ]
+      })
 
     assert result =~ "Successfully updated"
     assert File.read!(path) == "def execute(args) do\n  IO.puts('changed')\nend"
@@ -121,15 +124,16 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     File.write!(path, "class Calc:\n    def run(self):\n        x = 10\n        return x")
 
     # Agent provides 0 indentation on replacement block
-    result = Modify.execute(%{
-      "path" => path,
-      "edits" => [
-        %{
-          "search" => "x = 10\nreturn x",
-          "replace" => "y = 20\nreturn y"
-        }
-      ]
-    })
+    result =
+      Modify.execute(%{
+        "path" => path,
+        "edits" => [
+          %{
+            "search" => "x = 10\nreturn x",
+            "replace" => "y = 20\nreturn y"
+          }
+        ]
+      })
 
     assert result =~ "Successfully updated"
     # The replacement is aligned with the file's original 8-space indentation!
@@ -144,13 +148,14 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     path = Path.join(@test_dir, "multi.txt")
     File.write!(path, "first block\n\nsecond block\n\nthird block\n")
 
-    result = Modify.execute(%{
-      "path" => path,
-      "edits" => [
-        %{"search" => "third block", "replace" => "third updated"},
-        %{"search" => "first block", "replace" => "first updated"}
-      ]
-    })
+    result =
+      Modify.execute(%{
+        "path" => path,
+        "edits" => [
+          %{"search" => "third block", "replace" => "third updated"},
+          %{"search" => "first block", "replace" => "first updated"}
+        ]
+      })
 
     assert result =~ "Successfully updated"
     assert File.read!(path) == "first updated\n\nsecond block\n\nthird updated\n"
@@ -160,13 +165,14 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     path = Path.join(@test_dir, "overlap.txt")
     File.write!(path, "one\ntwo\nthree\n")
 
-    result = Modify.execute(%{
-      "path" => path,
-      "edits" => [
-        %{"search" => "one\ntwo", "replace" => "1-2"},
-        %{"search" => "two\nthree", "replace" => "2-3"}
-      ]
-    })
+    result =
+      Modify.execute(%{
+        "path" => path,
+        "edits" => [
+          %{"search" => "one\ntwo", "replace" => "1-2"},
+          %{"search" => "two\nthree", "replace" => "2-3"}
+        ]
+      })
 
     assert result =~ "overlap"
     # Content remains unchanged due to atomicity
@@ -193,11 +199,12 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     original = "original content"
     File.write!(path, original)
 
-    result = Modify.execute(%{
-      "path" => path,
-      "dry_run" => true,
-      "edits" => [%{"search" => "original content", "replace" => "new content"}]
-    })
+    result =
+      Modify.execute(%{
+        "path" => path,
+        "dry_run" => true,
+        "edits" => [%{"search" => "original content", "replace" => "new content"}]
+      })
 
     assert result =~ "Dry-run succeeded"
     assert result =~ "new content"

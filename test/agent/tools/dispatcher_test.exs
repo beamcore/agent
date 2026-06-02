@@ -179,7 +179,8 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
       - scratch/a.ex
       """)
 
-    result = Dispatcher.execute("modify_file", %{"path" => "eval/a.ex", "content" => "bad"}, policy)
+    result =
+      Dispatcher.execute("modify_file", %{"path" => "eval/a.ex", "content" => "bad"}, policy)
 
     assert result =~ "restricted-write policy"
     assert result =~ "eval/a.ex is not in allowed_write_paths"
