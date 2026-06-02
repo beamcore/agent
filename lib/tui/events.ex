@@ -32,7 +32,7 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
     %Command{name: "stop", description: "Pause the session to add improved direction"},
-    %Command{name: "continue", description: "Resume the paused session"},
+
     %Command{name: "quit", description: "Exit"},
     %Command{name: "exit", description: "Exit"},
     %Command{name: "q", description: "Exit"}
@@ -476,33 +476,13 @@ defmodule Beamcore.TUI.Events do
       State.add_message(
         state,
         :system,
-        "Session paused. Type your improved direction and use /continue to resume."
+        "Session paused. Type your improved direction to resume."
       )
       |> State.pause()
     end
   end
 
-  defp run_command(state, "continue") do
-    if State.paused?(state) do
-      value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
 
-      if value == "" do
-        State.add_message(state, :system, "Please enter some direction before continuing.")
-        |> State.pause()
-      else
-        ExRatatui.textarea_set_value(state.textarea, "")
-        state = record_history(state, value)
-
-        state
-        |> State.add_message(:user, value)
-        |> State.resume()
-        |> start_turn(value, nil)
-        |> Map.put(:show_commands, false)
-      end
-    else
-      State.add_message(state, :system, "Session is not paused. Use /stop to pause first.")
-    end
-  end
 
   defp run_command(state, command) do
     result =
