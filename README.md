@@ -282,16 +282,8 @@ Example:
     "patch": "allow",
     "fs": "allow",
         "git": "allow",
-        "mix": "allow",
+        "test_tool": "allow",
         "memory": "allow",
-        "python": "allow",
-        "node": "allow",
-        "make": "allow",
-        "go": "allow",
-        "rust": "allow",
-        "terraform": "deny",
-        "ruby": "allow",
-        "bazel": "allow",
         "image_generation": "allow",
         "task": "deny",
         "web_get": "deny"
@@ -319,25 +311,13 @@ Example:
 | `modify_file` | Unified tool to create, overwrite, and edit files robustly. |
 | `fs` | Performs limited filesystem operations; destructive actions require explicit confirmation. |
 | `git` | Performs bounded git operations inside the workspace. |
-| `mix` | Runs safe Mix commands such as `format --check-formatted`, `compile`, `test`, and `validate`. |
+| `test_tool` | Automatically detects the project's build system and runs tests (e.g. `mix test`, `pytest`, `make test`, `cargo test`, `npm test`). |
 | `memory` | Recalls, remembers, lists, and forgets scoped persistent repository knowledge. |
-| `python` | Runs allowlisted Python workflow commands such as test, lint, format, type-check, build, validate, and venv. |
-| `node` | Runs allowlisted npm/npx workflow commands including test, lint, build, format, install, and Playwright test/report commands. |
-| `make` | Discovers Makefile targets from text and runs only discovered targets. |
-| `go` | Runs allowlisted Go commands: test, fmt, vet, build, and mod-tidy. |
-| `rust` | Runs allowlisted Cargo commands: test, check, fmt, clippy, and build. |
-| `terraform` | Runs allowlisted Terraform commands: fmt, validate, and plan. Apply/destroy are not exposed. |
-| `ruby` | Runs allowlisted Ruby/Rails commands such as test, rspec, rubocop, routes, and migration status. |
-| `bazel` | Runs allowlisted Bazel commands: test, build, and query. |
 | `image_generation` | Uses Mistral Agents with the built-in `image_generation` tool, downloads generated files, and saves them to allowed workspace paths. |
 | `web_get` | Fetches external URLs using HTTP GET only when explicitly enabled, using a token-efficient HTML cleaning pipeline. |
 | `reflect` | Performs AI-powered self-reflection with scoped context to critically review user input and current iteration output. |
 | `task` | Delegates to sub-agents only when explicitly enabled. |
 
-The `make` tool parses `Makefile`, `makefile`, or `GNUmakefile` text for targets.
-Use `make list` to inspect discovered targets and `make run target=<target>` to run
-only one of those targets. Make targets can still do anything the project defines,
-so sensitive repositories should deny `make` through ProjectPolicy.
 
 ## Image generation
 

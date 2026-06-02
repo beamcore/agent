@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     "modify_file: create, replace, or edit files using robust search-and-replace edits.",
     "fs: file system operations (touch, mkdir, copy, move, remove, stat).",
     "git: repository operations inside the workspace.",
-    "mix: safe validation: validate, test, compile, format --check-formatted.",
+    "test_tool: safe test runner: run tests for the current project.",
     "plan: non-mutating pending plan for normal file-change requests.",
     "web_get: network fetch and system execution tasks.",
     "task: start sub agents to do parallel work.",

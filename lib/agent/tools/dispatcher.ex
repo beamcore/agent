@@ -18,16 +18,8 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     Beamcore.Agent.Tools.Task,
     Beamcore.Agent.Tools.Plan,
     Beamcore.Agent.Tools.ImageGeneration,
-    Beamcore.Agent.Tools.Mix,
+    Beamcore.Agent.Tools.TestTool,
     Beamcore.Agent.Tools.Memory,
-    Beamcore.Agent.Tools.Python,
-    Beamcore.Agent.Tools.Node,
-    Beamcore.Agent.Tools.Make,
-    Beamcore.Agent.Tools.Go,
-    Beamcore.Agent.Tools.Rust,
-    Beamcore.Agent.Tools.Terraform,
-    Beamcore.Agent.Tools.Ruby,
-    Beamcore.Agent.Tools.Bazel,
     Beamcore.Agent.Tools.Reflect
   ]
 

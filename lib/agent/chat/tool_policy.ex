@@ -28,14 +28,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           project_policy_bypassed?: boolean()
         }
 
-  @read_only_tools ~w(read grep glob tree git mix memory reflect)
+  @read_only_tools ~w(read grep glob tree git test_tool memory reflect)
   @unconfirmed_tools ~w(read grep glob tree plan git memory reflect)
-  @restricted_write_tools ~w(read grep glob modify_file fs mix memory reflect)
-  @development_tools ~w(read grep glob modify_file tree git fs mix memory python node make go rust terraform ruby bazel)
-  @all_tool_names ~w(read grep glob modify_file web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel reflect)
+  @restricted_write_tools ~w(read grep glob modify_file fs test_tool memory reflect)
+  @development_tools ~w(read grep glob modify_file tree git fs test_tool memory)
+  @all_tool_names ~w(read grep glob modify_file web_get tree git fs task test_tool plan image_generation memory reflect)
   @mutation_tools ~w(modify_file fs image_generation)
   @read_only_git_operations ~w(status diff log)
-  @read_only_mix_commands ~w(test compile validate)
   @valid_modes ~w(read_only development restricted_write)
 
   @doc """
@@ -111,9 +110,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
 
       fail_closed?(policy) and name == "git" ->
         allow_read_only_git(args)
-
-      fail_closed?(policy) and name == "mix" ->
-        allow_read_only_mix(args)
 
       restricted_write?(policy) ->
         allow_restricted_write(policy, name, args)
@@ -325,23 +321,12 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     end
   end
 
-  defp allow_read_only_mix(args) do
-    command = Map.get(args, "command")
-
-    if command in @read_only_mix_commands do
-      :ok
-    else
-      {:error,
-       "Tool call blocked by read-only policy: mix command #{inspect(command)} is not allowed. Allowed mix commands: #{Enum.join(@read_only_mix_commands, ", ")}."}
-    end
-  end
-
   defp allow_restricted_write(policy, name, args) do
     case name do
       "modify_file" -> allow_exact_path(policy, Map.get(args, "path"))
       "fs" -> allow_restricted_fs(policy, args)
       "image_generation" -> allow_exact_path(policy, Map.get(args, "output_path"))
-      "mix" -> :ok
+      "test_tool" -> :ok
       "read" -> :ok
       "grep" -> :ok
       "glob" -> :ok

@@ -16,9 +16,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert "task" in ToolPolicy.allowed_tool_names(policy)
     assert "web_get" in ToolPolicy.allowed_tool_names(policy)
 
-    for tool <- ~w(python node make go rust terraform ruby bazel) do
-      assert tool in ToolPolicy.allowed_tool_names(policy)
-    end
+    assert "test_tool" in ToolPolicy.allowed_tool_names(policy)
   end
 
   test "natural-language read-only examples do not drive policy without a Policy block" do
@@ -46,11 +44,11 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       mode: read_only
       allowed_tools:
       - read
-      - mix
+      - test_tool
       """)
 
     assert policy.mode == :read_only
-    assert ToolPolicy.allowed_tool_names(policy) == ["read", "mix"]
+    assert ToolPolicy.allowed_tool_names(policy) == ["read", "test_tool"]
   end
 
   test "parses Policy mode development" do
@@ -62,8 +60,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
 
     assert policy.mode == :development
     assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
-    assert "python" in ToolPolicy.allowed_tool_names(policy)
-    assert "node" in ToolPolicy.allowed_tool_names(policy)
+    assert "test_tool" in ToolPolicy.allowed_tool_names(policy)
     refute "task" in ToolPolicy.allowed_tool_names(policy)
     refute "web_get" in ToolPolicy.allowed_tool_names(policy)
   end
@@ -130,7 +127,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - scratch/rolling_average_test.exs
       allowed_tools:
       - modify_file
-      - mix
+      - test_tool
       blocked_tools:
       - task
       - web_get
@@ -143,7 +140,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
              "scratch/rolling_average_test.exs"
            ]
 
-    assert ToolPolicy.allowed_tool_names(policy) == ["modify_file", "mix"]
+    assert ToolPolicy.allowed_tool_names(policy) == ["modify_file", "test_tool"]
   end
 
   test "Policy parser stops before task body sections" do
@@ -191,7 +188,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - scratch/a.ex
       allowed_tools:
       - modify_file
-      - mix
+      - test_tool
 
       Task body says "do not modify files" as an example, but the Policy block is authoritative.
       """)
@@ -271,23 +268,23 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       mode: development
       allowed_tools:
       - read
-      - mix
+      - test_tool
       blocked_tools:
-      - mix
+      - test_tool
       """)
 
     assert ToolPolicy.allowed_tool_names(policy) == ["read"]
-    assert {:error, _message} = ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "test"})
+    assert {:error, _message} = ToolPolicy.allow_tool_call(policy, "test_tool", %{"args" => "test"})
   end
 
-  test "read_only keeps git and mix constrained" do
+  test "read_only keeps git constrained and allows test_tool" do
     policy =
       ToolPolicy.from_user_message("""
       Policy:
       mode: read_only
       allowed_tools:
       - git
-      - mix
+      - test_tool
       """)
 
     assert :ok == ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "status"})
@@ -295,10 +292,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert {:error, _message} =
              ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "commit"})
 
-    assert :ok == ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "validate"})
-
-    assert {:error, _message} =
-             ToolPolicy.allow_tool_call(policy, "mix", %{"command" => "format"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "test_tool", %{"args" => ""})
   end
 
   test "restricted_write allows explicitly listed image generation output path" do

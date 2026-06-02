@@ -43,7 +43,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyIsolationTest do
 
     File.write!(
       Path.join(fake_runtime_root, ".beamcore/policy.json"),
-      Jason.encode!(%{version: 1, tool_permissions: %{make: "deny"}})
+      Jason.encode!(%{version: 1, tool_permissions: %{test_tool: "deny"}})
     )
 
     File.cd!(fake_runtime_root)
@@ -51,7 +51,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyIsolationTest do
     try do
       Beamcore.Agent.TestPolicyRoot.with_root(isolated_root, fn ->
         assert :ok ==
-                 ToolPolicy.allow_tool_call(ToolPolicy.default(), "make", %{"command" => "list"})
+                 ToolPolicy.allow_tool_call(ToolPolicy.default(), "test_tool", %{"args" => ""})
       end)
     after
       File.cd!(previous)

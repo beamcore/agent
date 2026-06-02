@@ -491,8 +491,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
       {"modify_file",
        %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]},
        "modify_file (edit) lib/foo.ex (1 edits)"},
-      {"mix", %{"command" => "test", "args" => "test/agent_test.exs"},
-       "mix test test/agent_test.exs"},
+      {"test_tool", %{"args" => "test/agent_test.exs"},
+       "test_tool test/agent_test.exs"},
       {"git", %{"operation" => "status"}, "git status"},
       {"fs", %{"operation" => "mkdir", "path" => "lib/new_dir"}, "fs mkdir lib/new_dir"},
       {"task", %{"name" => "sneezing_walrus", "model" => "mistral-small"},
@@ -556,12 +556,12 @@ defmodule Beamcore.TUI.StateComponentsTest do
   test "TUI activity uses shared display labels without Pretty renderer output" do
     event =
       State.compact_activity(
-        "mix",
-        %{"command" => "test", "args" => "test/tui/state_components_test.exs"},
+        "test_tool",
+        %{"args" => "test/tui/state_components_test.exs"},
         :running
       )
 
-    assert event.label == "mix test test/tui/state_components_test.exs"
+    assert event.label == "test_tool test/tui/state_components_test.exs"
     refute event.label =~ "\e["
 
     tui_sources =
