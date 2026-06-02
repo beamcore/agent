@@ -2,6 +2,8 @@ defmodule Beamcore.Agent.Tools.Reflect do
   @moduledoc """
   AI-powered self-reflection tool with scoped context.
 
+  Experimental
+
   This tool provides critical review of user input, current iteration output,
   and offers guidance when the main loop is lost. It operates with a smaller,
   focused context and can only use read, grep, and web_get tools.
@@ -16,35 +18,34 @@ defmodule Beamcore.Agent.Tools.Reflect do
   """
 
   @reflection_prompt """
-You are a senior developer assistant performing self-reflection on an AI coding session.
-Your task is to critically review the current state and provide actionable guidance.
+  You are a senior developer assistant performing self-reflection on an AI coding session.
+  Your task is to critically review the current state and provide actionable guidance.
 
-CONTEXT:
-%s
+  CONTEXT:
+  %s
 
-CRITICAL REVIEW TASK:
-1. Analyze the user's original input/request
-2. Review the current iteration's output/attempt
-3. Identify what's working, what's not, and why
-4. Detect if the main loop is lost, stuck, or going in circles
-5. Provide clear, actionable guidance to get back on track
+  CRITICAL REVIEW TASK:
+  1. Analyze the user's original input/request
+  2. Review the current iteration's output/attempt
+  3. Identify what's working, what's not, and why
+  4. Detect if the main loop is lost, stuck, or going in circles
+  5. Provide clear, actionable guidance to get back on track
 
-RESPONSE FORMAT:
-- Start with a brief assessment (1-2 sentences)
-- List specific observations as bullet points
-- Provide concrete next steps or corrections
-- If the loop is lost: clearly state this and suggest a reset or new approach
-- Be direct and technical
+  RESPONSE FORMAT:
+  - Start with a brief assessment (1-2 sentences)
+  - List specific observations as bullet points
+  - Provide concrete next steps or corrections
+  - If the loop is lost: clearly state this and suggest a reset or new approach
+  - Be direct and technical
 
-IMPORTANT CONSTRAINTS:
-- You are reviewing, not executing
-- Focus on the actual problem, not hypotheticals
-- Base your analysis only on the provided context
-- If context is insufficient, state what information is missing
-"""
+  IMPORTANT CONSTRAINTS:
+  - You are reviewing, not executing
+  - Focus on the actual problem, not hypotheticals
+  - Base your analysis only on the provided context
+  - If context is insufficient, state what information is missing
+  """
 
   @max_context_chars 4000
-
 
   def name, do: "reflect"
 
@@ -71,7 +72,8 @@ IMPORTANT CONSTRAINTS:
             },
             focus: %{
               type: "string",
-              description: "Optional: specific aspect to focus on (e.g., 'architecture', 'bug', 'performance')"
+              description:
+                "Optional: specific aspect to focus on (e.g., 'architecture', 'bug', 'performance')"
             }
           },
           required: ["user_input", "current_output"]
@@ -90,7 +92,8 @@ IMPORTANT CONSTRAINTS:
     focus = Map.get(params, "focus")
 
     # Build the reflection context
-    reflection_context = build_reflection_context(user_input, current_output, context_scope, focus)
+    reflection_context =
+      build_reflection_context(user_input, current_output, context_scope, focus)
 
     # Create the prompt for the reflection
     prompt = format_reflection_prompt(reflection_context)
@@ -114,7 +117,9 @@ IMPORTANT CONSTRAINTS:
   defp maybe_add_focus(lines, focus), do: ["FOCUS AREA: #{focus}" | lines]
 
   defp maybe_add_context_scope(lines, nil), do: lines
-  defp maybe_add_context_scope(lines, context_scope), do: ["CONTEXT SCOPE: #{context_scope}" | lines]
+
+  defp maybe_add_context_scope(lines, context_scope),
+    do: ["CONTEXT SCOPE: #{context_scope}" | lines]
 
   defp add_current_output(lines, current_output) do
     truncated_output =
@@ -123,6 +128,7 @@ IMPORTANT CONSTRAINTS:
       else
         current_output
       end
+
     ["CURRENT OUTPUT: #{truncated_output}" | lines]
   end
 
@@ -165,7 +171,9 @@ IMPORTANT CONSTRAINTS:
             [input, _] -> String.trim(input)
             _ -> String.trim(rest)
           end
-        _ -> ""
+
+        _ ->
+          ""
       end
 
     # Extract current output
@@ -175,14 +183,19 @@ IMPORTANT CONSTRAINTS:
           cond do
             String.contains?(rest, "\nCONTEXT SCOPE: ") ->
               String.split(rest, "\nCONTEXT SCOPE: ", parts: 2) |> List.first() |> String.trim()
+
             String.contains?(rest, "\nFOCUS AREA: ") ->
               String.split(rest, "\nFOCUS AREA: ", parts: 2) |> List.first() |> String.trim()
+
             String.contains?(rest, "\n\nCRITICAL") ->
               String.split(rest, "\n\nCRITICAL", parts: 2) |> List.first() |> String.trim()
+
             true ->
               String.trim(rest)
           end
-        _ -> ""
+
+        _ ->
+          ""
       end
 
     # Extract context scope
@@ -193,7 +206,9 @@ IMPORTANT CONSTRAINTS:
             [scope, _] -> String.trim(scope)
             _ -> String.trim(rest)
           end
-        _ -> nil
+
+        _ ->
+          nil
       end
 
     # Extract focus
@@ -204,7 +219,9 @@ IMPORTANT CONSTRAINTS:
             [f, _] -> String.trim(f)
             _ -> String.trim(rest)
           end
-        _ -> nil
+
+        _ ->
+          nil
       end
 
     {user_input, current_output, context_scope, focus}
@@ -242,12 +259,15 @@ IMPORTANT CONSTRAINTS:
 
       cond do
         output_length == 0 ->
-          {["No output generated yet" | obs], ["Start implementing the requested feature" | rec], lost}
+          {["No output generated yet" | obs], ["Start implementing the requested feature" | rec],
+           lost}
 
         String.contains?(current_output, "Error") || String.contains?(current_output, "error") ->
-          {["Error detected in output" | obs], ["Review error message and adjust approach" | rec], lost}
+          {["Error detected in output" | obs], ["Review error message and adjust approach" | rec],
+           lost}
 
-        String.contains?(current_output, "Compiling") || String.contains?(current_output, "compiled") ->
+        String.contains?(current_output, "Compiling") ||
+            String.contains?(current_output, "compiled") ->
           {["Compilation appears to have run" | obs], rec, lost}
 
         String.contains?(current_output, "test") && String.contains?(current_output, "fail") ->
@@ -262,7 +282,8 @@ IMPORTANT CONSTRAINTS:
   end
 
   defp check_circular_patterns({obs, rec, lost}, user_input, current_output) do
-    if String.contains?(current_output, user_input) && String.length(current_output) > String.length(user_input) * 2 do
+    if String.contains?(current_output, user_input) &&
+         String.length(current_output) > String.length(user_input) * 2 do
       {["Output may be echoing input without progress" | obs], rec, true}
     else
       {obs, rec, lost}
@@ -272,7 +293,8 @@ IMPORTANT CONSTRAINTS:
   defp analyze_focus({obs, rec, lost}, focus) do
     cond do
       focus && String.contains?(focus, "architecture") ->
-        {["Architecture review requested" | obs], ["Review module structure and dependencies" | rec], lost}
+        {["Architecture review requested" | obs],
+         ["Review module structure and dependencies" | rec], lost}
 
       focus && String.contains?(focus, "bug") ->
         {["Bug hunting mode" | obs], ["Check error logs and stack traces" | rec], lost}
@@ -334,6 +356,7 @@ IMPORTANT CONSTRAINTS:
   defp add_observations(lines, []) do
     lines
   end
+
   defp add_observations(lines, observations) do
     ["" | add_obs_list(observations, ["### Observations:" | lines])]
   end
@@ -341,6 +364,7 @@ IMPORTANT CONSTRAINTS:
   defp add_obs_list([], acc) do
     acc
   end
+
   defp add_obs_list([h | t], acc) do
     add_obs_list(t, ["- #{h}" | acc])
   end
@@ -348,6 +372,7 @@ IMPORTANT CONSTRAINTS:
   defp add_recommendations(lines, []) do
     lines
   end
+
   defp add_recommendations(lines, recommendations) do
     ["" | add_rec_list(recommendations, ["### Recommendations:" | lines])]
   end
@@ -355,14 +380,18 @@ IMPORTANT CONSTRAINTS:
   defp add_rec_list([], acc) do
     acc
   end
+
   defp add_rec_list([h | t], acc) do
     add_rec_list(t, ["- #{h}" | acc])
   end
 
   defp add_status(lines, true) do
-    ["The main loop appears to be lost. Consider resetting the session or providing clearer instructions.",
-     "### STATUS: LOOP LOST" | lines]
+    [
+      "The main loop appears to be lost. Consider resetting the session or providing clearer instructions.",
+      "### STATUS: LOOP LOST" | lines
+    ]
   end
+
   defp add_status(lines, false) do
     ["### STATUS: ON TRACK" | lines]
   end
@@ -381,7 +410,7 @@ IMPORTANT CONSTRAINTS:
     # Add session context to the reflection
     enhanced_context =
       build_reflection_context(user_input, current_output, context_scope, focus) <>
-      "\n\nSESSION CONTEXT:\n" <> session_context
+        "\n\nSESSION CONTEXT:\n" <> session_context
 
     prompt = format_reflection_prompt(enhanced_context)
 
