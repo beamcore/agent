@@ -322,16 +322,16 @@ defmodule Beamcore.TUI.StateComponentsTest do
 
   test "timeline details show compact selected activity" do
     state = timeline_state()
-
-    text = Activity.details_text(state)
+    selected = Enum.at(state.activity, state.selected_activity)
+    lines = Activity.details_lines(selected, state.selected_activity, length(state.activity), 80)
+    text = Enum.join(lines, "\n")
 
     assert text =~ "Timeline item 1/2"
     assert text =~ "modify_file (write) lib/a.ex"
     assert text =~ "tool: modify_file"
     assert text =~ "state: done"
-    assert text =~ "target: lib/a.ex"
-    assert text =~ "output: Wrote file"
-    refute text =~ String.duplicate("x", 600)
+    assert text =~ "output:\nWrote file"
+    assert String.length(text) > 700
   end
 
   test "timeline selection moves up and down while details are open" do
@@ -550,7 +550,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert git.summary =~ "base: origin/main"
     assert fs.summary =~ "op: move"
     assert fs.summary =~ "target: b"
-    refute inspect([task, git, fs]) =~ String.duplicate("inspect the repo ", 30)
+    assert task.args["prompt"] == String.duplicate("inspect the repo ", 30)
   end
 
   test "TUI activity uses shared display labels without Pretty renderer output" do

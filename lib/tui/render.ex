@@ -65,7 +65,7 @@ defmodule Beamcore.TUI.Render do
   end
 
   defp maybe_activity_details(widgets, %{show_activity_details: true} = state, area),
-    do: widgets ++ [{Activity.details_widget(state), area}]
+    do: widgets ++ [{Activity.details_widget(state, area), area}]
 
   defp maybe_activity_details(widgets, _state, _area), do: widgets
 

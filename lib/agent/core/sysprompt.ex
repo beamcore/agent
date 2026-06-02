@@ -41,6 +41,7 @@ defmodule Beamcore.Agent.Core.SysPrompt do
     Take initiative.
     Research before taking action.
     Before making a change, trace dependencies and potential impacts.
+    TDD preferred.
     """
   end
 
