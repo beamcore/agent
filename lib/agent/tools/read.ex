@@ -137,59 +137,127 @@ defmodule Beamcore.Agent.Tools.Read do
     start_idx = max(0, offset - 1)
 
     try do
-      total_lines = File.stream!(path) |> Enum.count()
+      # For small files, read once and cache the content
+      case File.stream!(path) |> Enum.count() do
+        total_lines when total_lines <= @small_file_threshold ->
+          # Read the entire file once
+          all_lines = File.read!(path) |> String.split("\n", trim: false)
+          
+          # If offset + limit covers the entire file, return all lines
+          if start_idx + limit >= total_lines do
+            formatted_lines =
+              all_lines
+              |> Enum.with_index(1)
+              |> Enum.map(fn {line, idx} ->
+                clean_line = String.trim_trailing(line, "\n") |> String.trim_trailing("\r")
+                truncated_line = truncate_line(clean_line)
+                "#{idx}: #{truncated_line}"
+              end)
 
-      lines_with_index =
-        File.stream!(path)
-        |> Stream.with_index(1)
-        |> Stream.drop(start_idx)
-        |> Stream.take(limit)
-        |> Enum.to_list()
+            output =
+              [
+                "<path>#{path}</path>",
+                "<type>file</type>",
+                "<content>"
+              ] ++ formatted_lines ++ ["\n(End of file)", "</content>"]
+            
+            Enum.join(output, "\n")
+          else
+            # Slice the cached lines
+            sliced_lines = Enum.slice(all_lines, start_idx, limit)
+            formatted_lines =
+              sliced_lines
+              |> Enum.with_index(offset)
+              |> Enum.map(fn {line, idx} ->
+                clean_line = String.trim_trailing(line, "\n") |> String.trim_trailing("\r")
+                truncated_line = truncate_line(clean_line)
+                "#{idx}: #{truncated_line}"
+              end)
 
-      formatted_lines =
-        Enum.map(lines_with_index, fn {line, idx} ->
-          clean_line =
-            String.trim_trailing(line, "\n")
-            |> String.trim_trailing("\r")
+            left_count = max(0, total_lines - (start_idx + length(sliced_lines)))
+            last = offset + length(sliced_lines) - 1
+            next = last + 1
 
-          truncated_line =
-            if String.length(clean_line) > @max_line_length do
-              String.slice(clean_line, 0, @max_line_length) <>
-                "... (line truncated to #{@max_line_length} chars)"
+            output =
+              [
+                "<path>#{path}</path>",
+                "<type>file</type>",
+                "<content>"
+              ] ++ formatted_lines
+
+            output =
+              if left_count > 0 do
+                output ++
+                  [
+                    "\n(Showing lines #{offset}-#{last}. #{left_count} lines left. Use offset=#{next} to continue.)"
+                  ]
+              else
+                output ++ ["\n(End of file)"]
+              end
+
+            (output ++ ["</content>"])
+            |> Enum.join("\n")
+          end
+
+        _ ->
+          # Large file: stream as before
+          total_lines = File.stream!(path) |> Enum.count()
+
+          lines_with_index =
+            File.stream!(path)
+            |> Stream.with_index(1)
+            |> Stream.drop(start_idx)
+            |> Stream.take(limit)
+            |> Enum.to_list()
+
+          formatted_lines =
+            Enum.map(lines_with_index, fn {line, idx} ->
+              clean_line =
+                String.trim_trailing(line, "\n")
+                |> String.trim_trailing("\r")
+
+              truncated_line = truncate_line(clean_line)
+
+              "#{idx}: #{truncated_line}"
+            end)
+
+          output =
+            [
+              "<path>#{path}</path>",
+              "<type>file</type>",
+              "<content>"
+            ] ++ formatted_lines
+
+          shown_count = length(formatted_lines)
+          left_count = max(0, total_lines - (start_idx + shown_count))
+          last = offset + shown_count - 1
+          next = last + 1
+
+          output =
+            if left_count > 0 do
+              output ++
+                [
+                  "\n(Showing lines #{offset}-#{last}. #{left_count} lines left. Use offset=#{next} to continue.)"
+                ]
             else
-              clean_line
+              output ++ ["\n(End of file)"]
             end
 
-          "#{idx}: #{truncated_line}"
-        end)
-
-      output =
-        [
-          "<path>#{path}</path>",
-          "<type>file</type>",
-          "<content>"
-        ] ++ formatted_lines
-
-      shown_count = length(formatted_lines)
-      left_count = max(0, total_lines - (start_idx + shown_count))
-      last = offset + shown_count - 1
-      next = last + 1
-
-      output =
-        if left_count > 0 do
-          output ++
-            [
-              "\n(Showing lines #{offset}-#{last}. #{left_count} lines left. Use offset=#{next} to continue.)"
-            ]
-        else
-          output ++ ["\n(End of file)"]
-        end
-
-      (output ++ ["</content>"])
-      |> Enum.join("\n")
+          (output ++ ["</content>"])
+          |> Enum.join("\n")
+      end
     rescue
       e ->
         "Error reading file #{path}: #{Exception.message(e)}"
+    end
+  end
+
+  defp truncate_line(line) do
+    if String.length(line) > @max_line_length do
+      String.slice(line, 0, @max_line_length) <>
+        "... (line truncated to #{@max_line_length} chars)"
+    else
+      line
     end
   end
 
