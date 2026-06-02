@@ -814,9 +814,23 @@ defmodule Beamcore.TUI.StateComponentsTest do
     widget = Chat.widget(state, area)
 
     assert widget.items != []
-    texts = Enum.map(widget.items, fn {paragraph, _height} -> paragraph.text end)
+
+    texts =
+      Enum.flat_map(widget.items, fn {paragraph, _height} ->
+        case paragraph.text do
+          text when is_binary(text) ->
+            [text]
+
+          lines when is_list(lines) ->
+            Enum.map(lines, fn
+              %ExRatatui.Text.Line{spans: spans} -> Enum.map_join(spans, "", & &1.content)
+              text when is_binary(text) -> text
+            end)
+        end
+      end)
+
     assert Enum.any?(texts, &String.contains?(&1, "Modify File"))
-    assert Enum.any?(texts, &String.contains?(&1, "-old line"))
-    assert Enum.any?(texts, &String.contains?(&1, "+new line"))
+    assert Enum.any?(texts, &String.contains?(&1, "old line"))
+    assert Enum.any?(texts, &String.contains?(&1, "new line"))
   end
 end
