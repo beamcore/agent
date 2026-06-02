@@ -9,7 +9,7 @@ defmodule Beamcore.Agent.Chat.API do
                         :completions_module,
                         OpenaiEx.Chat.Completions
                       )
-  @default_model "mistral-medium-3.5"
+  @default_model "codestral-2508"
 
   def default_model do
     Application.get_env(:agent, :chat_model, @default_model)
@@ -69,7 +69,9 @@ defmodule Beamcore.Agent.Chat.API do
                   format_response(response, context, opts)
 
                 {:error, error} ->
-                  if is_binary(error) && (String.contains?(error, "bad_request") || String.contains?(error, "status_code: 400")) do
+                  if is_binary(error) &&
+                       (String.contains?(error, "bad_request") ||
+                          String.contains?(error, "status_code: 400")) do
                     maybe_print_debug(opts, messages, tools, model, error)
                     format_response(response, context, opts)
                   else
@@ -128,8 +130,6 @@ defmodule Beamcore.Agent.Chat.API do
   defp format_response({:error, reason}, _context, _opts) do
     {:error, reason}
   end
-
-
 
   defp format_response_with_context(response_map, message, _tool_calls, context, opts) do
     # Tool calls are intentionally not printed here.

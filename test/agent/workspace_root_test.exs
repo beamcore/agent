@@ -2,7 +2,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.{Git, Make, PathSafety, Read, Write}
+  alias Beamcore.Agent.Tools.{Git, Make, Modify, PathSafety, Read}
   alias Beamcore.Agent.Chat.Session
 
   setup do
@@ -72,7 +72,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
 
   test "file tools resolve inside the configured workspace", %{root: root} do
     with_workspace(root, fn ->
-      assert Write.execute(%{"filePath" => "src/demo.txt", "content" => "hello\n"}) =~
+      assert Modify.execute(%{"filePath" => "src/demo.txt", "content" => "hello\n"}) =~
                Path.join(root, "src/demo.txt")
 
       assert File.read!(Path.join(root, "src/demo.txt")) == "hello\n"

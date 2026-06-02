@@ -4,19 +4,10 @@ defmodule Beamcore.Agent.Core.ToolDisplayTest do
   alias Beamcore.Agent.Core.ToolDisplay
 
   test "compact labels cover common tools" do
-    patch = """
-    --- a/lib/a.ex
-    +++ b/lib/a.ex
-    @@
-    -old
-    +new
-    """
-
     cases = [
       {"read", %{"filePath" => "README.md"}, "read README.md"},
-      {"write", %{"filePath" => "lib/foo.ex", "content" => "abc"}, "write lib/foo.ex (3 bytes)"},
-      {"edit", %{"path" => "lib/foo.ex", "new_string" => "updated"}, "edit lib/foo.ex (7 bytes)"},
-      {"patch", %{"patch_content" => patch}, "patch 1 files"},
+      {"modify_file", %{"path" => "lib/foo.ex", "content" => "abc"}, "modify_file (write) lib/foo.ex (3 bytes)"},
+      {"modify_file", %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]}, "modify_file (edit) lib/foo.ex (1 edits)"},
       {"fs", %{"operation" => "mkdir", "path" => "generated"}, "fs mkdir generated"},
       {"git", %{"operation" => "status"}, "git status"},
       {"mix", %{"command" => "test", "args" => "test/agent_test.exs"},
@@ -33,9 +24,9 @@ defmodule Beamcore.Agent.Core.ToolDisplayTest do
   end
 
   test "blocked labels reuse compact tool labels" do
-    args = %{"filePath" => "scratch/a.ex", "content" => "bad"}
+    args = %{"path" => "scratch/a.ex", "content" => "bad"}
 
-    assert ToolDisplay.label("write", args, :blocked) == "blocked write scratch/a.ex (3 bytes)"
+    assert ToolDisplay.label("modify_file", args, :blocked) == "blocked modify_file (write) scratch/a.ex (3 bytes)"
   end
 
   test "summaries stay compact and avoid raw maps" do
@@ -57,16 +48,7 @@ defmodule Beamcore.Agent.Core.ToolDisplayTest do
   end
 
   test "byte and file count helpers are pure display data" do
-    patch = """
-    --- /dev/null
-    +++ b/generated/a.png
-    --- a/lib/b.ex
-    +++ b/lib/b.ex
-    """
-
     assert ToolDisplay.byte_badge(%{"content" => "abc"}) == "(3 bytes)"
-    assert ToolDisplay.patch_file_count(patch) == 2
-    assert ToolDisplay.patch_file_badge(%{"patch_content" => patch}) == "2 files"
   end
 
   test "result summaries decode compact structured output" do

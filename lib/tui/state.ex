@@ -88,6 +88,13 @@ defmodule Beamcore.TUI.State do
 
   def set_status(state, status), do: %{state | status: status} |> mark_dirty()
 
+  def paused?(%{status: :paused}), do: true
+  def paused?(_state), do: false
+
+  def pause(state), do: %{state | status: :paused} |> mark_dirty()
+
+  def resume(state), do: %{state | status: :idle} |> mark_dirty()
+
   def set_session(state, session) do
     status = if pending_action(session), do: :waiting_for_confirmation, else: state.status
     %{state | session: session, status: status} |> mark_dirty()

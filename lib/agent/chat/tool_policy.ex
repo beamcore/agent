@@ -30,10 +30,10 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
 
   @read_only_tools ~w(read grep glob tree git mix memory reflect)
   @unconfirmed_tools ~w(read grep glob tree plan git memory reflect)
-  @restricted_write_tools ~w(read grep glob write edit patch fs mix memory reflect)
-  @development_tools ~w(read grep glob edit patch write tree git fs mix memory python node make go rust terraform ruby bazel)
-  @all_tool_names ~w(read grep glob edit patch write web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel reflect)
-  @mutation_tools ~w(write edit patch fs image_generation)
+  @restricted_write_tools ~w(read grep glob modify_file fs mix memory reflect)
+  @development_tools ~w(read grep glob modify_file tree git fs mix memory python node make go rust terraform ruby bazel)
+  @all_tool_names ~w(read grep glob modify_file web_get tree git fs task mix plan image_generation memory python node make go rust terraform ruby bazel reflect)
+  @mutation_tools ~w(modify_file fs image_generation)
   @read_only_git_operations ~w(status diff log)
   @read_only_mix_commands ~w(test compile validate)
   @valid_modes ~w(read_only development restricted_write)
@@ -338,9 +338,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
 
   defp allow_restricted_write(policy, name, args) do
     case name do
-      "write" -> allow_exact_path(policy, Map.get(args, "filePath") || Map.get(args, "path"))
-      "edit" -> allow_exact_path(policy, Map.get(args, "path"))
-      "patch" -> allow_patch(policy, Map.get(args, "patch_content"))
+      "modify_file" -> allow_exact_path(policy, Map.get(args, "path"))
       "fs" -> allow_restricted_fs(policy, args)
       "image_generation" -> allow_exact_path(policy, Map.get(args, "output_path"))
       "mix" -> :ok
@@ -361,34 +359,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     end
   end
 
-  defp allow_patch(_policy, nil),
-    do: {:error, "Tool call blocked by restricted-write policy: patch_content is required."}
 
-  defp allow_patch(policy, patch_content) when is_binary(patch_content) do
-    patch_paths =
-      patch_content
-      |> String.split("\n")
-      |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
-      |> Enum.map(&patch_line_path/1)
-      |> Enum.reject(&(&1 in [nil, "/dev/null"]))
-      |> Enum.map(&strip_patch_prefix/1)
-      |> Enum.map(&normalize_candidate_path/1)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
-
-    blocked = Enum.reject(patch_paths, &(&1 in Map.get(policy, :allowed_write_paths, [])))
-
-    cond do
-      patch_paths == [] ->
-        {:error, "Tool call blocked by restricted-write policy: no changed files found in patch."}
-
-      blocked == [] ->
-        :ok
-
-      true ->
-        {:error, restricted_path_message(policy, Enum.join(blocked, ", "))}
-    end
-  end
 
   defp allow_restricted_fs(policy, args) do
     operation = Map.get(args, "operation")
@@ -481,14 +452,4 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       {:error, _reason} -> nil
     end
   end
-
-  defp patch_line_path(line) do
-    line
-    |> String.split(~r/\s+/, parts: 3, trim: true)
-    |> Enum.at(1)
-  end
-
-  defp strip_patch_prefix("a/" <> path), do: path
-  defp strip_patch_prefix("b/" <> path), do: path
-  defp strip_patch_prefix(path), do: path
 end

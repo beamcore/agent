@@ -9,9 +9,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert policy.mode == :unrestricted
     assert policy.allowed_write_paths == ["**/*"]
     assert "plan" in ToolPolicy.allowed_tool_names(policy)
-    assert "write" in ToolPolicy.allowed_tool_names(policy)
-    assert "edit" in ToolPolicy.allowed_tool_names(policy)
-    assert "patch" in ToolPolicy.allowed_tool_names(policy)
+    assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
+    assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
+    assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
     assert "fs" in ToolPolicy.allowed_tool_names(policy)
     assert "task" in ToolPolicy.allowed_tool_names(policy)
     assert "web_get" in ToolPolicy.allowed_tool_names(policy)
@@ -34,7 +34,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
   test "default autonomous policy allows mutation tools subject to hard guards" do
     policy = ToolPolicy.from_user_message("Create scratch/a.ex.")
 
-    for tool <- ~w(write edit patch fs) do
+    for tool <- ~w(modify_file fs) do
       assert :ok == ToolPolicy.allow_tool_call(policy, tool, %{})
     end
   end
@@ -61,7 +61,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       """)
 
     assert policy.mode == :development
-    assert "write" in ToolPolicy.allowed_tool_names(policy)
+    assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
     assert "python" in ToolPolicy.allowed_tool_names(policy)
     assert "node" in ToolPolicy.allowed_tool_names(policy)
     refute "task" in ToolPolicy.allowed_tool_names(policy)
@@ -74,15 +74,15 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       Policy:
       mode: admin
       allowed_tools:
-      - write
-      - edit
-      - patch
+      - modify_file
+      - modify_file
+      - modify_file
       - fs
       """)
 
     assert policy.mode == :invalid_policy
 
-    for tool <- ~w(write edit patch fs) do
+    for tool <- ~w(modify_file fs) do
       refute tool in ToolPolicy.allowed_tool_names(policy)
     end
   end
@@ -93,23 +93,23 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       Policy:
       mode: admin
       allowed_tools:
-      - write
-      - edit
-      - patch
+      - modify_file
+      - modify_file
+      - modify_file
       - fs
       """)
 
     assert {:error, write_message} =
-             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
+             ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
 
     assert write_message =~ "invalid policy"
     assert write_message =~ "mutation tools are disabled"
 
     assert {:error, _message} =
-             ToolPolicy.allow_tool_call(policy, "edit", %{"path" => "scratch/a.ex"})
+             ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
 
     assert {:error, _message} =
-             ToolPolicy.allow_tool_call(policy, "patch", %{
+             ToolPolicy.allow_tool_call(policy, "modify_file", %{
                "patch_content" => "+++ b/scratch/a.ex"
              })
 
@@ -129,7 +129,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - scratch/rolling_average.ex
       - scratch/rolling_average_test.exs
       allowed_tools:
-      - write
+      - modify_file
       - mix
       blocked_tools:
       - task
@@ -143,7 +143,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
              "scratch/rolling_average_test.exs"
            ]
 
-    assert ToolPolicy.allowed_tool_names(policy) == ["write", "mix"]
+    assert ToolPolicy.allowed_tool_names(policy) == ["modify_file", "mix"]
   end
 
   test "Policy parser stops before task body sections" do
@@ -174,12 +174,12 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - README.md
       - mix.exs
       allowed_tools:
-      - write
+      - modify_file
       """)
 
     assert policy.allowed_write_paths == ["README.md", "mix.exs"]
-    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "README.md"})
-    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "mix.exs"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "README.md"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "mix.exs"})
   end
 
   test "Policy block overrides natural-language task body" do
@@ -190,14 +190,14 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       allowed_write_paths:
       - scratch/a.ex
       allowed_tools:
-      - write
+      - modify_file
       - mix
 
       Task body says "do not modify files" as an example, but the Policy block is authoritative.
       """)
 
     assert policy.mode == :restricted_write
-    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
   end
 
   test "restricted_write allows only listed paths" do
@@ -208,17 +208,17 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       allowed_write_paths:
       - scratch/a.ex
       allowed_tools:
-      - write
-      - edit
-      - patch
+      - modify_file
+      - modify_file
+      - modify_file
       - fs
       """)
 
-    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
-    assert :ok == ToolPolicy.allow_tool_call(policy, "edit", %{"path" => "scratch/a.ex"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
 
     assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/b.ex"})
+             ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/b.ex"})
 
     assert message =~ "scratch/b.ex is not in allowed_write_paths"
   end
@@ -246,38 +246,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert message =~ "eval is not in allowed_write_paths"
   end
 
-  test "restricted_write enforces every patch path" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: restricted_write
-      allowed_write_paths:
-      - scratch/a.ex
-      allowed_tools:
-      - patch
-      """)
 
-    allowed_patch = """
-    --- /dev/null
-    +++ b/scratch/a.ex
-    @@ -0,0 +1 @@
-    +ok
-    """
-
-    blocked_patch = """
-    --- /dev/null
-    +++ b/scratch/b.ex
-    @@ -0,0 +1 @@
-    +bad
-    """
-
-    assert :ok == ToolPolicy.allow_tool_call(policy, "patch", %{"patch_content" => allowed_patch})
-
-    assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "patch", %{"patch_content" => blocked_patch})
-
-    assert message =~ "scratch/b.ex is not in allowed_write_paths"
-  end
 
   test "read_only blocks write even if allowed_tools includes write" do
     policy =
@@ -286,13 +255,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       mode: read_only
       allowed_tools:
       - read
-      - write
+      - modify_file
       """)
 
-    refute "write" in ToolPolicy.allowed_tool_names(policy)
+    refute "modify_file" in ToolPolicy.allowed_tool_names(policy)
 
     assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "scratch/a.ex"})
+             ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
 
     assert message =~ "read-only policy"
   end
@@ -382,13 +351,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert policy.mode == :unrestricted
 
     allowed = ToolPolicy.allowed_tool_names(policy)
-    assert "write" in allowed
+    assert "modify_file" in allowed
     assert "task" in allowed
     assert "web_get" in allowed
     assert "git" in allowed
     assert "image_generation" in allowed
 
-    assert :ok == ToolPolicy.allow_tool_call(policy, "write", %{"filePath" => "any/path/here.ex"})
+    assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "any/path/here.ex"})
     assert :ok == ToolPolicy.allow_tool_call(policy, "task", %{"command" => "rm -rf /"})
   end
 end

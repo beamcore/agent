@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
   alias Beamcore.Agent.Chat.ToolPolicy
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.{Dispatcher, Edit, Fs, Glob, Grep, Patch, Read, Tree, Write}
+  alias Beamcore.Agent.Tools.{Dispatcher, Fs, Glob, Grep, Modify, Read, Tree}
 
   setup do
     tmp =
@@ -48,7 +48,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
     assert decoded["deny_paths"] == policy.deny_paths
-    assert decoded["tool_permissions"]["write"] == "allow"
+    assert decoded["tool_permissions"]["modify_file"] == "allow"
     assert decoded["tool_permissions"]["web_get"] == "deny"
 
     updated = ProjectPolicy.add_deny_path(policy, "tmp/**")
@@ -199,7 +199,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     write_policy!(%{
       version: 1,
       allow_write_paths: ["lib/**"],
-      tool_permissions: %{write: "confirm", read: "allow"}
+      tool_permissions: %{modify_file: "confirm", read: "allow"}
     })
 
     development =
@@ -207,17 +207,17 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       Policy:
       mode: development
       allowed_tools:
-      - write
+      - modify_file
       - read
       """)
 
-    refute "write" in ToolPolicy.allowed_tool_names(development)
+    refute "modify_file" in ToolPolicy.allowed_tool_names(development)
     assert "read" in ToolPolicy.allowed_tool_names(development)
 
-    confirmed = ToolPolicy.restricted_write_policy(["lib/a.ex"], ["write", "read"])
+    confirmed = ToolPolicy.restricted_write_policy(["lib/a.ex"], ["modify_file", "read"])
 
-    assert "write" in ToolPolicy.allowed_tool_names(confirmed)
-    assert :ok == ToolPolicy.allow_tool_call(confirmed, "write", %{"filePath" => "lib/a.ex"})
+    assert "modify_file" in ToolPolicy.allowed_tool_names(confirmed)
+    assert :ok == ToolPolicy.allow_tool_call(confirmed, "modify_file", %{"path" => "lib/a.ex"})
   end
 
   test "dispatcher blocks denied paths even when direct execution is attempted" do
@@ -225,7 +225,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     policy = ToolPolicy.yolo()
 
-    assert Dispatcher.execute("write", %{"filePath" => ".env", "content" => "secret"}, policy) =~
+    assert Dispatcher.execute("modify_file", %{"path" => ".env", "content" => "secret"}, policy) =~
              "project policy"
 
     refute File.exists?(".env")
@@ -243,22 +243,22 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     assert "web_get" in freedom_names
 
     assert Dispatcher.execute(
-             "write",
-             %{"filePath" => "scratch/freedom.ex", "content" => "ok"},
+             "modify_file",
+             %{"path" => "scratch/freedom.ex", "content" => "ok"},
              normal_policy
            ) =~ "project policy"
 
     assert Dispatcher.execute(
-             "write",
-             %{"filePath" => "scratch/freedom.ex", "content" => "ok"},
+             "modify_file",
+             %{"path" => "scratch/freedom.ex", "content" => "ok"},
              freedom_policy
            ) =~ "Successfully wrote"
 
     assert File.read!("scratch/freedom.ex") == "ok"
 
     assert Dispatcher.execute(
-             "write",
-             %{"filePath" => "../outside.ex", "content" => "bad"},
+             "modify_file",
+             %{"path" => "../outside.ex", "content" => "bad"},
              freedom_policy
            ) =~ "path traversal is not allowed"
   end
@@ -269,8 +269,8 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     freedom_policy = ToolPolicy.yolo(project_policy_bypassed?: true)
 
     assert Dispatcher.execute(
-             "write",
-             %{"filePath" => "scratch/scoped.ex", "content" => "ok"},
+             "modify_file",
+             %{"path" => "scratch/scoped.ex", "content" => "ok"},
              freedom_policy
            ) =~ "Successfully wrote"
 
@@ -284,24 +284,13 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     File.write!(".beamcore/policy.json", "{}")
     File.write!("old.txt", "old")
 
-    assert Write.execute(%{"filePath" => ".beamcore/policy.json", "content" => "{}"}) =~
+    assert Modify.execute(%{"path" => ".beamcore/policy.json", "content" => "{}"}) =~
              "Project policy can only be changed"
 
-    assert Edit.execute(%{
+    assert Modify.execute(%{
              "path" => ".beamcore/policy.json",
-             "old_string" => "{}",
-             "new_string" => "{\"deny_paths\":[]}"
+             "edits" => [%{"search" => "{}", "replace" => "{\"deny_paths\":[]}"}]
            }) =~ "Project policy can only be changed"
-
-    patch = """
-    --- a/.beamcore/policy.json
-    +++ b/.beamcore/policy.json
-    @@
-    -{}
-    +{"deny_paths":[]}
-    """
-
-    assert Patch.execute(%{"patch_content" => patch}) =~ "Project policy can only be changed"
 
     assert Fs.execute(%{"operation" => "touch", "path" => ".beamcore/policy.json"}) =~
              "Project policy can only be changed"
@@ -330,7 +319,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     write_policy!(%{version: 1, deny_paths: ["secrets/**"]})
 
-    read_output = Read.execute(%{"filePath" => "."})
+    read_output = Read.execute(%{"path" => "."})
     grep_output = Grep.execute(%{"pattern" => "needle", "path" => ".", "all" => true})
     glob_output = Glob.execute(%{"pattern" => "**/*.txt", "path" => ".", "all" => true})
     tree_output = Tree.execute(%{"path" => ".", "all" => true})

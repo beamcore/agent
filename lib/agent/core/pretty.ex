@@ -238,17 +238,24 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-  defp format_tool_args(
-         "edit",
-         %{"path" => path, "old_string" => old, "new_string" => new},
-         _context
-       ) do
-    summary = ToolDisplay.edit_summary(%{"old_string" => old, "new_string" => new})
+
+
+  defp format_tool_args("modify_file", args, _context) do
+    path = Map.get(args, "path", "unknown")
+    badge = 
+      cond do
+        Map.has_key?(args, "content") ->
+          ToolDisplay.byte_badge(%{"content" => Map.get(args, "content")}) || "(0 bytes)"
+        Map.has_key?(args, "edits") ->
+          ToolDisplay.modify_badge(args)
+        true ->
+          ""
+      end
 
     IO.puts(
       colorize("path: ", &Colors.dim/0) <>
         colorize(path, &Colors.bright_white/0) <>
-        colorize(" (#{String.replace(summary, " · ", ", ")})", &Colors.dim/0)
+        colorize(" #{badge}", &Colors.dim/0)
     )
   end
 
@@ -265,16 +272,7 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-  defp format_tool_args("write", %{"content" => content} = args, _context) do
-    path = Map.get(args, "filePath") || Map.get(args, "path", "unknown")
-    badge = ToolDisplay.byte_badge(%{"content" => content}) || "(0 bytes)"
 
-    IO.puts(
-      colorize("path: ", &Colors.dim/0) <>
-        colorize(path, &Colors.bright_white/0) <>
-        colorize(" #{badge}", &Colors.dim/0)
-    )
-  end
 
   defp format_tool_args("grep", %{"pattern" => pattern} = args, _context) do
     path = Map.get(args, "path", ".")
@@ -316,23 +314,6 @@ defmodule Beamcore.Agent.Core.Pretty do
     IO.puts(
       colorize("path: ", &Colors.dim/0) <>
         colorize(path, &Colors.bright_white/0)
-    )
-  end
-
-  defp format_tool_args("patch", %{"patch_content" => patch}, _context) do
-    paths = ToolDisplay.patch_paths(patch)
-    line_count = patch |> String.split("\n") |> length()
-
-    label =
-      case paths do
-        [] -> "patch"
-        paths -> Enum.join(paths, ", ")
-      end
-
-    IO.puts(
-      colorize("patch: ", &Colors.dim/0) <>
-        colorize(label, &Colors.bright_white/0) <>
-        colorize(" (#{length(paths)} files, #{line_count} lines)", &Colors.dim/0)
     )
   end
 

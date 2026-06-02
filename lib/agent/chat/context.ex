@@ -134,17 +134,8 @@ defmodule Beamcore.Agent.Chat.Context do
       "glob" ->
         add_inspected(context, Map.get(args, "path", "."))
 
-      "write" ->
+      "modify_file" ->
         add_modified(context, path_arg(args))
-
-      "edit" ->
-        add_modified(context, path_arg(args))
-
-      "patch" ->
-        args
-        |> Map.get("patch_content", "")
-        |> patch_paths()
-        |> Enum.reduce(context, &add_modified(&2, &1))
 
       "fs" ->
         update_fs(context, args)
@@ -318,25 +309,7 @@ defmodule Beamcore.Agent.Chat.Context do
 
   defp atomize_pending_action(_action), do: nil
 
-  defp patch_paths(patch) do
-    patch
-    |> String.split("\n")
-    |> Enum.filter(&(String.starts_with?(&1, "--- ") or String.starts_with?(&1, "+++ ")))
-    |> Enum.map(&patch_line_path/1)
-    |> Enum.reject(&(&1 in [nil, "/dev/null"]))
-    |> Enum.map(&strip_patch_prefix/1)
-    |> Enum.uniq()
-  end
 
-  defp patch_line_path(line) do
-    line
-    |> String.split(~r/\s+/, parts: 3, trim: true)
-    |> Enum.at(1)
-  end
-
-  defp strip_patch_prefix("a/" <> path), do: path
-  defp strip_patch_prefix("b/" <> path), do: path
-  defp strip_patch_prefix(path), do: path
 
   defp decode_json(value) when is_binary(value) do
     case Jason.decode(value) do

@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
   use ExUnit.Case
 
   alias Beamcore.Agent.Chat.{Context, Session, ToolPolicy}
-  alias Beamcore.TUI.Components.{Activity, Confirmation, EmptyState, Help, Input, StatusBar}
+  alias Beamcore.TUI.Components.{Activity, Chat, Confirmation, EmptyState, Help, Input, StatusBar}
   alias Beamcore.TUI.{Events, State}
 
   setup do
@@ -326,8 +326,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
     text = Activity.details_text(state)
 
     assert text =~ "Timeline item 1/2"
-    assert text =~ "write lib/a.ex"
-    assert text =~ "tool: write"
+    assert text =~ "modify_file (write) lib/a.ex"
+    assert text =~ "tool: modify_file"
     assert text =~ "state: done"
     assert text =~ "target: lib/a.ex"
     assert text =~ "output: Wrote file"
@@ -440,7 +440,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
       delete_files: ["scratch/old.ex"],
       validation: "mix test",
       risks: ["Small scoped change"],
-      policy: %{allowed_tools: ["write", "mix"]}
+      policy: %{allowed_tools: ["modify_file", "mix"]}
     }
 
     session = %{
@@ -465,38 +465,29 @@ defmodule Beamcore.TUI.StateComponentsTest do
     state =
       state
       |> State.add_activity(
-        "write",
-        %{"filePath" => "lib/foo.ex", "content" => content},
+        "modify_file",
+        %{"path" => "lib/foo.ex", "content" => content},
         :running
       )
       |> State.update_activity(
-        "write",
-        %{"filePath" => "lib/foo.ex", "content" => content},
+        "modify_file",
+        %{"path" => "lib/foo.ex", "content" => content},
         "Wrote file"
       )
 
     [event] = state.activity
 
-    assert event.label == "write lib/foo.ex (3000 bytes)"
+    assert event.label == "modify_file (write) lib/foo.ex (3000 bytes)"
     assert event.status == :done
     refute event.summary =~ content
     refute inspect(event) =~ content
   end
 
   test "activity labels use very-pretty compact tool formatting" do
-    patch = """
-    --- a/lib/a.ex
-    +++ b/lib/a.ex
-    @@
-    -old
-    +new
-    """
-
     cases = [
-      {"read", %{"filePath" => "README.md"}, "read README.md"},
-      {"write", %{"filePath" => "lib/foo.ex", "content" => "abc"}, "write lib/foo.ex (3 bytes)"},
-      {"edit", %{"path" => "lib/foo.ex", "new_string" => "updated"}, "edit lib/foo.ex (7 bytes)"},
-      {"patch", %{"patch_content" => patch}, "patch 1 files"},
+      {"read", %{"path" => "README.md"}, "read README.md"},
+      {"modify_file", %{"path" => "lib/foo.ex", "content" => "abc"}, "modify_file (write) lib/foo.ex (3 bytes)"},
+      {"modify_file", %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]}, "modify_file (edit) lib/foo.ex (1 edits)"},
       {"mix", %{"command" => "test", "args" => "test/agent_test.exs"},
        "mix test test/agent_test.exs"},
       {"git", %{"operation" => "status"}, "git status"},
@@ -515,13 +506,13 @@ defmodule Beamcore.TUI.StateComponentsTest do
   test "blocked activity labels stay compact and clearly marked" do
     event =
       State.compact_activity(
-        "write",
-        %{"filePath" => "scratch/a.ex", "content" => "bad"},
+        "modify_file",
+        %{"path" => "scratch/a.ex", "content" => "bad"},
         :blocked,
         "Error: Tool call blocked by project policy."
       )
 
-    assert event.label == "blocked write scratch/a.ex (3 bytes)"
+    assert event.label == "blocked modify_file (write) scratch/a.ex (3 bytes)"
     assert event.status == :blocked
     assert event.result =~ "project policy"
     refute event.label =~ "%{"
@@ -616,8 +607,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
 
   test "default runtime policy is autonomous while project policy can still narrow it" do
     assert :ok =
-             ToolPolicy.allow_tool_call(ToolPolicy.default(), "write", %{
-               "filePath" => "scratch/a.ex"
+             ToolPolicy.allow_tool_call(ToolPolicy.default(), "modify_file", %{
+               "path" => "scratch/a.ex"
              })
   end
 
@@ -713,7 +704,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
           activity: [
             %{
               id: 1,
-              name: "write",
+              name: "modify_file",
               target: "a.ex",
               status: :done,
               label: "write a.ex",
@@ -805,12 +796,27 @@ defmodule Beamcore.TUI.StateComponentsTest do
     long_result = "Wrote file " <> String.duplicate("x", 700)
 
     input_state("")
-    |> State.update_activity("read", %{"filePath" => "README.md"}, "Read ok")
+    |> State.update_activity("read", %{"path" => "README.md"}, "Read ok")
     |> State.update_activity(
-      "write",
-      %{"filePath" => "lib/a.ex", "content" => "abc"},
+      "modify_file",
+      %{"path" => "lib/a.ex", "content" => "abc"},
       long_result
     )
     |> Map.put(:selected_activity, 0)
+  end
+
+  test "Chat.widget renders modify_file tool outputs as a colorized diff" do
+    state =
+      input_state("")
+      |> State.add_message(:tool, "Successfully updated path\n\n-old line\n+new line")
+
+    area = %ExRatatui.Layout.Rect{x: 0, y: 0, width: 80, height: 24}
+    widget = Chat.widget(state, area)
+
+    assert widget.items != []
+    texts = Enum.map(widget.items, fn {paragraph, _height} -> paragraph.text end)
+    assert Enum.any?(texts, &String.contains?(&1, "Modify File"))
+    assert Enum.any?(texts, &String.contains?(&1, "-old line"))
+    assert Enum.any?(texts, &String.contains?(&1, "+new line"))
   end
 end
