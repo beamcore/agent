@@ -47,16 +47,7 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
     do: compact_join(["policy", Map.get(args, "action"), target])
 
   def label("modify_file", args, target, _status) do
-    cond do
-      Map.has_key?(args, "content") ->
-        compact_join(["modify_file (write)", target, byte_badge(args)])
-
-      Map.has_key?(args, "edits") ->
-        compact_join(["modify_file (edit)", target, modify_badge(args)])
-
-      true ->
-        compact_join(["modify_file", target])
-    end
+    compact_join(["modify_file", Map.get(args, "operation"), target, byte_badge(args)])
   end
 
   def label("fs", args, target, _status),
@@ -120,16 +111,12 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   end
 
   def summary("modify_file", args, _result) do
-    cond do
-      Map.has_key?(args, "content") ->
-        byte_summary(args)
-
-      Map.has_key?(args, "edits") ->
-        modify_summary(args)
-
-      true ->
-        ""
-    end
+    key_values([
+      {"op", Map.get(args, "operation")},
+      {"path", Map.get(args, "path")},
+      {"range", modify_range(args)},
+      {"bytes", content_bytes(args)}
+    ])
   end
 
   def summary("fs", args, _result),
@@ -210,20 +197,33 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   end
 
   def modify_summary(args) do
-    edits = Map.get(args, "edits") || []
-    count = length(edits)
-    "#{count} edits"
+    Map.get(args, "operation") || ""
   end
 
   def modify_badge(args) do
-    edits = Map.get(args, "edits") || []
-    count = length(edits)
-    "(#{count} edits)"
+    case Map.get(args, "operation") do
+      nil -> nil
+      operation -> "(#{operation})"
+    end
   end
 
   def byte_badge(args) do
     content = Map.get(args, "content", "")
     if content == "", do: nil, else: "(#{byte_size(content)} bytes)"
+  end
+
+  def content_bytes(args) do
+    case Map.get(args, "content") do
+      content when is_binary(content) -> byte_size(content)
+      _content -> nil
+    end
+  end
+
+  def modify_range(args) do
+    case {Map.get(args, "start_line"), Map.get(args, "end_line")} do
+      {nil, nil} -> nil
+      {start_line, end_line} -> "#{start_line}-#{end_line}"
+    end
   end
 
   def model_badge(args) do

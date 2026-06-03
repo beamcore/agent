@@ -148,6 +148,23 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert_receive {:logout_result, ^session}
   end
 
+  test "/login warns when env token will override stored login" do
+    Beamcore.Agent.TestEnv.with_env(%{"MISTRAL_API_KEY" => "env-token"}, fn ->
+      session = Beamcore.OpenAI.client() |> Session.new()
+
+      output =
+        capture_io(fn ->
+          Commands.execute("login stored-token", session)
+        end)
+
+      assert output =~ "Beamcore login saved."
+      assert output =~ "MISTRAL_API_KEY is set"
+      assert output =~ "override"
+      refute output =~ "env-token"
+      refute output =~ "stored-token"
+    end)
+  end
+
   test "/login without token requests token prompt" do
     session = Beamcore.OpenAI.client() |> Session.new()
 

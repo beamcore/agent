@@ -195,29 +195,70 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
              "project policy"
   end
 
-  test "legacy confirm tool permission requires restricted_write for mutation tools" do
+  test "confirm tool permission allows normal autonomous coding within project policy paths" do
     write_policy!(%{
       version: 1,
-      allow_write_paths: ["lib/**"],
-      tool_permissions: %{modify_file: "confirm", read: "allow"}
+      allow_write_paths: ["src/**"],
+      tool_permissions: %{modify_file: "confirm", fs: "confirm", read: "allow"}
     })
 
-    development =
+    normal = ToolPolicy.default()
+
+    assert "modify_file" in ToolPolicy.allowed_tool_names(normal)
+    assert "fs" in ToolPolicy.allowed_tool_names(normal)
+    assert "read" in ToolPolicy.allowed_tool_names(normal)
+
+    assert :ok ==
+             ToolPolicy.allow_tool_call(normal, "modify_file", %{
+               "operation" => "create_file",
+               "path" => "src/algorithms/sort.ex",
+               "content" => "ok"
+             })
+
+    assert :ok ==
+             ToolPolicy.allow_tool_call(normal, "fs", %{
+               "operation" => "mkdir",
+               "path" => "src/datastructures"
+             })
+
+    assert {:error, message} =
+             ToolPolicy.allow_tool_call(normal, "modify_file", %{
+               "operation" => "create_file",
+               "path" => "scratch/outside.ex",
+               "content" => "blocked"
+             })
+
+    assert message =~ "outside allow_write_paths"
+  end
+
+  test "confirm tool permission still blocks mutation tools in read-only mode" do
+    write_policy!(%{
+      version: 1,
+      allow_write_paths: ["src/**"],
+      tool_permissions: %{modify_file: "confirm", fs: "confirm", read: "allow"}
+    })
+
+    read_only =
       ToolPolicy.from_user_message("""
       Policy:
-      mode: development
+      mode: read_only
       allowed_tools:
       - modify_file
+      - fs
       - read
       """)
 
-    refute "modify_file" in ToolPolicy.allowed_tool_names(development)
-    assert "read" in ToolPolicy.allowed_tool_names(development)
+    refute "modify_file" in ToolPolicy.allowed_tool_names(read_only)
+    refute "fs" in ToolPolicy.allowed_tool_names(read_only)
+    assert "read" in ToolPolicy.allowed_tool_names(read_only)
 
-    confirmed = ToolPolicy.restricted_write_policy(["lib/a.ex"], ["modify_file", "read"])
+    assert {:error, message} =
+             ToolPolicy.allow_tool_call(read_only, "fs", %{
+               "operation" => "mkdir",
+               "path" => "src/datastructures"
+             })
 
-    assert "modify_file" in ToolPolicy.allowed_tool_names(confirmed)
-    assert :ok == ToolPolicy.allow_tool_call(confirmed, "modify_file", %{"path" => "lib/a.ex"})
+    assert message =~ "read-only policy"
   end
 
   test "dispatcher blocks denied paths even when direct execution is attempted" do
@@ -225,7 +266,11 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     policy = ToolPolicy.yolo()
 
-    assert Dispatcher.execute("modify_file", %{"path" => ".env", "content" => "secret"}, policy) =~
+    assert Dispatcher.execute(
+             "modify_file",
+             %{"operation" => "create_file", "path" => ".env", "content" => "secret"},
+             policy
+           ) =~
              "project policy"
 
     refute File.exists?(".env")
@@ -244,21 +289,24 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     assert Dispatcher.execute(
              "modify_file",
-             %{"path" => "scratch/freedom.ex", "content" => "ok"},
+             %{"operation" => "create_file", "path" => "scratch/freedom.ex", "content" => "ok"},
              normal_policy
            ) =~ "project policy"
 
-    assert Dispatcher.execute(
-             "modify_file",
-             %{"path" => "scratch/freedom.ex", "content" => "ok"},
-             freedom_policy
-           ) =~ "Successfully wrote"
+    result =
+      Dispatcher.execute(
+        "modify_file",
+        %{"operation" => "create_file", "path" => "scratch/freedom.ex", "content" => "ok"},
+        freedom_policy
+      )
+
+    assert Jason.decode!(result)["ok"]
 
     assert File.read!("scratch/freedom.ex") == "ok"
 
     assert Dispatcher.execute(
              "modify_file",
-             %{"path" => "../outside.ex", "content" => "bad"},
+             %{"operation" => "create_file", "path" => "../outside.ex", "content" => "bad"},
              freedom_policy
            ) =~ "path traversal is not allowed"
   end
@@ -268,11 +316,14 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     freedom_policy = ToolPolicy.yolo(project_policy_bypassed?: true)
 
-    assert Dispatcher.execute(
-             "modify_file",
-             %{"path" => "scratch/scoped.ex", "content" => "ok"},
-             freedom_policy
-           ) =~ "Successfully wrote"
+    result =
+      Dispatcher.execute(
+        "modify_file",
+        %{"operation" => "create_file", "path" => "scratch/scoped.ex", "content" => "ok"},
+        freedom_policy
+      )
+
+    assert Jason.decode!(result)["ok"]
 
     policy = ProjectPolicy.load()
     assert {:error, message} = ProjectPolicy.allowed_write_path?(policy, "scratch/blocked.ex")
@@ -284,12 +335,19 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     File.write!(".beamcore/policy.json", "{}")
     File.write!("old.txt", "old")
 
-    assert Modify.execute(%{"path" => ".beamcore/policy.json", "content" => "{}"}) =~
+    assert Modify.execute(%{
+             "operation" => "create_file",
+             "path" => ".beamcore/policy.json",
+             "content" => "{}",
+             "overwrite" => true
+           }) =~
              "Project policy can only be changed"
 
     assert Modify.execute(%{
+             "operation" => "replace_exact",
              "path" => ".beamcore/policy.json",
-             "edits" => [%{"search" => "{}", "replace" => "{\"deny_paths\":[]}"}]
+             "old" => "{}",
+             "new" => "{\"deny_paths\":[]}"
            }) =~ "Project policy can only be changed"
 
     assert Fs.execute(%{"operation" => "touch", "path" => ".beamcore/policy.json"}) =~

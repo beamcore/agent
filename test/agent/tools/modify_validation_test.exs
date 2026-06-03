@@ -31,23 +31,19 @@ defmodule Beamcore.Agent.Tools.ModifyValidationTest do
       test_file_path = Path.join(@test_dir, "#{@tc["id"]}_#{filename}")
       File.write!(test_file_path, source_content)
 
-      params = %{
-        "path" => test_file_path,
-        "edits" => @tc["edits"]
-      }
-
-      result = Modify.execute(params)
+      params = Map.put(@tc["params"], "path", test_file_path)
+      result = Modify.execute(params) |> Jason.decode!()
 
       if @tc["expected_success"] do
-        refute result =~ "Error:", "Expected success, but got error: #{result}"
-        assert result =~ "Successfully updated", "Expected success message, but got: #{result}"
+        assert result["ok"], "Expected success, but got: #{inspect(result)}"
+        assert result["changed"]
 
         if contains = @tc["contains"] do
           new_content = File.read!(test_file_path)
           assert new_content =~ contains, "Expected modified content to contain: #{contains}"
         end
       else
-        assert result =~ "Error:", "Expected error, but got success: #{result}"
+        refute result["ok"], "Expected error, but got success: #{inspect(result)}"
       end
     end
   end

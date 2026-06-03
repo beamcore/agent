@@ -1,95 +1,74 @@
 [
   {
-    "id": "whitespace_insensitivity",
+    "id": "replace_exact_block",
     "file": "validation/examples/hello.ex",
-    "description": "Edits a function head with different whitespace layout and indentation",
-    "edits": [
-      {
-        "search": "  def greet(name) do\n    IO.puts(\"Hello, \" <> name <> \"!\")\n  end",
-        "replace": "  def greet(name, prefix \\\\ \"Hello\") do\n    IO.puts(prefix <> \", \" <> name <> \"!\")\n  end"
-      }
-    ],
+    "description": "Replaces an exact multi-line Elixir function block",
+    "params": {
+      "operation": "replace_exact",
+      "old": "  def greet(name) do\n    IO.puts(\"Hello, \" <> name <> \"!\")\n  end",
+      "new": "  def greet(name, prefix \\\\ \"Hello\") do\n    IO.puts(prefix <> \", \" <> name <> \"!\")\n  end"
+    },
     "expected_success": true,
     "contains": "def greet(name, prefix \\\\ \"Hello\")"
   },
   {
-    "id": "punctuation_spacing_parentheses",
+    "id": "replace_exact_explicit_occurrence",
     "file": "validation/examples/hello.ex",
-    "description": "Edits function definition using relaxed spaces around punctuation",
-    "edits": [
-      {
-        "search": "def sum( a , b ) do",
-        "replace": "def sum(a, b, c \\\\ 0) do"
-      }
-    ],
+    "description": "Replaces an explicit duplicate occurrence",
+    "params": {
+      "operation": "replace_exact",
+      "old": "  end",
+      "new": "  # explicit occurrence\n  end",
+      "occurrence": 2
+    },
     "expected_success": true,
-    "contains": "def sum(a, b, c \\\\ 0) do"
+    "contains": "# explicit occurrence"
   },
   {
-    "id": "quote_insensitivity_js",
+    "id": "insert_after_anchor",
     "file": "validation/examples/hello.js",
-    "description": "Matches single quotes using double quotes in the search pattern",
-    "edits": [
-      {
-        "search": "console.log(\"Hello, \" + name + \"!\");",
-        "replace": "console.log(`Bonjour, ${name}!`);"
-      }
-    ],
+    "description": "Inserts text after an exact JavaScript anchor",
+    "params": {
+      "operation": "insert_after",
+      "anchor": "  console.log('Hello, ' + name + '!');\n",
+      "content": "  return name;\n"
+    },
     "expected_success": true,
-    "contains": "console.log(`Bonjour, ${name}!`);"
+    "contains": "return name;"
   },
   {
-    "id": "comment_insensitivity_py",
+    "id": "replace_range",
     "file": "validation/examples/hello.py",
-    "description": "Edits code around comments and matches ignoring comments",
-    "edits": [
-      {
-        "search": "def greet(name):\n    # Some comment\n    print(f\"Hello, {name}!\")",
-        "replace": "def greet(name):\n    # Comment preserved or new comment\n    print(f\"Hi, {name}!\")"
-      }
-    ],
-    "expected_success": true,
-    "contains": "Hi, "
-  },
-  {
-    "id": "multi_edit_atomic",
-    "file": "validation/examples/hello.py",
-    "description": "Performs multiple non-contiguous edits atomically in Python",
-    "edits": [
-      {
-        "search": "def sum_two_numbers(a, b):\n    return a + b",
-        "replace": "def sum_two_numbers(a, b):\n    # Sum function updated\n    return a + b + 1"
-      },
-      {
-        "search": "def list_comprehension(items):\n    return [ x * 2 for x in items if x is not None ]",
-        "replace": "def list_comprehension(items):\n    return [item * 3 for item in items if item is not None]"
-      }
-    ],
+    "description": "Replaces a fixed inclusive line range",
+    "params": {
+      "operation": "replace_range",
+      "start_line": 5,
+      "end_line": 6,
+      "content": "def sum_two_numbers(a, b):\n    return a + b + 1"
+    },
     "expected_success": true,
     "contains": "return a + b + 1"
   },
   {
     "id": "no_match_failure",
     "file": "validation/examples/hello.ex",
-    "description": "Fails when the search block is not found anywhere in the file",
-    "edits": [
-      {
-        "search": "def non_existent_function() do\n  :error\nend",
-        "replace": "def non_existent_function() do\n  :ok\nend"
-      }
-    ],
+    "description": "Fails when exact text is not found",
+    "params": {
+      "operation": "replace_exact",
+      "old": "def non_existent_function() do\n  :error\nend",
+      "new": "def non_existent_function() do\n  :ok\nend"
+    },
     "expected_success": false
   },
   {
     "id": "ambiguous_match_failure",
     "file": "validation/examples/hello.ex",
-    "description": "Fails when the search block is too short or generic and matches multiple spots",
-    "edits": [
-      {
-        "search": "  end",
-        "replace": "# ending"
-      }
-    ],
+    "description": "Fails when occurrence is ambiguous",
+    "params": {
+      "operation": "replace_exact",
+      "old": "  end",
+      "new": "# ending"
+    },
     "expected_success": false
   }
 ]

@@ -11,7 +11,7 @@ defmodule Beamcore.OpenAI do
   """
 
   @http_client Application.compile_env(:agent, :http_client, :httpc)
-  @base_url "https://codestral.mistral.ai/v1"
+  @base_url "https://api.mistral.ai/v1"
   @receive_timeout 30_000
   @http_timeout 120_000
 
@@ -40,6 +40,34 @@ defmodule Beamcore.OpenAI do
   end
 
   def configured?, do: api_key_value() != nil
+
+  def env_api_key_present?, do: api_key_source() == :env
+
+  def api_key_source do
+    {source, _value} = api_key_source_and_value()
+    source
+  end
+
+  def auth_diagnostics do
+    env_token = env("MISTRAL_API_KEY")
+    config_token = Beamcore.Config.mistral_api_key() |> normalize_env()
+    {source, selected_token} = api_key_source_and_value()
+    config_path = Beamcore.Config.path() |> Path.expand()
+
+    %{
+      env_token_present?: is_binary(env_token),
+      config_token_present?: is_binary(config_token),
+      selected_token_source: source,
+      selected_token_length: token_length(selected_token),
+      selected_token_has_mistral_prefix?: token_prefix?(selected_token),
+      base_url: env("MISTRAL_BASE_URL", @base_url),
+      model: Beamcore.Agent.Chat.API.default_model(),
+      auth_header_present?: is_binary(selected_token),
+      auth_header_scheme: if(is_binary(selected_token), do: "Bearer", else: "missing"),
+      config_dets_path: config_path,
+      config_dets_mode: config_mode(config_path)
+    }
+  end
 
   def missing_config_message do
     """
@@ -147,12 +175,18 @@ defmodule Beamcore.OpenAI do
   end
 
   defp api_key_value do
-    # Priority: 1. Environment variable (plaintext, not stored)
-    #          2. In-memory cached key (from /login in current session)
-    #          3. nil (user must login)
-    case env("MISTRAL_API_KEY") do
-      nil -> Beamcore.Config.mistral_api_key()
-      key -> key
+    {_source, value} = api_key_source_and_value()
+    value
+  end
+
+  defp api_key_source_and_value do
+    env_token = env("MISTRAL_API_KEY")
+    config_token = Beamcore.Config.mistral_api_key() |> normalize_env()
+
+    cond do
+      is_binary(env_token) -> {:env, env_token}
+      is_binary(config_token) -> {:config, config_token}
+      true -> {:missing, nil}
     end
   end
 
@@ -179,6 +213,19 @@ defmodule Beamcore.OpenAI do
     case String.trim(value) do
       "" -> nil
       trimmed -> trimmed
+    end
+  end
+
+  defp token_length(token) when is_binary(token), do: String.length(token)
+  defp token_length(_token), do: 0
+
+  defp token_prefix?(token) when is_binary(token), do: String.starts_with?(token, "mistral")
+  defp token_prefix?(_token), do: false
+
+  defp config_mode(path) do
+    case File.stat(path) do
+      {:ok, %File.Stat{mode: mode}} -> Integer.to_string(Bitwise.band(mode, 0o777), 8)
+      {:error, _reason} -> "missing"
     end
   end
 

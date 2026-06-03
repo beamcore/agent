@@ -48,26 +48,33 @@ defmodule Beamcore.Agent.Core.PrettyTest do
 
     output =
       capture_io(fn ->
-        Pretty.print_tool_call("modify_file", %{"path" => "scratch/a.ex", "content" => content})
+        Pretty.print_tool_call("modify_file", %{
+          "operation" => "create_file",
+          "path" => "scratch/a.ex",
+          "content" => content
+        })
       end)
 
+    assert output =~ "create_file"
     assert output =~ "scratch/a.ex"
     assert output =~ "bytes"
     refute output =~ "defmodule Scratch.A"
     refute output =~ "def x"
   end
 
-  test "modify_file tool call display (edit mode) shows edit badge" do
+  test "modify_file tool call display shows operation badge" do
     output =
       capture_io(fn ->
         Pretty.print_tool_call("modify_file", %{
+          "operation" => "replace_exact",
           "path" => "scratch/a.ex",
-          "edits" => [%{"search" => "old", "replace" => "new"}]
+          "old" => "old",
+          "new" => "new"
         })
       end)
 
     assert output =~ "scratch/a.ex"
-    assert output =~ "1 edits"
+    assert output =~ "replace_exact"
   end
 
   test "plan tool call display is compact" do

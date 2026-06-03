@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
   import ExUnit.CaptureLog
 
   alias Beamcore.Agent.Chat.{Loop, Session}
+  alias Beamcore.Retry.Config
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
@@ -100,6 +101,45 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
 
     assert [%{"content" => "Single response."}] = assistant_messages
     assert_received {:event, {:assistant, "Single response."}}
+  end
+
+  test "provider rate limit event includes wait time and preserves session state", %{
+    session: session
+  } do
+    error = %OpenaiEx.Error{
+      kind: :rate_limit,
+      status_code: 429,
+      body: %{"retry_after" => "11"}
+    }
+
+    Process.put(:mock_completions_create, fn _client, _params ->
+      {:error, error}
+    end)
+
+    parent = self()
+
+    retry_config = %Config{
+      max_retries: 0,
+      initial_backoff: 1,
+      max_backoff: 1,
+      backoff_multiplier: 1,
+      retryable_errors: [:rate_limit],
+      sleep_fun: fn _ms -> :ok end
+    }
+
+    updated =
+      Loop.send_message(session, "hello", nil, nil,
+        silent: true,
+        retry_config: retry_config,
+        event_handler: fn event -> send(parent, {:event, event}) end
+      )
+
+    assert_receive {:event, {:error, message}}
+    assert message =~ "Provider rate limit reached"
+    assert message =~ "11 seconds"
+    assert_receive {:event, {:status, :error}}
+    assert updated.client == session.client
+    assert updated.messages == session.messages
   end
 
   test "tool_finished event compacts large output while model history keeps full content", %{
@@ -277,6 +317,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     end)
 
     write_args = %{
+      "operation" => "create_file",
       "path" => "scratch/yolo_test.ex",
       "content" => "defmodule Scratch.YoloTest do\n  def hello, do: :ok\nend\n"
     }
@@ -359,7 +400,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
 
     assert File.exists?("scratch/yolo_test.ex")
     assert_receive {:event, {:tool_finished, "modify_file", ^write_args, result}}
-    assert result =~ "Successfully wrote"
+    assert Jason.decode!(result)["ok"]
     assert updated.project_policy_bypassed?
   end
 
@@ -374,6 +415,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     end)
 
     args = %{
+      "operation" => "create_file",
       "path" => "scratch/yolo_test.ex",
       "content" => "defmodule Scratch.YoloTest do\n  def hello, do: :ok\nend\n"
     }
@@ -420,7 +462,7 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     assert File.exists?("scratch/yolo_test.ex")
     assert File.read!("scratch/yolo_test.ex") =~ "def hello, do: :ok"
     assert_receive {:event, {:tool_finished, "modify_file", ^args, result}}
-    assert result =~ "Successfully wrote"
+    assert Jason.decode!(result)["ok"]
     assert updated.project_policy_bypassed?
   end
 

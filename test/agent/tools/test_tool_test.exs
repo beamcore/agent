@@ -55,6 +55,52 @@ defmodule Beamcore.Agent.Tools.TestToolTest do
     assert env["MIX_ENV"] == "test"
   end
 
+  test "mix project runner receives sanitized release env in the project workdir" do
+    temp_dir = "tmp/test_mix_release_env_#{System.unique_integer([:positive])}"
+    File.mkdir_p!(temp_dir)
+    File.touch!(Path.join(temp_dir, "mix.exs"))
+    on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+    parent = self()
+
+    release_env = %{
+      "RELEASE_ROOT" => "/fake/beamcore/release",
+      "BINDIR" => "/fake/beamcore/release/bin",
+      "ROOTDIR" => "/fake/root",
+      "ERL_LIBS" => "/fake/beamcore/release/lib"
+    }
+
+    with_env(release_env, fn ->
+      result =
+        with_command_runner(
+          fn exe, args, opts ->
+            send(parent, {:called, exe, args, opts})
+            {"ok", 0}
+          end,
+          fn ->
+            TestTool.execute(%{"workdir" => temp_dir}) |> decode!()
+          end
+        )
+
+      assert result["ok"]
+      assert_receive {:called, "mix", ["test"], opts}
+      assert Keyword.get(opts, :cd) =~ temp_dir
+
+      env = Map.new(opts[:env] || [])
+      assert env["MIX_ENV"] == "test"
+      assert env["PATH"]
+      assert env["HOME"]
+
+      for key <- ["RELEASE_ROOT", "BINDIR", "ROOTDIR", "ERL_LIBS"] do
+        assert env[key] == nil
+      end
+
+      for {key, value} <- release_env do
+        assert System.get_env(key) == value
+      end
+    end)
+  end
+
   test "detects Cargo.toml and runs cargo test" do
     temp_dir = "tmp/test_cargo_#{System.unique_integer([:positive])}"
     File.mkdir_p!(temp_dir)
@@ -244,5 +290,23 @@ defmodule Beamcore.Agent.Tools.TestToolTest do
 
     assert result["ok"]
     assert_receive {:called, "make", ["test"]}
+  end
+
+  defp with_env(values, fun) do
+    previous = Map.new(Map.keys(values), &{&1, System.get_env(&1)})
+
+    Enum.each(values, fn
+      {key, nil} -> System.delete_env(key)
+      {key, value} -> System.put_env(key, value)
+    end)
+
+    try do
+      fun.()
+    after
+      Enum.each(previous, fn
+        {key, nil} -> System.delete_env(key)
+        {key, value} -> System.put_env(key, value)
+      end)
+    end
   end
 end

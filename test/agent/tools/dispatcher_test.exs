@@ -81,7 +81,9 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
-    assert Enum.sort(names) == Enum.sort(~w(read grep glob modify_file fs test_tool memory reflect))
+    assert Enum.sort(names) ==
+             Enum.sort(~w(read grep glob modify_file fs test_tool memory reflect))
+
     refute "task" in names
     refute "web_get" in names
     refute "tree" in names
@@ -112,7 +114,12 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
       mode: read_only
       """)
 
-    result = Dispatcher.execute("modify_file", %{"path" => "tmp.txt", "content" => "bad"}, policy)
+    result =
+      Dispatcher.execute(
+        "modify_file",
+        %{"operation" => "create_file", "path" => "tmp.txt", "content" => "bad"},
+        policy
+      )
 
     assert result =~ "read-only policy"
   end
@@ -121,10 +128,25 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     path = "scratch/dispatcher_autonomous_write.txt"
     on_exit(fn -> File.rm_rf!("scratch/dispatcher_autonomous_write.txt") end)
 
-    result = Dispatcher.execute("modify_file", %{"path" => path, "content" => "ok"})
+    result =
+      Dispatcher.execute("modify_file", %{
+        "operation" => "create_file",
+        "path" => path,
+        "content" => "ok"
+      })
 
-    assert result =~ "Successfully wrote"
+    assert Jason.decode!(result)["ok"]
     assert File.read!(path) == "ok"
+  end
+
+  test "execute allows autonomous mkdir by default" do
+    path = "scratch/dispatcher_autonomous_dir"
+    on_exit(fn -> File.rm_rf!(path) end)
+
+    result = Dispatcher.execute("fs", %{"operation" => "mkdir", "path" => path})
+
+    assert result =~ "Successfully created directory"
+    assert File.dir?(path)
   end
 
   test "execute allows read tools without confirmation" do
@@ -133,8 +155,6 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     refute result =~ "Mutation requires"
     refute result =~ "Tool call blocked"
   end
-
-
 
   test "execute blocks unlisted writes in restricted-write mode" do
     policy =
@@ -146,7 +166,11 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
       """)
 
     result =
-      Dispatcher.execute("modify_file", %{"path" => "eval/a.ex", "content" => "bad"}, policy)
+      Dispatcher.execute(
+        "modify_file",
+        %{"operation" => "create_file", "path" => "eval/a.ex", "content" => "bad"},
+        policy
+      )
 
     assert result =~ "restricted-write policy"
     assert result =~ "eval/a.ex is not in allowed_write_paths"

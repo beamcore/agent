@@ -179,6 +179,70 @@ defmodule Beamcore.Agent.Tools.CommandRunnerTest do
     end)
   end
 
+  test "CommandRunner does not mutate global release env while sanitizing commands" do
+    release_env = %{
+      "RELEASE_ROOT" => "/fake/release",
+      "BINDIR" => "/fake/release/bin",
+      "ROOTDIR" => "/fake/root",
+      "ERL_LIBS" => "/fake/release/lib"
+    }
+
+    with_env(release_env, fn ->
+      result =
+        with_command_runner(fn "npm", ["test"], _opts -> {"ok", 0} end, fn ->
+          CommandRunner.run("node", "test", "npm", ["test"])
+        end)
+
+      assert result["ok"]
+
+      for {key, value} <- release_env do
+        assert System.get_env(key) == value
+      end
+    end)
+  end
+
+  test "concurrent CommandRunner calls use sanitized snapshots without global env mutation" do
+    parent = self()
+
+    release_env = %{
+      "RELEASE_ROOT" => "/fake/release",
+      "BINDIR" => "/fake/release/bin",
+      "ROOTDIR" => "/fake/root"
+    }
+
+    with_env(release_env, fn ->
+      with_command_runner(
+        fn exe, args, opts ->
+          send(parent, {:runner, exe, args, opts[:env]})
+          {"ok", 0}
+        end,
+        fn ->
+          tasks =
+            for _ <- 1..2 do
+              Task.async(fn -> CommandRunner.run("node", "test", "npm", ["test"]) end)
+            end
+
+          results = Enum.map(tasks, &Task.await(&1, 5_000))
+          assert Enum.all?(results, & &1["ok"])
+        end
+      )
+
+      for _ <- 1..2 do
+        assert_receive {:runner, "npm", ["test"], env}
+        env_map = Map.new(env)
+        assert env_map["RELEASE_ROOT"] == nil
+        assert env_map["BINDIR"] == nil
+        assert env_map["ROOTDIR"] == nil
+        assert env_map["PATH"]
+        assert env_map["HOME"]
+      end
+
+      for {key, value} <- release_env do
+        assert System.get_env(key) == value
+      end
+    end)
+  end
+
   defp with_command_runner(runner, fun) do
     previous = Application.get_env(:agent, :command_runner)
     Application.put_env(:agent, :command_runner, runner)

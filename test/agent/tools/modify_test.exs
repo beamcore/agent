@@ -12,203 +12,267 @@ defmodule Beamcore.Agent.Tools.ModifyTest do
     :ok
   end
 
-  # ---------------------------------------------------------------------------
-  # Full File Write & Path Safety Tests
-  # ---------------------------------------------------------------------------
-
-  test "modify_file creates a new file with content" do
+  test "create_file creates a new file with monitoring data" do
     path = Path.join(@test_dir, "new_file.txt")
-    result = Modify.execute(%{"path" => path, "content" => "hello world"})
 
-    assert result =~ "Successfully wrote to"
-    assert File.read!(path) == "hello world"
+    result =
+      modify!(%{
+        "operation" => "create_file",
+        "path" => path,
+        "content" => "hello world\n"
+      })
+
+    assert result["ok"]
+    assert result["changed"]
+    assert result["operation"] == "create_file"
+    assert result["path"] == path
+    assert result["bytes_before"] == 0
+    assert result["bytes_after"] == byte_size("hello world\n")
+    assert is_binary(result["sha256_before"])
+    assert is_binary(result["sha256_after"])
+    assert result["diff"] =~ "+hello world"
+    assert File.read!(path) == "hello world\n"
   end
 
-  test "modify_file overwrites an existing file" do
+  test "create_file overwrites only with explicit overwrite true" do
     path = Path.join(@test_dir, "existing.txt")
-    File.write!(path, "original content")
+    File.write!(path, "original content\n")
 
-    result = Modify.execute(%{"path" => path, "content" => "new content"})
+    denied =
+      modify!(%{
+        "operation" => "create_file",
+        "path" => path,
+        "content" => "new content\n"
+      })
 
-    assert result =~ "Successfully wrote to"
-    assert File.read!(path) == "new content"
+    refute denied["ok"]
+    assert denied["summary"] =~ "overwrite=true"
+    assert File.read!(path) == "original content\n"
+
+    allowed =
+      modify!(%{
+        "operation" => "create_file",
+        "path" => path,
+        "content" => "new content\n",
+        "overwrite" => true
+      })
+
+    assert allowed["ok"]
+    assert File.read!(path) == "new content\n"
   end
 
-  test "modify_file rejects absolute paths" do
-    result = Modify.execute(%{"path" => "/tmp/agent_outside.txt", "content" => "nope"})
-    assert result =~ "absolute paths are not allowed"
-  end
-
-  test "modify_file rejects path traversal" do
-    result = Modify.execute(%{"path" => "../agent_outside.txt", "content" => "nope"})
-    assert result =~ "path traversal is not allowed"
-  end
-
-  test "modify_file de-obfuscates email protection placeholders" do
-    path = Path.join(@test_dir, "emails.txt")
-    result = Modify.execute(%{"path" => path, "content" => "debug \"[email protected]\" --all\n"})
-
-    assert result =~ "Successfully wrote to"
-    assert File.read!(path) == "debug \"$@\" --all\n"
-  end
-
-  # ---------------------------------------------------------------------------
-  # Targeted Single Edit Tests
-  # ---------------------------------------------------------------------------
-
-  test "modify_file performs exact single edit" do
-    path = Path.join(@test_dir, "edit.txt")
+  test "replace_exact replaces a single occurrence" do
+    path = Path.join(@test_dir, "replace.txt")
     File.write!(path, "line 1\nline 2\nline 3\n")
 
     result =
-      Modify.execute(%{
+      modify!(%{
+        "operation" => "replace_exact",
         "path" => path,
-        "edits" => [
-          %{"search" => "line 2", "replace" => "updated line 2"}
-        ]
+        "old" => "line 2",
+        "new" => "updated line 2"
       })
 
-    assert result =~ "Successfully updated"
+    assert result["ok"]
+    assert result["matched_occurrences"] == 1
     assert File.read!(path) == "line 1\nupdated line 2\nline 3\n"
   end
 
-  # ---------------------------------------------------------------------------
-  # Robust Matching Tiers
-  # ---------------------------------------------------------------------------
-
-  test "modify_file matches formatting-insensitively (Tier 2)" do
-    path = Path.join(@test_dir, "formatting.txt")
-    # File has extra spacing and double quotes
-    File.write!(path, "    def my_fun( a,   b ):\n        return \"success\"\n")
-
-    # Search query has different spacing and single quotes
-    result =
-      Modify.execute(%{
-        "path" => path,
-        "edits" => [
-          %{
-            "search" => "def my_fun(a, b):\n    return 'success'",
-            "replace" => "def my_fun(a, b):\n    return 'updated'"
-          }
-        ]
-      })
-
-    assert result =~ "Successfully updated"
-    # Indentation was aligned (+4 spaces relative to search query block)
-    # File is updated, retaining original lineending style
-    assert File.read!(path) == "    def my_fun(a, b):\n        return 'updated'\n"
-  end
-
-  test "modify_file matches comment-insensitively (Tier 3)" do
-    path = Path.join(@test_dir, "comments.txt")
-    File.write!(path, "def execute(args) do # some code comment\n  IO.puts(\"ok\")\nend")
-
-    # Search block has no comments
-    result =
-      Modify.execute(%{
-        "path" => path,
-        "edits" => [
-          %{
-            "search" => "def execute(args) do\n  IO.puts('ok')",
-            "replace" => "def execute(args) do\n  IO.puts('changed')"
-          }
-        ]
-      })
-
-    assert result =~ "Successfully updated"
-    assert File.read!(path) == "def execute(args) do\n  IO.puts('changed')\nend"
-  end
-
-  test "modify_file preserves relative indentation" do
-    path = Path.join(@test_dir, "indent.txt")
-    File.write!(path, "class Calc:\n    def run(self):\n        x = 10\n        return x")
-
-    # Agent provides 0 indentation on replacement block
-    result =
-      Modify.execute(%{
-        "path" => path,
-        "edits" => [
-          %{
-            "search" => "x = 10\nreturn x",
-            "replace" => "y = 20\nreturn y"
-          }
-        ]
-      })
-
-    assert result =~ "Successfully updated"
-    # The replacement is aligned with the file's original 8-space indentation!
-    assert File.read!(path) == "class Calc:\n    def run(self):\n        y = 20\n        return y"
-  end
-
-  # ---------------------------------------------------------------------------
-  # Atomic Multiple Edits
-  # ---------------------------------------------------------------------------
-
-  test "modify_file applies multiple non-overlapping edits atomically in reverse order" do
-    path = Path.join(@test_dir, "multi.txt")
-    File.write!(path, "first block\n\nsecond block\n\nthird block\n")
+  test "replace_exact can target an explicit occurrence" do
+    path = Path.join(@test_dir, "occurrence.txt")
+    File.write!(path, "same\nsame\nsame\n")
 
     result =
-      Modify.execute(%{
+      modify!(%{
+        "operation" => "replace_exact",
         "path" => path,
-        "edits" => [
-          %{"search" => "third block", "replace" => "third updated"},
-          %{"search" => "first block", "replace" => "first updated"}
-        ]
+        "old" => "same",
+        "new" => "second",
+        "occurrence" => 2
       })
 
-    assert result =~ "Successfully updated"
-    assert File.read!(path) == "first updated\n\nsecond block\n\nthird updated\n"
+    assert result["ok"]
+    assert result["matched_occurrences"] == 3
+    assert File.read!(path) == "same\nsecond\nsame\n"
   end
 
-  test "modify_file rejects overlapping multi-edits" do
-    path = Path.join(@test_dir, "overlap.txt")
-    File.write!(path, "one\ntwo\nthree\n")
+  test "insert_before and insert_after use exact anchors" do
+    path = Path.join(@test_dir, "insert.txt")
+    File.write!(path, "alpha\nomega\n")
+
+    before =
+      modify!(%{
+        "operation" => "insert_before",
+        "path" => path,
+        "anchor" => "omega",
+        "content" => "middle\n"
+      })
+
+    assert before["ok"]
+    assert File.read!(path) == "alpha\nmiddle\nomega\n"
+
+    after_insert =
+      modify!(%{
+        "operation" => "insert_after",
+        "path" => path,
+        "anchor" => "omega\n",
+        "content" => "tail\n"
+      })
+
+    assert after_insert["ok"]
+    assert File.read!(path) == "alpha\nmiddle\nomega\ntail\n"
+  end
+
+  test "replace_range replaces 1-based inclusive line ranges" do
+    path = Path.join(@test_dir, "range.txt")
+    File.write!(path, "one\ntwo\nthree\nfour\n")
 
     result =
-      Modify.execute(%{
+      modify!(%{
+        "operation" => "replace_range",
         "path" => path,
-        "edits" => [
-          %{"search" => "one\ntwo", "replace" => "1-2"},
-          %{"search" => "two\nthree", "replace" => "2-3"}
-        ]
+        "start_line" => 2,
+        "end_line" => 3,
+        "content" => "TWO\nTHREE"
       })
 
-    assert result =~ "overlap"
-    # Content remains unchanged due to atomicity
-    assert File.read!(path) == "one\ntwo\nthree\n"
+    assert result["ok"]
+    assert result["matched_occurrences"] == 2
+    assert File.read!(path) == "one\nTWO\nTHREE\nfour\n"
   end
 
-  test "modify_file handles empty and invalid inputs gracefully" do
-    path = Path.join(@test_dir, "error.txt")
-    File.write!(path, "content")
-
-    # Missing both edits and content
-    assert Modify.execute(%{"path" => path}) =~ "Either 'content' or 'edits' must be provided"
-
-    # Providing both edits and content
-    assert Modify.execute(%{
-             "path" => path,
-             "content" => "full",
-             "edits" => [%{"search" => "c", "replace" => "d"}]
-           }) =~ "Provide either 'content'"
-  end
-
-  test "modify_file supports dry-run without writing changes" do
+  test "dry-run validates without writing" do
     path = Path.join(@test_dir, "dry_run.txt")
-    original = "original content"
+    File.write!(path, "original content\n")
+
+    result =
+      modify!(%{
+        "operation" => "replace_exact",
+        "path" => path,
+        "old" => "original",
+        "new" => "planned",
+        "dry_run" => true
+      })
+
+    assert result["ok"]
+    assert result["summary"] =~ "Dry-run"
+    assert result["diff"] =~ "+planned content"
+    assert File.read!(path) == "original content\n"
+  end
+
+  test "failed exact modifications leave file byte-for-byte unchanged" do
+    path = Path.join(@test_dir, "failures.txt")
+    original = "alpha\nbeta\nbeta\n"
     File.write!(path, original)
 
-    result =
-      Modify.execute(%{
+    for params <- [
+          %{"operation" => "replace_exact", "old" => "missing", "new" => "x"},
+          %{"operation" => "replace_exact", "old" => "beta", "new" => "x"},
+          %{"operation" => "replace_exact", "old" => "beta", "new" => "x", "occurrence" => 3},
+          %{"operation" => "replace_exact", "old" => "", "new" => "x"}
+        ] do
+      result = modify!(Map.put(params, "path", path))
+      refute result["ok"]
+      assert File.read!(path) == original
+    end
+  end
+
+  test "missing and ambiguous anchors do not write" do
+    path = Path.join(@test_dir, "anchors.txt")
+    original = "one\ntwo\ntwo\n"
+    File.write!(path, original)
+
+    missing =
+      modify!(%{
+        "operation" => "insert_before",
         "path" => path,
-        "dry_run" => true,
-        "edits" => [%{"search" => "original content", "replace" => "new content"}]
+        "anchor" => "missing",
+        "content" => "x\n"
       })
 
-    assert result =~ "Dry-run succeeded"
-    assert result =~ "new content"
-    # Actual file on disk must be unmodified!
+    refute missing["ok"]
+    assert File.read!(path) == original
+
+    ambiguous =
+      modify!(%{
+        "operation" => "insert_after",
+        "path" => path,
+        "anchor" => "two",
+        "content" => "x\n"
+      })
+
+    refute ambiguous["ok"]
+    assert ambiguous["summary"] =~ "ambiguous"
     assert File.read!(path) == original
   end
+
+  test "invalid range, checksum mismatch, and no-op edits do not write" do
+    path = Path.join(@test_dir, "guards.txt")
+    original = "one\ntwo\n"
+    File.write!(path, original)
+
+    invalid_range =
+      modify!(%{
+        "operation" => "replace_range",
+        "path" => path,
+        "start_line" => 3,
+        "end_line" => 4,
+        "content" => "bad"
+      })
+
+    refute invalid_range["ok"]
+
+    checksum_mismatch =
+      modify!(%{
+        "operation" => "replace_exact",
+        "path" => path,
+        "old" => "one",
+        "new" => "ONE",
+        "expected_sha256" => String.duplicate("0", 64)
+      })
+
+    refute checksum_mismatch["ok"]
+    assert checksum_mismatch["summary"] =~ "checksum mismatch"
+
+    no_op =
+      modify!(%{
+        "operation" => "replace_exact",
+        "path" => path,
+        "old" => "one",
+        "new" => "one"
+      })
+
+    refute no_op["ok"]
+    assert no_op["summary"] =~ "would not change"
+    assert File.read!(path) == original
+  end
+
+  test "path escape, directories, and binary targets are rejected" do
+    assert modify!(%{"operation" => "create_file", "path" => "../outside.txt", "content" => "x"})[
+             "summary"
+           ] =~ "path traversal"
+
+    dir = Path.join(@test_dir, "dir")
+    File.mkdir_p!(dir)
+
+    directory = modify!(%{"operation" => "create_file", "path" => dir, "content" => "x"})
+    refute directory["ok"]
+    assert directory["summary"] =~ "directory"
+
+    binary_path = Path.join(@test_dir, "binary.bin")
+    File.write!(binary_path, <<0, 1, 2, 3>>)
+
+    binary =
+      modify!(%{
+        "operation" => "replace_exact",
+        "path" => binary_path,
+        "old" => <<1>>,
+        "new" => "x"
+      })
+
+    refute binary["ok"]
+    assert binary["summary"] =~ "binary"
+  end
+
+  defp modify!(params), do: params |> Modify.execute() |> Jason.decode!()
 end

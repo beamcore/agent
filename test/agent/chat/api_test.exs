@@ -2,6 +2,7 @@ defmodule Beamcore.Agent.Chat.APITest do
   use ExUnit.Case
   import ExUnit.CaptureIO
   alias Beamcore.Agent.Chat.API
+  alias Beamcore.Retry.Config
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
@@ -14,6 +15,7 @@ defmodule Beamcore.Agent.Chat.APITest do
     # Reset mock after each test
     on_exit(fn ->
       Process.delete(:mock_completions_create)
+      Process.delete(:mock_completions_calls)
     end)
 
     %{client: client}
@@ -131,5 +133,63 @@ defmodule Beamcore.Agent.Chat.APITest do
              API.execute(client, [%{role: "user", content: "hello"}], [], :main,
                model: "mistral-small-2603"
              )
+  end
+
+  test "execute/5 uses Retry-After delay for provider rate limit", %{client: client} do
+    parent = self()
+
+    error = %OpenaiEx.Error{
+      kind: :rate_limit,
+      status_code: 429,
+      body: %{"retry_after" => "7"}
+    }
+
+    Process.put(:mock_completions_calls, 0)
+
+    Process.put(:mock_completions_create, fn _client, _params ->
+      Process.put(:mock_completions_calls, Process.get(:mock_completions_calls, 0) + 1)
+      {:error, error}
+    end)
+
+    retry_config = retry_config(fn ms -> send(parent, {:sleep, ms}) end)
+
+    assert {:error, ^error} =
+             API.execute(client, [%{role: "user", content: "hello"}], [], :main,
+               retry_config: retry_config
+             )
+
+    assert_receive {:sleep, 7000}
+    assert Process.get(:mock_completions_calls) == 2
+  end
+
+  test "execute/5 uses fallback backoff for provider rate limit without Retry-After", %{
+    client: client
+  } do
+    parent = self()
+    error = %OpenaiEx.Error{kind: :rate_limit, status_code: 429}
+
+    Process.put(:mock_completions_create, fn _client, _params ->
+      {:error, error}
+    end)
+
+    retry_config = retry_config(fn ms -> send(parent, {:sleep, ms}) end)
+
+    assert {:error, ^error} =
+             API.execute(client, [%{role: "user", content: "hello"}], [], :main,
+               retry_config: retry_config
+             )
+
+    assert_receive {:sleep, 5000}
+  end
+
+  defp retry_config(sleep_fun) do
+    %Config{
+      max_retries: 1,
+      initial_backoff: 5000,
+      max_backoff: 15_000,
+      backoff_multiplier: 1,
+      retryable_errors: [:rate_limit],
+      sleep_fun: sleep_fun
+    }
   end
 end

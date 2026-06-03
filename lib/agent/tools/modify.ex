@@ -1,15 +1,23 @@
 defmodule Beamcore.Agent.Tools.Modify do
   @moduledoc """
-  Unified tool to create, overwrite, and edit files.
+  Deterministic, workspace-bounded file modification tool.
   """
+
   alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
-  Unified tool to create, replace, or edit files.
-  - To create/replace: provide `content`.
-  - To edit: provide `edits` (search-and-replace blocks).
+  Modify one workspace file using an explicit, verified operation.
+
+  Supported operations:
+  - replace_exact: replace exact text, failing on missing or ambiguous matches.
+  - insert_before / insert_after: insert content at an exact anchor.
+  - replace_range: replace 1-based inclusive line range.
+  - create_file: create a new file, or overwrite only with overwrite=true.
   """
+
+  @diff_context 3
+  @max_diff_bytes 8_000
 
   def name, do: "modify_file"
 
@@ -22,501 +30,551 @@ defmodule Beamcore.Agent.Tools.Modify do
         parameters: %{
           type: "object",
           properties: %{
+            operation: %{
+              type: "string",
+              enum: [
+                "replace_exact",
+                "insert_before",
+                "insert_after",
+                "replace_range",
+                "create_file"
+              ],
+              description:
+                "Explicit modification operation. Read the file first and provide exact text."
+            },
             path: %{
               type: "string",
-              description: "Relative workspace path of the target file."
+              description: "Workspace-relative file path."
+            },
+            old: %{
+              type: "string",
+              description: "Exact text to replace for replace_exact."
+            },
+            new: %{
+              type: "string",
+              description: "Replacement text for replace_exact."
+            },
+            anchor: %{
+              type: "string",
+              description: "Exact anchor text for insert_before or insert_after."
             },
             content: %{
               type: "string",
-              description: "New file content (omit if using `edits`)."
+              description: "Inserted, range replacement, or new file content."
+            },
+            occurrence: %{
+              oneOf: [%{type: "string", enum: ["only"]}, %{type: "integer", minimum: 1}],
+              description:
+                "Match occurrence. Defaults to only; use a positive integer for explicit duplicates."
+            },
+            start_line: %{
+              type: "integer",
+              minimum: 1,
+              description: "1-based inclusive start line for replace_range."
+            },
+            end_line: %{
+              type: "integer",
+              minimum: 1,
+              description: "1-based inclusive end line for replace_range."
+            },
+            overwrite: %{
+              type: "boolean",
+              description: "For create_file only. Existing files are replaced only when true."
+            },
+            expected_sha256: %{
+              type: "string",
+              description: "Optional optimistic concurrency guard for the current file bytes."
             },
             dry_run: %{
               type: "boolean",
-              description: "Validate changes without writing to disk. Defaults to false."
-            },
-            edits: %{
-              type: "array",
-              description: "Targeted search-and-replace edits. Must be non-overlapping.",
-              items: %{
-                type: "object",
-                properties: %{
-                  search: %{
-                    type: "string",
-                    description: "Literal block of code to search for."
-                  },
-                  replace: %{
-                    type: "string",
-                    description: "New code to replace it with."
-                  }
-                },
-                required: ["search", "replace"]
-              }
+              description: "Validate and return the planned result without writing."
             }
           },
-          required: ["path"]
+          required: ["operation", "path"]
         }
       }
     }
   end
 
-  def execute(params) do
-    file_path =
-      Map.get(params, "path") || Map.get(params, "filePath") || raise(KeyError, key: "path")
-
-    content = Map.get(params, "content")
-    edits = Map.get(params, "edits")
-    dry_run = Map.get(params, "dry_run", false)
-
-    cond do
-      is_nil(content) and is_nil(edits) ->
-        "Error: Either 'content' or 'edits' must be provided."
-
-      not is_nil(content) and not is_nil(edits) and edits != [] ->
-        "Error: Provide either 'content' (for full file write/overwrite) or 'edits' (for targeted edits), not both."
-
-      not is_nil(content) ->
-        handle_full_write(file_path, content, dry_run)
-
-      not is_nil(edits) ->
-        handle_targeted_edits(file_path, edits, dry_run)
-    end
+  def execute(params) when is_map(params) do
+    params
+    |> normalize_params()
+    |> run()
+    |> Jason.encode!()
+  rescue
+    error ->
+      error_result(
+        Map.get(params, "operation", "unknown"),
+        Map.get(params, "path", ""),
+        "unexpected modify_file failure: #{Exception.message(error)}"
+      )
+      |> Jason.encode!()
   end
 
-  # ---------------------------------------------------------------------------
-  # Full File Write/Overwrite
-  # ---------------------------------------------------------------------------
+  def execute(_params) do
+    error_result("unknown", "", "parameters must be an object") |> Jason.encode!()
+  end
 
-  defp handle_full_write(file_path, content, dry_run) do
-    content = content |> sanitize_obfuscated_emails()
+  defp normalize_params(params) do
+    %{
+      operation: Map.get(params, "operation"),
+      path: Map.get(params, "path") || Map.get(params, "filePath"),
+      old: Map.get(params, "old"),
+      new: Map.get(params, "new"),
+      anchor: Map.get(params, "anchor"),
+      content: Map.get(params, "content"),
+      occurrence: Map.get(params, "occurrence", "only"),
+      start_line: Map.get(params, "start_line"),
+      end_line: Map.get(params, "end_line"),
+      overwrite: Map.get(params, "overwrite", false),
+      expected_sha256: Map.get(params, "expected_sha256"),
+      dry_run: Map.get(params, "dry_run", false)
+    }
+  end
 
-    with :ok <- ProjectPolicy.allowed_write_path?(file_path),
-         {:ok, expanded_path} <- PathSafety.resolve(file_path, allow_missing: true) do
-      original_content =
-        case File.read(expanded_path) do
-          {:ok, orig} -> orig
-          _ -> ""
-        end
-
-      diff = generate_diff(file_path, original_content, content)
-
-      if dry_run do
-        "Dry-run succeeded: File #{file_path} would be written." <>
-          if(diff != "", do: "\n\n" <> diff, else: "")
-      else
-        expanded_path |> Path.dirname() |> File.mkdir_p!()
-
-        case atomic_write(expanded_path, content) do
-          :ok ->
-            "Successfully wrote to #{expanded_path}" <>
-              if(diff != "", do: "\n\n" <> diff, else: "")
-
-          {:error, reason} ->
-            "Error writing file #{expanded_path}: #{reason}"
-        end
-      end
+  defp run(%{operation: operation, path: path} = params) do
+    with :ok <- validate_operation(operation),
+         :ok <- validate_path_param(path),
+         :ok <- ProjectPolicy.allowed_write_path?(path),
+         {:ok, safe_path} <- PathSafety.resolve(path, allow_missing: operation == "create_file"),
+         {:ok, original} <- load_original(safe_path, operation),
+         :ok <- validate_expected_sha256(original, params.expected_sha256),
+         {:ok, plan} <- build_plan(params, safe_path, original),
+         :ok <- validate_changed(plan),
+         :ok <- verify_plan(plan) do
+      maybe_write(plan, params.dry_run)
     else
-      {:error, reason} -> PathSafety.error(reason)
+      {:error, reason} -> error_result(operation || "unknown", path || "", reason)
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Targeted Edits
-  # ---------------------------------------------------------------------------
+  defp validate_operation(operation)
+       when operation in [
+              "replace_exact",
+              "insert_before",
+              "insert_after",
+              "replace_range",
+              "create_file"
+            ],
+       do: :ok
 
-  defp handle_targeted_edits(file_path, edits, dry_run) do
-    with :ok <- ProjectPolicy.allowed_write_path?(file_path),
-         {:ok, expanded_path} <- PathSafety.resolve(file_path) do
-      case File.read(expanded_path) do
-        {:ok, original_bytes} ->
-          process_targeted_edits(expanded_path, file_path, original_bytes, edits, dry_run)
+  defp validate_operation(nil), do: {:error, "operation is required"}
+  defp validate_operation(operation), do: {:error, "unsupported operation: #{inspect(operation)}"}
 
-        {:error, reason} ->
-          "Error reading file #{expanded_path}: #{reason}"
-      end
-    else
-      {:error, reason} -> PathSafety.error(reason)
-    end
-  end
+  defp validate_path_param(path) when is_binary(path) and path != "", do: :ok
+  defp validate_path_param(_path), do: {:error, "path is required"}
 
-  defp process_targeted_edits(expanded_path, file_path, original_bytes, edits, dry_run) do
-    {has_bom?, content} = strip_bom(original_bytes)
-    line_ending = detect_line_ending(content)
-    le_char = if line_ending == :crlf, do: "\r\n", else: "\n"
-
-    file_lines = String.split(content, ~r/\r?\n/)
-
-    # 1. Match all edits against the file content
-    case match_all_edits(file_lines, edits) do
-      {:ok, matched_ranges} ->
-        # 2. Check for overlaps among matched ranges
-        case check_overlaps(matched_ranges) do
-          :ok ->
-            # 3. Apply the edits in reverse order of starting index
-            new_lines = apply_matched_edits(file_lines, matched_ranges)
-            new_content = Enum.join(new_lines, le_char)
-
-            if new_content == content do
-              "Error: No changes made to #{file_path}. The replacements produced identical content."
-            else
-              final = if has_bom?, do: <<0xEF, 0xBB, 0xBF>> <> new_content, else: new_content
-              diff = generate_diff(file_path, original_bytes, final)
-
-              if dry_run do
-                "Dry-run succeeded: File #{file_path} would be updated." <>
-                  if(diff != "", do: "\n\n" <> diff, else: "")
-              else
-                case atomic_write(expanded_path, final) do
-                  :ok ->
-                    "Successfully updated #{expanded_path}" <>
-                      if(diff != "", do: "\n\n" <> diff, else: "")
-
-                  {:error, reason} ->
-                    "Error writing file #{expanded_path}: #{reason}"
-                end
-              end
-            end
-
-          {:error, {:overlap, idx1, idx2}} ->
-            "Error: Edit blocks #{idx1} and #{idx2} overlap in #{file_path}. Merge them or target disjoint regions."
-        end
-
-      {:error, :not_found, idx, search_string} ->
-        report_not_found_diagnostic(content, search_string, idx, line_ending)
-
-      {:error, {:ambiguous, line_numbers}, idx, _search_string} ->
-        "Error: Search block at edits[#{idx}] is ambiguous. It occurs #{length(line_numbers)} times in the file at lines: #{Enum.join(line_numbers, ", ")}. Please provide more surrounding context lines."
-    end
-  end
-
-  # ---------------------------------------------------------------------------
-  # Splicing and Overlap Checks
-  # ---------------------------------------------------------------------------
-
-  defp match_all_edits(file_lines, edits) do
-    edits
-    |> Enum.with_index()
-    |> Enum.reduce_while({:ok, []}, fn {edit, idx}, {:ok, acc} ->
-      search_str = sanitize_obfuscated_emails(Map.fetch!(edit, "search"))
-      replace_str = sanitize_obfuscated_emails(Map.fetch!(edit, "replace"))
-
-      search_lines = String.split(search_str, ~r/\r?\n/)
-      replace_lines = String.split(replace_str, ~r/\r?\n/)
-
-      case find_unique_match(file_lines, search_lines) do
-        {:ok, start_idx} ->
-          match_data = %{
-            idx: idx,
-            start_line: start_idx,
-            end_line: start_idx + length(search_lines) - 1,
-            orig_first: Enum.at(file_lines, start_idx),
-            search_first: Enum.at(search_lines, 0),
-            replace_lines: replace_lines
-          }
-
-          {:cont, {:ok, [match_data | acc]}}
-
-        {:error, :not_found} ->
-          {:halt, {:error, :not_found, idx, search_str}}
-
-        {:error, {:ambiguous, line_indices}} ->
-          line_numbers = Enum.map(line_indices, &(&1 + 1))
-          {:halt, {:error, {:ambiguous, line_numbers}, idx, search_str}}
-      end
-    end)
-  end
-
-  defp check_overlaps(matched_ranges) do
-    sorted = Enum.sort_by(matched_ranges, & &1.start_line)
-
-    sorted
-    |> Enum.chunk_every(2, 1, :discard)
-    |> Enum.find_value(:ok, fn [prev, curr] ->
-      if prev.end_line >= curr.start_line do
-        {:error, {:overlap, prev.idx, curr.idx}}
-      end
-    end)
-  end
-
-  defp apply_matched_edits(file_lines, matched_ranges) do
-    # Sort in reverse start_line order to prevent index shifting
-    sorted_reverse = Enum.sort_by(matched_ranges, & &1.start_line, :desc)
-
-    Enum.reduce(sorted_reverse, file_lines, fn match, acc ->
-      aligned_replace =
-        align_indentation(match.orig_first, match.search_first, match.replace_lines)
-
-      replace_range(acc, match.start_line, match.end_line, aligned_replace)
-    end)
-  end
-
-  defp replace_range(file_lines, start_idx, end_idx, new_lines) do
-    before_lines = Enum.slice(file_lines, 0, start_idx)
-    after_start = end_idx + 1
-    after_lines = Enum.slice(file_lines, after_start..-1//1)
-    before_lines ++ new_lines ++ after_lines
-  end
-
-  # ---------------------------------------------------------------------------
-  # Indentation Alignment
-  # ---------------------------------------------------------------------------
-
-  defp align_indentation(orig_first, search_first, replace_lines) do
-    orig_indent = measure_indentation(orig_first || "")
-    search_indent = measure_indentation(search_first || "")
-
-    orig_len = String.length(orig_indent)
-    search_len = String.length(search_indent)
-    diff = orig_len - search_len
-
+  defp load_original(path, "create_file") do
     cond do
-      diff > 0 ->
-        spaces = String.duplicate(" ", diff)
+      File.dir?(path) ->
+        {:error, "target is a directory: #{Path.relative_to(path, PathSafety.workspace_root())}"}
 
-        Enum.map(replace_lines, fn line ->
-          if line == "", do: "", else: spaces <> line
-        end)
-
-      diff < 0 ->
-        Enum.map(replace_lines, fn line ->
-          strip_indentation(line, abs(diff))
-        end)
+      File.exists?(path) ->
+        read_existing_text(path)
 
       true ->
-        replace_lines
+        {:ok, nil}
     end
   end
 
-  defp measure_indentation(line) do
-    case Regex.run(~r/^\s+/, line) do
-      [indent] -> indent
-      nil -> ""
-    end
-  end
+  defp load_original(path, _operation), do: read_existing_text(path)
 
-  defp strip_indentation(line, count) do
-    case Regex.run(~r/^\s+/, line) do
-      [spaces] ->
-        strip_len = min(count, String.length(spaces))
-        String.slice(line, strip_len..-1//1)
+  defp read_existing_text(path) do
+    cond do
+      File.dir?(path) ->
+        {:error, "target is a directory: #{Path.relative_to(path, PathSafety.workspace_root())}"}
 
-      nil ->
-        line
-    end
-  end
+      not File.exists?(path) ->
+        {:error, "file does not exist: #{Path.relative_to(path, PathSafety.workspace_root())}"}
 
-  # ---------------------------------------------------------------------------
-  # Multi-Tiered Normalized Search
-  # ---------------------------------------------------------------------------
-
-  defp find_unique_match(file_lines, search_lines) do
-    # Tier 1: Exact lines match
-    t1_file = Enum.map(file_lines, &normalize_tier1/1)
-    t1_search = Enum.map(search_lines, &normalize_tier1/1)
-
-    case find_sublist_indices(t1_file, t1_search) do
-      [idx] ->
-        {:ok, idx}
-
-      indices when length(indices) > 1 ->
-        {:error, {:ambiguous, indices}}
-
-      [] ->
-        # Tier 2: Whitespace & quote normalized match
-        t2_file = Enum.map(file_lines, &normalize_tier2/1)
-        t2_search = Enum.map(search_lines, &normalize_tier2/1)
-
-        case find_sublist_indices(t2_file, t2_search) do
-          [idx] ->
-            {:ok, idx}
-
-          indices when length(indices) > 1 ->
-            {:error, {:ambiguous, indices}}
-
-          [] ->
-            # Tier 3: Comment insensitive match
-            t3_file = Enum.map(file_lines, &normalize_tier3/1)
-            t3_search = Enum.map(search_lines, &normalize_tier3/1)
-
-            case find_sublist_indices(t3_file, t3_search) do
-              [idx] ->
-                {:ok, idx}
-
-              indices when length(indices) > 1 ->
-                {:error, {:ambiguous, indices}}
-
-              [] ->
-                {:error, :not_found}
-            end
+      true ->
+        case File.read(path) do
+          {:ok, bytes} -> validate_text(bytes)
+          {:error, reason} -> {:error, "cannot read file: #{reason}"}
         end
     end
   end
 
-  defp find_sublist_indices(list, sublist) do
-    sublist_len = length(sublist)
+  defp validate_text(bytes) do
+    cond do
+      :binary.match(bytes, <<0>>) != :nomatch ->
+        {:error, "binary files are not supported"}
 
-    if sublist_len == 0 do
-      []
+      not String.valid?(bytes) ->
+        {:error, "file is not valid UTF-8 text"}
+
+      true ->
+        {:ok, bytes}
+    end
+  end
+
+  defp validate_expected_sha256(_original, nil), do: :ok
+  defp validate_expected_sha256(_original, ""), do: :ok
+
+  defp validate_expected_sha256(nil, _expected),
+    do: {:error, "expected_sha256 was provided but the target file does not exist"}
+
+  defp validate_expected_sha256(original, expected) do
+    actual = sha256(original)
+
+    if actual == expected do
+      :ok
     else
-      list
-      |> Stream.chunk_every(sublist_len, 1, :discard)
-      |> Stream.with_index()
-      |> Enum.filter(fn {chunk, _idx} -> chunk == sublist end)
-      |> Enum.map(fn {_, idx} -> idx end)
+      {:error, "checksum mismatch: expected #{expected}, current #{actual}"}
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Normalization Definitions
-  # ---------------------------------------------------------------------------
-
-  defp normalize_tier1(line), do: line
-
-  defp normalize_tier2(line) do
-    cleaned =
-      line
-      |> String.replace(
-        ~r/[\x{2018}\x{2019}\x{201A}\x{201B}\x{201C}\x{201D}\x{201E}\x{201F}]/u,
-        "'"
-      )
-      |> String.replace(~r/["`]/, "'")
-      |> String.replace(~r/,\s*$/, "")
-      |> String.trim()
-      |> String.replace(~r/\s+/, " ")
-
-    Regex.replace(~r/\s*([^\w\s])\s*/u, cleaned, fn _, char -> char end)
-  end
-
-  defp normalize_tier3(line) do
-    line
-    |> String.replace(~r/(\s+#|\s+\/\/|^#|^\/\/).*$/, "")
-    |> normalize_tier2()
-  end
-
-  # ---------------------------------------------------------------------------
-  # Utilities
-  # ---------------------------------------------------------------------------
-
-  defp strip_bom(<<0xEF, 0xBB, 0xBF, rest::binary>>), do: {true, rest}
-  defp strip_bom(content), do: {false, content}
-
-  defp detect_line_ending(content) do
-    case :binary.match(content, "\r\n") do
-      {_, _} -> :crlf
-      :nomatch -> :lf
+  defp build_plan(%{operation: "create_file"} = params, path, original) do
+    with {:ok, content} <- required_string(params.content, "content"),
+         :ok <- validate_create_overwrite(original, params.overwrite) do
+      plan(params, path, original, content, 0)
     end
+  end
+
+  defp build_plan(%{operation: "replace_exact"} = params, path, original) do
+    with {:ok, old} <- required_non_empty(params.old, "old"),
+         {:ok, new} <- required_string(params.new, "new"),
+         {:ok, match} <- resolve_occurrence(original, old, params.occurrence) do
+      {offset, length} = match.selected
+      content = binary_replace_at(original, offset, length, new)
+      plan(params, path, original, content, match.count)
+    end
+  end
+
+  defp build_plan(%{operation: operation} = params, path, original)
+       when operation in ["insert_before", "insert_after"] do
+    with {:ok, anchor} <- required_non_empty(params.anchor, "anchor"),
+         {:ok, content} <- required_string(params.content, "content"),
+         {:ok, match} <- resolve_occurrence(original, anchor, params.occurrence) do
+      {offset, length} = match.selected
+      insert_at = if operation == "insert_before", do: offset, else: offset + length
+      new_content = binary_insert_at(original, insert_at, content)
+      plan(params, path, original, new_content, match.count)
+    end
+  end
+
+  defp build_plan(%{operation: "replace_range"} = params, path, original) do
+    with {:ok, start_line} <- positive_integer(params.start_line, "start_line"),
+         {:ok, end_line} <- positive_integer(params.end_line, "end_line"),
+         {:ok, content} <- required_string(params.content, "content"),
+         {:ok, new_content} <- replace_line_range(original, start_line, end_line, content) do
+      plan(params, path, original, new_content, end_line - start_line + 1)
+    end
+  end
+
+  defp validate_create_overwrite(nil, _overwrite), do: :ok
+  defp validate_create_overwrite(_original, true), do: :ok
+
+  defp validate_create_overwrite(_original, _overwrite),
+    do: {:error, "file already exists; set overwrite=true to replace it"}
+
+  defp required_string(value, _field) when is_binary(value), do: {:ok, value}
+  defp required_string(_value, field), do: {:error, "#{field} must be a string"}
+
+  defp required_non_empty(value, field) when is_binary(value) do
+    if value == "", do: {:error, "#{field} must not be empty"}, else: {:ok, value}
+  end
+
+  defp required_non_empty(_value, field), do: {:error, "#{field} must be a non-empty string"}
+
+  defp positive_integer(value, _field) when is_integer(value) and value > 0, do: {:ok, value}
+
+  defp positive_integer(value, field) when is_binary(value) do
+    case Integer.parse(value) do
+      {integer, ""} when integer > 0 -> {:ok, integer}
+      _ -> {:error, "#{field} must be a positive integer"}
+    end
+  end
+
+  defp positive_integer(_value, field), do: {:error, "#{field} must be a positive integer"}
+
+  defp resolve_occurrence(content, needle, occurrence) do
+    matches = :binary.matches(content, needle)
+    count = length(matches)
+
+    cond do
+      count == 0 ->
+        {:error, "target text not found"}
+
+      occurrence in [nil, "only"] and count == 1 ->
+        {:ok, %{selected: hd(matches), count: count}}
+
+      occurrence in [nil, "only"] ->
+        {:error, "target text is ambiguous: #{count} occurrences found"}
+
+      true ->
+        with {:ok, index} <- positive_integer(occurrence, "occurrence") do
+          if index <= count do
+            {:ok, %{selected: Enum.at(matches, index - 1), count: count}}
+          else
+            {:error, "occurrence #{index} is out of range; #{count} occurrences found"}
+          end
+        end
+    end
+  end
+
+  defp replace_line_range(content, start_line, end_line, replacement) do
+    line_ending = detect_line_ending(content)
+    lines = split_logical_lines(content)
+    line_count = logical_line_count(lines)
+
+    cond do
+      start_line > end_line ->
+        {:error, "start_line must be less than or equal to end_line"}
+
+      line_count == 0 ->
+        {:error, "cannot replace a line range in an empty file"}
+
+      start_line > line_count or end_line > line_count ->
+        {:error, "line range #{start_line}-#{end_line} is outside file with #{line_count} lines"}
+
+      true ->
+        replacement_lines = replacement |> trim_one_trailing_newline() |> split_logical_lines()
+        before_lines = Enum.slice(lines, 0, start_line - 1)
+        after_lines = Enum.slice(lines, end_line, length(lines) - end_line)
+        {:ok, Enum.join(before_lines ++ replacement_lines ++ after_lines, line_ending)}
+    end
+  end
+
+  defp split_logical_lines(""), do: []
+  defp split_logical_lines(content), do: Regex.split(~r/\r\n|\n|\r/, content, trim: false)
+
+  defp logical_line_count([]), do: 0
+
+  defp logical_line_count(lines) do
+    if List.last(lines) == "", do: length(lines) - 1, else: length(lines)
+  end
+
+  defp trim_one_trailing_newline(content) do
+    cond do
+      String.ends_with?(content, "\r\n") -> String.slice(content, 0, byte_size(content) - 2)
+      String.ends_with?(content, "\n") -> String.slice(content, 0, byte_size(content) - 1)
+      String.ends_with?(content, "\r") -> String.slice(content, 0, byte_size(content) - 1)
+      true -> content
+    end
+  end
+
+  defp plan(params, path, original, content, matched_count) do
+    relative_path = Path.relative_to(path, PathSafety.workspace_root())
+    original_content = original || ""
+
+    {:ok,
+     %{
+       operation: params.operation,
+       path: path,
+       relative_path: relative_path,
+       original: original_content,
+       content: content,
+       existed?: not is_nil(original),
+       matched_count: matched_count,
+       bytes_before: byte_size(original_content),
+       bytes_after: byte_size(content),
+       sha256_before: sha256(original_content),
+       sha256_after: sha256(content),
+       dry_run: params.dry_run
+     }}
+  end
+
+  defp validate_changed(%{existed?: false}), do: :ok
+
+  defp validate_changed(%{original: original, content: content}) do
+    if original == content do
+      {:error, "operation would not change the file"}
+    else
+      :ok
+    end
+  end
+
+  defp verify_plan(%{content: content}) do
+    case validate_text(content) do
+      {:ok, _content} -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp maybe_write(plan, true),
+    do: success_result(plan, "Dry-run succeeded; file would be modified.")
+
+  defp maybe_write(plan, false) do
+    with :ok <- File.mkdir_p(Path.dirname(plan.path)),
+         :ok <- atomic_write(plan.path, plan.content),
+         {:ok, reread} <- File.read(plan.path),
+         :ok <- verify_written_content(plan, reread) do
+      success_result(plan, "File modified successfully.")
+    else
+      {:error, reason} ->
+        restore_original(plan)
+
+        error_result(
+          plan.operation,
+          plan.relative_path,
+          "write verification failed: #{reason}",
+          plan
+        )
+    end
+  end
+
+  defp verify_written_content(plan, reread) do
+    cond do
+      reread != plan.content ->
+        {:error, "reread content does not match planned content"}
+
+      sha256(reread) != plan.sha256_after ->
+        {:error, "reread checksum does not match planned checksum"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp restore_original(%{operation: "create_file", existed?: false, path: path}) do
+    File.rm(path)
+    :ok
+  end
+
+  defp restore_original(%{path: path, original: original}) do
+    File.write(path, original)
+    :ok
   end
 
   defp atomic_write(path, content) do
-    tmp = "#{path}.tmp.#{System.unique_integer([:positive])}"
-
-    with :ok <- File.write(tmp, content),
-         :ok <- File.rename(tmp, path) do
-      :ok
-    else
-      {:error, reason} ->
-        File.rm(tmp)
-        {:error, reason}
-    end
-  end
-
-  defp generate_diff(path, old_content, new_content) do
-    tmp_old = Path.join(System.tmp_dir!(), "diff_old_#{System.unique_integer([:positive])}")
-    tmp_new = Path.join(System.tmp_dir!(), "diff_new_#{System.unique_integer([:positive])}")
-
-    File.write!(tmp_old, old_content)
-    File.write!(tmp_new, new_content)
+    tmp =
+      Path.join(
+        Path.dirname(path),
+        ".#{Path.basename(path)}.tmp.#{System.unique_integer([:positive])}"
+      )
 
     try do
-      case System.cmd("diff", [
-             "-u",
-             "--label",
-             "a/#{path}",
-             "--label",
-             "b/#{path}",
-             tmp_old,
-             tmp_new
-           ]) do
-        {diff_out, _status} -> diff_out
+      with :ok <- File.write(tmp, content),
+           :ok <- File.rename(tmp, path) do
+        :ok
       end
-    rescue
-      _ -> ""
     after
-      File.rm(tmp_old)
-      File.rm(tmp_new)
+      File.rm(tmp)
     end
   end
 
-  defp sanitize_obfuscated_emails(content) when is_binary(content) do
-    String.replace(content, ~r/\[email[\s\x{00A0}]*protected\]/iu, "$@")
+  defp success_result(plan, summary) do
+    %{
+      "ok" => true,
+      "changed" => true,
+      "operation" => plan.operation,
+      "path" => plan.relative_path,
+      "summary" => summary,
+      "bytes_before" => plan.bytes_before,
+      "bytes_after" => plan.bytes_after,
+      "sha256_before" => plan.sha256_before,
+      "sha256_after" => plan.sha256_after,
+      "matched_occurrences" => plan.matched_count,
+      "diff" => compact_diff(plan.relative_path, plan.original, plan.content)
+    }
   end
 
-  # ---------------------------------------------------------------------------
-  # Fuzzy Diagnostics
-  # ---------------------------------------------------------------------------
+  defp error_result(operation, path, reason, plan \\ nil) do
+    result = %{
+      "ok" => false,
+      "changed" => false,
+      "operation" => operation,
+      "path" => path,
+      "summary" => reason
+    }
 
-  defp report_not_found_diagnostic(content, search_string, idx, line_ending) do
-    le = if line_ending == :crlf, do: "\r\n", else: "\n"
-    file_lines = String.split(content, le)
-    search_lines = search_string |> String.replace("\r\n", "\n") |> String.split("\n")
-    total = length(file_lines)
-
-    case find_best_fuzzy_match(file_lines, search_lines) do
-      {:ok, best_idx, k, best_sim} ->
-        preview_start = max(0, best_idx - 3)
-        preview_end = min(total - 1, best_idx + k + 2)
-
-        similar_lines =
-          file_lines
-          |> Enum.with_index(1)
-          |> Enum.slice(preview_start, preview_end - preview_start + 1)
-          |> Enum.map(fn {line, num} ->
-            prefix =
-              if num >= best_idx + 1 and num <= best_idx + k,
-                do: "=> #{num}: ",
-                else: "   #{num}: "
-
-            prefix <> line
-          end)
-          |> Enum.join("\n")
-
-        "Error: Search block at edits[#{idx}] not found in file.\n\nDid you mean the block at lines #{best_idx + 1}-#{best_idx + k} (similarity: #{Float.round(best_sim * 100, 1)}%)?\n#{similar_lines}"
-
-      :error ->
-        preview_lines =
-          file_lines
-          |> Enum.with_index(1)
-          |> Enum.take(30)
-          |> Enum.map(fn {line, num} -> "  #{num}: #{line}" end)
-          |> Enum.join("\n")
-
-        "Error: Search block at edits[#{idx}] not found in file.\n\nFile preview (first 30 lines):\n#{preview_lines}"
-    end
-  end
-
-  defp find_best_fuzzy_match(file_lines, search_lines) do
-    k = length(search_lines)
-    total = length(file_lines)
-
-    if total >= k and k > 0 do
-      # Normalize search lines for comparison
-      normalized_search = Enum.map(search_lines, &normalize_tier2/1)
-
-      {best_idx, best_sim} =
-        Enum.reduce(0..(total - k), {-1, 0.0}, fn i, {best_i, best_s} ->
-          sub = Enum.slice(file_lines, i, k) |> Enum.map(&normalize_tier2/1)
-
-          sim =
-            Enum.zip(sub, normalized_search)
-            |> Enum.map(fn {fl, ol} -> String.jaro_distance(fl, ol) end)
-            |> Enum.sum()
-            |> Kernel./(k)
-
-          if sim > best_s, do: {i, sim}, else: {best_i, best_s}
-        end)
-
-      if best_sim > 0.4, do: {:ok, best_idx, k, best_sim}, else: :error
+    if plan do
+      Map.merge(result, %{
+        "bytes_before" => plan.bytes_before,
+        "bytes_after" => plan.bytes_before,
+        "sha256_before" => plan.sha256_before,
+        "sha256_after" => plan.sha256_before,
+        "matched_occurrences" => plan.matched_count
+      })
     else
-      :error
+      result
+    end
+  end
+
+  defp binary_replace_at(content, offset, length, replacement) do
+    binary_part(content, 0, offset) <>
+      replacement <> binary_part(content, offset + length, byte_size(content) - offset - length)
+  end
+
+  defp binary_insert_at(content, offset, insertion) do
+    binary_part(content, 0, offset) <>
+      insertion <> binary_part(content, offset, byte_size(content) - offset)
+  end
+
+  defp sha256(content), do: :crypto.hash(:sha256, content) |> Base.encode16(case: :lower)
+
+  defp detect_line_ending(content) do
+    cond do
+      :binary.match(content, "\r\n") != :nomatch -> "\r\n"
+      :binary.match(content, "\r") != :nomatch -> "\r"
+      true -> "\n"
+    end
+  end
+
+  defp compact_diff(path, old_content, new_content) do
+    old_lines = String.split(old_content, "\n", trim: false)
+    new_lines = String.split(new_content, "\n", trim: false)
+
+    case first_difference(old_lines, new_lines) do
+      nil ->
+        ""
+
+      first ->
+        old_last = last_changed_index(old_lines, new_lines)
+        new_last = last_changed_index(new_lines, old_lines)
+        old_start = max(first - @diff_context, 0)
+        new_start = max(first - @diff_context, 0)
+        old_stop = min(old_last + @diff_context, length(old_lines) - 1)
+        new_stop = min(new_last + @diff_context, length(new_lines) - 1)
+
+        [
+          "--- a/#{path}",
+          "+++ b/#{path}",
+          "@@ -#{old_start + 1},#{old_stop - old_start + 1} +#{new_start + 1},#{new_stop - new_start + 1} @@"
+          | diff_lines(old_lines, new_lines, old_start, old_stop, new_start, new_stop)
+        ]
+        |> Enum.join("\n")
+        |> truncate_diff()
+    end
+  end
+
+  defp first_difference(old_lines, new_lines) do
+    max_len = max(length(old_lines), length(new_lines))
+
+    Enum.find(0..max(max_len - 1, 0), fn index ->
+      Enum.at(old_lines, index) != Enum.at(new_lines, index)
+    end)
+  end
+
+  defp last_changed_index(lines, other_lines) do
+    max_len = max(length(lines), length(other_lines))
+
+    Enum.find(max(max_len - 1, 0)..0//-1, 0, fn index ->
+      Enum.at(lines, index) != Enum.at(other_lines, index)
+    end)
+  end
+
+  defp diff_lines(old_lines, new_lines, old_start, old_stop, new_start, new_stop) do
+    old_window = Enum.slice(old_lines, old_start, old_stop - old_start + 1)
+    new_window = Enum.slice(new_lines, new_start, new_stop - new_start + 1)
+
+    common_prefix =
+      old_window
+      |> Enum.zip(new_window)
+      |> Enum.take_while(fn {old, new} -> old == new end)
+      |> Enum.map(fn {line, _} -> " " <> line end)
+
+    removed = Enum.drop(old_window, length(common_prefix)) |> Enum.map(&("-" <> &1))
+    added = Enum.drop(new_window, length(common_prefix)) |> Enum.map(&("+" <> &1))
+    common_prefix ++ removed ++ added
+  end
+
+  defp truncate_diff(diff) do
+    if byte_size(diff) > @max_diff_bytes do
+      String.slice(diff, 0, @max_diff_bytes) <> "\n... (diff truncated)"
+    else
+      diff
     end
   end
 end

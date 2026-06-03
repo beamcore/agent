@@ -28,19 +28,7 @@ defmodule Beamcore.Agent.Chat.API do
       else
         tools = tools || []
 
-        # Custom retry config for bad_request errors: 3 retries, 5s delay
-        retry_config = %Config{
-          max_retries: 3,
-          initial_backoff: 5000,
-          max_backoff: 5000,
-          backoff_multiplier: 1,
-          retryable_errors: [
-            :rate_limit,
-            :api_timeout_error,
-            :api_connection_error,
-            :internal_server_error
-          ]
-        }
+        retry_config = Keyword.get(opts, :retry_config) || retry_config()
 
         Beamcore.RateLimiter.wait()
 
@@ -90,6 +78,21 @@ defmodule Beamcore.Agent.Chat.API do
         )
       end
     end
+  end
+
+  defp retry_config do
+    %Config{
+      max_retries: 3,
+      initial_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
+      max_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
+      backoff_multiplier: 1,
+      retryable_errors: [
+        :rate_limit,
+        :api_timeout_error,
+        :api_connection_error,
+        :internal_server_error
+      ]
+    }
   end
 
   defp format_response(

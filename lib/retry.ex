@@ -24,7 +24,8 @@ defmodule Beamcore.Retry do
       :initial_backoff,
       :max_backoff,
       :backoff_multiplier,
-      :retryable_errors
+      :retryable_errors,
+      :sleep_fun
     ]
 
     @type t :: %__MODULE__{}
@@ -35,7 +36,8 @@ defmodule Beamcore.Retry do
         initial_backoff: Beamcore.Retry.default_initial_backoff(),
         max_backoff: Beamcore.Retry.default_max_backoff(),
         backoff_multiplier: Beamcore.Retry.default_backoff_multiplier(),
-        retryable_errors: Beamcore.Retry.default_retryable_errors()
+        retryable_errors: Beamcore.Retry.default_retryable_errors(),
+        sleep_fun: &Process.sleep/1
       }
     end
   end
@@ -62,7 +64,7 @@ defmodule Beamcore.Retry do
   end
 
   defp execute_with_attempt(func, config, attempt, backoff) do
-    if attempt > 0, do: Process.sleep(1000)
+    if attempt > 0, do: sleep(config, 1000)
 
     case func.() do
       {:ok, result} ->
@@ -86,15 +88,9 @@ defmodule Beamcore.Retry do
 
         if error.kind in config.retryable_errors do
           # Use longer backoff for timeout errors
-          current_backoff =
-            if error.kind == :api_timeout_error do
-              # Start with 2x initial backoff for timeouts
-              max(backoff * 2, config.initial_backoff * 2)
-            else
-              backoff
-            end
+          current_backoff = retry_backoff(error, config, backoff)
 
-          Process.sleep(current_backoff)
+          sleep(config, current_backoff)
           new_backoff = min(config.max_backoff, current_backoff * config.backoff_multiplier)
           execute_with_attempt(func, config, attempt + 1, new_backoff)
         else
@@ -105,5 +101,24 @@ defmodule Beamcore.Retry do
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  defp retry_backoff(%OpenaiEx.Error{kind: :rate_limit} = error, config, backoff) do
+    error
+    |> Beamcore.Agent.Chat.RateLimit.retry_after_ms()
+    |> case do
+      wait_ms when is_integer(wait_ms) and wait_ms > 0 -> min(wait_ms, config.max_backoff)
+      _ -> backoff
+    end
+  end
+
+  defp retry_backoff(%OpenaiEx.Error{kind: :api_timeout_error}, config, backoff),
+    do: max(backoff * 2, config.initial_backoff * 2)
+
+  defp retry_backoff(_error, _config, backoff), do: backoff
+
+  defp sleep(config, milliseconds) do
+    sleep_fun = Map.get(config, :sleep_fun) || (&Process.sleep/1)
+    sleep_fun.(milliseconds)
   end
 end

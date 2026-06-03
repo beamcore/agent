@@ -39,7 +39,7 @@ defmodule Beamcore.Agent.OpenAITest do
       client = OpenAI.client()
 
       assert client.token == "test-api-key"
-      assert client.base_url == "https://codestral.mistral.ai/v1"
+      assert client.base_url == "https://api.mistral.ai/v1"
     end)
   end
 
@@ -69,6 +69,40 @@ defmodule Beamcore.Agent.OpenAITest do
     TestEnv.with_env(%{"MISTRAL_API_KEY" => "env-token", "MISTRAL_BASE_URL" => nil}, fn ->
       assert :ok = Beamcore.Config.put_mistral_api_key("stored-token")
       assert OpenAI.client().token == "env-token"
+    end)
+  end
+
+  test "auth diagnostics report source metadata without token values" do
+    TestEnv.with_env(%{"MISTRAL_API_KEY" => nil, "MISTRAL_BASE_URL" => nil}, fn ->
+      assert :ok = Beamcore.Config.put_mistral_api_key("stored-token")
+
+      diagnostics = OpenAI.auth_diagnostics()
+
+      assert diagnostics.env_token_present? == false
+      assert diagnostics.config_token_present? == true
+      assert diagnostics.selected_token_source == :config
+      assert diagnostics.selected_token_length == String.length("stored-token")
+      assert diagnostics.base_url == "https://api.mistral.ai/v1"
+      assert diagnostics.model == Beamcore.Agent.Chat.API.default_model()
+      assert diagnostics.auth_header_present? == true
+      assert diagnostics.auth_header_scheme == "Bearer"
+      assert diagnostics.config_dets_mode == "600"
+      refute inspect(diagnostics) =~ "stored-token"
+    end)
+  end
+
+  test "auth diagnostics show env override explicitly" do
+    TestEnv.with_env(%{"MISTRAL_API_KEY" => "env-token", "MISTRAL_BASE_URL" => nil}, fn ->
+      assert :ok = Beamcore.Config.put_mistral_api_key("stored-token")
+
+      diagnostics = OpenAI.auth_diagnostics()
+
+      assert diagnostics.env_token_present?
+      assert diagnostics.config_token_present?
+      assert diagnostics.selected_token_source == :env
+      assert diagnostics.selected_token_length == String.length("env-token")
+      refute inspect(diagnostics) =~ "env-token"
+      refute inspect(diagnostics) =~ "stored-token"
     end)
   end
 

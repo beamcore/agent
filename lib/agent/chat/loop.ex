@@ -83,7 +83,7 @@ defmodule Beamcore.Agent.Chat.Loop do
         session =
           case Commands.store_login_token(input) do
             :ok ->
-              IO.puts("Beamcore login saved.")
+              IO.puts(Commands.login_saved_message())
               %{session | client: Beamcore.OpenAI.client()}
 
             {:error, :empty_value} ->
@@ -224,7 +224,8 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> inject_policy_message(policy, tools)
 
     case API.execute(session.client, api_messages, tools, :main,
-           silent: Keyword.get(opts, :silent, false)
+           silent: Keyword.get(opts, :silent, false),
+           retry_config: Keyword.get(opts, :retry_config)
          ) do
       {:ok, %{message: message, raw_response: raw_response}} ->
         Session.log(session, Session.compact_raw_response(raw_response))
@@ -327,9 +328,10 @@ defmodule Beamcore.Agent.Chat.Loop do
           end
         end
 
-      {:error, %OpenaiEx.Error{kind: :rate_limit}} ->
-        maybe_print(opts, &Pretty.print_rate_limit_error/0)
-        emit(opts, {:error, "Rate limit exceeded, please wait and try again"})
+      {:error, %OpenaiEx.Error{kind: :rate_limit} = error} ->
+        message = Beamcore.Agent.Chat.RateLimit.message(error)
+        maybe_print(opts, fn -> Pretty.print_rate_limit_error(error) end)
+        emit(opts, {:error, message})
         emit(opts, {:status, :error})
         session
 

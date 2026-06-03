@@ -81,6 +81,14 @@ defmodule Beamcore.Agent.Chat.Commands do
   def store_login_token(token) when is_binary(token),
     do: Beamcore.Config.put_mistral_api_key(token)
 
+  def login_saved_message do
+    if Beamcore.OpenAI.env_api_key_present?() do
+      "Beamcore login saved.\nWarning: MISTRAL_API_KEY is set in this process and will override the stored login until it is unset."
+    else
+      "Beamcore login saved."
+    end
+  end
+
   defp handle_login_prompt(session, output) do
     output.(
       "Paste your Mistral API key. It will be securely hashed and stored locally in ~/.beamcore/config.dets."
@@ -92,7 +100,7 @@ defmodule Beamcore.Agent.Chat.Commands do
   defp handle_login_token(token, session, output) do
     case store_login_token(token) do
       :ok ->
-        output.("Beamcore login saved.")
+        output.(login_saved_message())
         %{session | client: Beamcore.OpenAI.client()}
 
       {:error, :empty_value} ->

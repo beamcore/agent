@@ -72,8 +72,16 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
 
   test "file tools resolve inside the configured workspace", %{root: root} do
     with_workspace(root, fn ->
-      assert Modify.execute(%{"filePath" => "src/demo.txt", "content" => "hello\n"}) =~
-               Path.join(root, "src/demo.txt")
+      result =
+        Modify.execute(%{
+          "operation" => "create_file",
+          "filePath" => "src/demo.txt",
+          "content" => "hello\n"
+        })
+        |> Jason.decode!()
+
+      assert result["ok"]
+      assert result["path"] == "src/demo.txt"
 
       assert File.read!(Path.join(root, "src/demo.txt")) == "hello\n"
       assert Read.execute(%{"filePath" => "src/demo.txt"}) =~ "hello"
@@ -85,8 +93,10 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     File.write!(Path.join(root, "Makefile"), "test:\n\t@echo testing\n")
 
     parent = self()
+
     with_workspace(root, fn ->
       previous = Application.get_env(:agent, :command_runner)
+
       Application.put_env(:agent, :command_runner, fn exe, args, _opts ->
         send(parent, {:called, exe, args})
         {"ok", 0}
