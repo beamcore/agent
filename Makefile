@@ -1,34 +1,65 @@
-.PHONY: all install clean uninstall chat init config-status format dialyzer shell update run-ledger run-memory release deps compile
+# Beamcore Agent — Makefile
+# Run `make` or `make help` to see available commands.
 
-INSTALL_DIR ?= $(HOME)/.beamcore/app
-BIN_DIR ?= $(HOME)/.local/bin
-LAUNCHER ?= $(BIN_DIR)/beamcore
-CONFIG_DIR ?= $(HOME)/.beamcore
+.DEFAULT_GOAL := help
 
-PATH_UPDATE ?= 0
+# ==============================================================================
+# Configuration
+# ==============================================================================
+
+INSTALL_DIR  ?= $(HOME)/.beamcore/app
+BIN_DIR      ?= $(HOME)/.local/bin
+LAUNCHER     ?= $(BIN_DIR)/beamcore
+CONFIG_DIR   ?= $(HOME)/.beamcore
+RELEASE_NAME ?= agent
+RELEASE_DIR   = _build/prod/rel/$(RELEASE_NAME)
+
 VERBOSE ?= 0
 DRY_RUN ?= 0
 
 LOAD_ENV = set -a; [ ! -f .env ] || . ./.env; set +a;
 
+.PHONY: all help
+.PHONY: install install-dev uninstall
+.PHONY: deps compile release test format format-check dialyzer check check-full
+.PHONY: chat chat-plain shell run-ledger run-memory
+.PHONY: dev-setup init config-status version clean update
+
 all: compile
 
-# Install Beamcore globally via release.
-# After install:
-#   beamcore        -> interactive TUI chat
-#   beamcore start  -> raw OTP release background start
-#   beamcore stop   -> stop release
-#   beamcore remote -> attach to release
+# ==============================================================================
+# Installation
+# ==============================================================================
+
+## install: Download and install pre-built release (no Elixir required)
 install:
 ifeq ($(DRY_RUN),1)
-	@echo "==> DRY RUN: make install"
-	@echo "Would build Beamcore release"
+	@echo "==> DRY RUN: would run install.sh"; \
+	 echo "    BEAMCORE_INSTALL_DIR=$(INSTALL_DIR)"; \
+	 echo "    BEAMCORE_BIN_DIR=$(BIN_DIR)"; \
+	 echo "    BEAMCORE_CONFIG_DIR=$(CONFIG_DIR)"; \
+	 echo "    BEAMCORE_VERSION=$${BEAMCORE_VERSION:-latest}"
+else
+	@BEAMCORE_INSTALL_DIR="$(INSTALL_DIR)" \
+	 BEAMCORE_BIN_DIR="$(BIN_DIR)" \
+	 BEAMCORE_CONFIG_DIR="$(CONFIG_DIR)" \
+	 sh "$(CURDIR)/install.sh"
+endif
+
+## install-dev: Build from source and install locally (requires Elixir)
+install-dev:
+ifeq ($(DRY_RUN),1)
+	@echo "==> DRY RUN: make install-dev"
+	@echo "Would build Beamcore release from source"
 	@echo "Would install app to:      $(INSTALL_DIR)"
 	@echo "Would install launcher to: $(LAUNCHER)"
 	@echo "Would ensure config dir:   $(CONFIG_DIR)"
 else
-	@echo "==> Building Beamcore release"; \
+	@command -v elixir >/dev/null 2>&1 || { echo "error: elixir is not installed"; echo "Install Elixir: https://elixir-lang.org/install.html"; exit 1; }
+	@command -v mix >/dev/null 2>&1 || { echo "error: mix is not installed"; exit 1; }
+	@echo "==> Building Beamcore release from source"; \
 	if [ "$(VERBOSE)" = "1" ]; then \
+		set -eu; \
 		mix deps.get && mix compile && MIX_ENV=prod mix release --overwrite; \
 	else \
 		log_file=$$(mktemp "$${TMPDIR:-/tmp}/beamcore-release.XXXXXX"); \
@@ -46,75 +77,44 @@ else
 	@echo "==> Installing Beamcore"
 	@echo "app:      $(INSTALL_DIR)"
 	@echo "launcher: $(LAUNCHER)"
-	@rm -rf "$(INSTALL_DIR)"; \
-	mkdir -p "$(INSTALL_DIR)"; \
-	cp -a _build/prod/rel/agent/. "$(INSTALL_DIR)/"; \
+	@set -eu; \
+	if [ -z "$(INSTALL_DIR)" ] || [ "$(INSTALL_DIR)" = "/" ]; then \
+		echo "error: INSTALL_DIR is empty or root — refusing to proceed"; exit 1; \
+	fi; \
+	if [ -d "$(INSTALL_DIR)" ]; then \
+		backup="$(INSTALL_DIR).backup.$$$$"; \
+		mv "$(INSTALL_DIR)" "$$backup"; \
+	fi; \
+	mkdir -p "$(INSTALL_DIR)" && \
+	cp -a $(RELEASE_DIR)/. "$(INSTALL_DIR)/" && \
+	rm -rf "$${backup:-}" || { \
+		[ -n "$${backup:-}" ] && [ -d "$${backup:-}" ] && mv "$$backup" "$(INSTALL_DIR)"; \
+		echo "error: installation failed — previous install restored"; exit 1; \
+	}; \
 	mkdir -p "$(BIN_DIR)"; \
-	printf '%s\n%s\n%s\n%s\n%s\n' \
+	printf '%s\n' \
 		'#!/bin/sh' \
-		'if [ "$$#" -eq 0 ]; then' \
-		'  exec "$(INSTALL_DIR)/bin/agent" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
+		'set -eu' \
+		'BEAMCORE_APP="$${BEAMCORE_INSTALL_DIR:-$(INSTALL_DIR)}"' \
+		'AGENT_BIN="$$BEAMCORE_APP/bin/agent"' \
+		'' \
+		'if [ ! -x "$$AGENT_BIN" ]; then' \
+		'  printf "error: Beamcore not installed at %s\n" "$$BEAMCORE_APP" >&2' \
+		'  exit 1' \
 		'fi' \
-		'exec "$(INSTALL_DIR)/bin/agent" "$$@"' > "$(LAUNCHER)"; \
+		'' \
+		'if [ "$$#" -eq 0 ]; then' \
+		'  exec "$$AGENT_BIN" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
+		'fi' \
+		'exec "$$AGENT_BIN" "$$@"' > "$(LAUNCHER)"; \
 	chmod +x "$(LAUNCHER)"; \
 	echo "✓ Installed"
 	@echo ""
 	@$(MAKE) --no-print-directory init
-	@echo ""
-	@echo "==> Launcher"
-	@printf '%-17s %s\n' "beamcore" "open interactive TUI chat"
-	@printf '%-17s %s\n' "beamcore start" "start OTP release in background"
-	@printf '%-17s %s\n' "beamcore stop" "stop OTP release"
-	@printf '%-17s %s\n' "beamcore remote" "attach to running release"
-	@echo ""
-	@echo "==> PATH"
-	@rc_file="$(HOME)/.profile"; \
-	user_shell="$${SHELL:-$(SHELL)}"; \
-	case "$$user_shell" in \
-		*zsh*) rc_file="$(HOME)/.zshrc" ;; \
-		*bash*) rc_file="$(HOME)/.bashrc" ;; \
-	esac; \
-	path_line='export PATH="$(BIN_DIR):$$PATH"'; \
-	case ":$$PATH:" in \
-		*:"$(BIN_DIR)":*) \
-			echo "✓ $(BIN_DIR) is in PATH"; \
-			echo "Run: beamcore"; \
-			;; \
-		*) \
-			echo "⚠ beamcore is not available in this terminal yet"; \
-			echo "$(BIN_DIR) is not in PATH"; \
-			echo ""; \
-			if [ "$(PATH_UPDATE)" = "1" ]; then \
-				if [ -f "$$rc_file" ] && grep -F "$(BIN_DIR)" "$$rc_file" >/dev/null 2>&1; then \
-					echo "$$rc_file already mentions $(BIN_DIR); not appending."; \
-				else \
-					printf '\n%s\n' "$$path_line" >> "$$rc_file"; \
-					echo "Added $(BIN_DIR) to $$rc_file"; \
-				fi; \
-				echo "For this terminal, run: source $$rc_file"; \
-				echo "Or open a new terminal."; \
-			else \
-				echo "Use it now:"; \
-				echo "  export PATH=\"$(BIN_DIR):\$$PATH\""; \
-				echo "  beamcore"; \
-				echo ""; \
-				echo "Make it permanent:"; \
-				echo "  echo '$$path_line' >> $$rc_file"; \
-				echo "  source $$rc_file"; \
-				echo ""; \
-				echo "Or run directly:"; \
-				echo "  $(LAUNCHER)"; \
-				echo ""; \
-				echo "Opt in to updating shell config during install:"; \
-				echo "  make install PATH_UPDATE=1"; \
-			fi; \
-			;; \
-	esac
 	@$(MAKE) --no-print-directory config-status
 endif
 
-# Uninstall Beamcore app and launcher.
-# User config directory is intentionally preserved.
+## uninstall: Remove installed app and launcher (preserves config)
 uninstall:
 	@echo "==> Uninstalling Beamcore"
 	@rm -rf "$(INSTALL_DIR)"
@@ -124,72 +124,152 @@ uninstall:
 	@echo "kept config dir:  $(CONFIG_DIR)"
 	@echo "✓ Uninstalled"
 
-# Build the release.
-release: deps compile
-	MIX_ENV=prod mix release --overwrite
+# ==============================================================================
+# Development
+# ==============================================================================
 
+## deps: Install Mix dependencies
 deps:
 	mix deps.get
 
+## compile: Compile the project
 compile:
 	mix compile
 
-# Start the agent application and chat in development mode.
-# Loads local .env from the repository if present.
-chat: compile
-	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
+## release: Build a prod release
+release: deps compile
+	MIX_ENV=prod mix release --overwrite
 
-# Create global Beamcore config directory.
-init: .env.example
-	@echo "==> Configuring Beamcore"
-	@if [ -d "$(CONFIG_DIR)" ]; then \
-		echo "Config directory $(CONFIG_DIR) already exists."; \
-	else \
-		mkdir -p "$(CONFIG_DIR)"; \
-		echo "Created config directory: $(CONFIG_DIR)"; \
-	fi
+## test: Run ExUnit tests
+test:
+	mix test
 
-config-status:
-	@echo ""
-	@echo "==> Config"
-	@if [ ! -d "$(CONFIG_DIR)" ]; then \
-		echo "⚠ Beamcore config directory is missing: $(CONFIG_DIR)"; \
-		echo ""; \
-		echo "Create it with:"; \
-		echo "  make init"; \
-	else \
-		echo "✓ Config directory: $(CONFIG_DIR)"; \
-	fi
-
-.env.example:
-	printf "MISTRAL_API_KEY=\nMISTRAL_BASE_URL=https://api.mistral.ai/v1\nBEAMCORE_IMAGE_PROVIDER=mistral\nMISTRAL_IMAGE_MODEL=mistral-medium-latest\nMISTRAL_IMAGE_AGENT_ID=\n" > .env.example
-
-# Format code.
+## format: Format source code
 format:
 	mix format
 
-# Run dialyzer.
+## format-check: Verify formatting (no changes)
+format-check:
+	mix format --check-formatted
+
+## dialyzer: Run Dialyzer static analysis
 dialyzer:
 	mix dialyzer
 
-# Start interactive shell.
+## check: Quick validation (format + compile warnings + test)
+check: format-check
+	mix compile --warnings-as-errors
+	mix test
+
+## check-full: Full validation including Dialyzer
+check-full: check dialyzer
+
+## shell: Start interactive IEx shell
 shell: compile
 	iex -S mix
 
-# Clean build artifacts.
-clean:
-	rm -rf _build
-	mix clean
-
-# Update dependencies.
+## update: Update all dependencies
 update:
 	mix deps.update --all
 	mix deps.compile
 
-# Run the ledger service standalone as a globally registered cluster member.
-run-ledger: compile
-	LEDGER_GLOBAL=true elixir --sname ledger -S mix run --no-halt
+## clean: Remove build artifacts
+clean:
+	rm -rf _build
+	mix clean
 
-# Run the memory service standalone as a globally registered cluster member.
+# ==============================================================================
+# Running
+# ==============================================================================
+
+## chat: Start the TUI chat (dev mode)
+chat: compile
+	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
+
+## chat-plain: Start the plain fallback chat (dev mode)
+chat-plain: compile
+	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
+
+## run-ledger: Run ledger service standalone (cluster member)
+run-ledger: compile
+	$(LOAD_ENV) LEDGER_GLOBAL=true elixir --sname ledger -S mix run --no-halt
+
+## run-memory: Run memory service standalone (cluster member)
 run-memory: compile
-	MEMORY_GLOBAL=true elixir --sname memory -S mix run --no-halt
+	$(LOAD_ENV) MEMORY_GLOBAL=true elixir --sname memory -S mix run --no-halt
+
+# ==============================================================================
+# Setup & Config
+# ==============================================================================
+
+## dev-setup: One-shot development environment setup
+dev-setup: deps compile init
+	@echo ""
+	@echo "✓ Development environment ready"
+	@echo "  Run: make chat"
+
+## init: Create Beamcore config directory
+init:
+	@if [ -d "$(CONFIG_DIR)" ]; then \
+		echo "✓ Config directory: $(CONFIG_DIR)"; \
+	else \
+		mkdir -p "$(CONFIG_DIR)"; \
+		echo "✓ Created config directory: $(CONFIG_DIR)"; \
+	fi
+
+## config-status: Show configuration status
+config-status:
+	@echo ""
+	@echo "==> Config"
+	@if [ ! -d "$(CONFIG_DIR)" ]; then \
+		echo "⚠ Config directory missing: $(CONFIG_DIR)"; \
+		echo "  Run: make init"; \
+	else \
+		echo "✓ Config directory: $(CONFIG_DIR)"; \
+	fi
+
+## version: Print current version
+version:
+	@mix run --no-start -e 'IO.puts(Mix.Project.config()[:version])'
+
+# ==============================================================================
+# Help
+# ==============================================================================
+
+## help: Show this help
+help:
+	@echo ""
+	@echo "  \033[1mBeamcore Agent\033[0m"
+	@echo ""
+	@echo "  \033[1mInstallation:\033[0m"
+	@printf "    \033[36m%-16s\033[0m %s\n" "install" "Download and install pre-built release (no Elixir needed)"
+	@printf "    \033[36m%-16s\033[0m %s\n" "install-dev" "Build from source and install (requires Elixir)"
+	@printf "    \033[36m%-16s\033[0m %s\n" "uninstall" "Remove installed app and launcher"
+	@echo ""
+	@echo "  \033[1mDevelopment:\033[0m"
+	@printf "    \033[36m%-16s\033[0m %s\n" "deps" "Install dependencies"
+	@printf "    \033[36m%-16s\033[0m %s\n" "compile" "Compile the project"
+	@printf "    \033[36m%-16s\033[0m %s\n" "test" "Run tests"
+	@printf "    \033[36m%-16s\033[0m %s\n" "format" "Format source code"
+	@printf "    \033[36m%-16s\033[0m %s\n" "check" "Quick validation (format + warnings + test)"
+	@printf "    \033[36m%-16s\033[0m %s\n" "check-full" "Full validation including Dialyzer"
+	@printf "    \033[36m%-16s\033[0m %s\n" "shell" "Start interactive IEx shell"
+	@printf "    \033[36m%-16s\033[0m %s\n" "release" "Build a prod release"
+	@echo ""
+	@echo "  \033[1mRunning:\033[0m"
+	@printf "    \033[36m%-16s\033[0m %s\n" "chat" "Start TUI chat (dev mode)"
+	@printf "    \033[36m%-16s\033[0m %s\n" "chat-plain" "Start plain fallback chat"
+	@printf "    \033[36m%-16s\033[0m %s\n" "run-ledger" "Run ledger service standalone"
+	@printf "    \033[36m%-16s\033[0m %s\n" "run-memory" "Run memory service standalone"
+	@echo ""
+	@echo "  \033[1mSetup:\033[0m"
+	@printf "    \033[36m%-16s\033[0m %s\n" "dev-setup" "One-shot dev environment setup"
+	@printf "    \033[36m%-16s\033[0m %s\n" "init" "Create config directory"
+	@printf "    \033[36m%-16s\033[0m %s\n" "version" "Print current version"
+	@printf "    \033[36m%-16s\033[0m %s\n" "clean" "Remove build artifacts"
+	@printf "    \033[36m%-16s\033[0m %s\n" "update" "Update all dependencies"
+	@echo ""
+	@echo "  \033[1mOptions:\033[0m"
+	@echo "    VERBOSE=1   Show full build output"
+	@echo "    DRY_RUN=1   Show what would be done without doing it"
+	@echo ""
