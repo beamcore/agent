@@ -168,7 +168,7 @@ defmodule Beamcore.Agent.Chat.API do
     IO.puts(Pretty.colorize("🚨  API BAD REQUEST ERROR DEBUG INFO", &Colors.bright_red/0))
     IO.puts(separator)
 
-    # 1. Extract and display the REAL error from Mistral
+    # 1. Extract and display the REAL error from the API
     IO.puts("\n" <> Pretty.colorize("👉  ERROR DETAILS:", &Colors.bright_yellow/0))
     print_extracted_error(error_info)
 
