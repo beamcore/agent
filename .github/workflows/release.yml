@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  MIX_ENV: prod
+  ELIXIR_VERSION: "1.17"
+  OTP_VERSION: "27"
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Erlang & Elixir (Linux)
+        if: matrix.os == 'linux'
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          elixir-version: ${{ env.ELIXIR_VERSION }}
+
+      - name: Install Erlang & Elixir (macOS)
+        if: matrix.os == 'darwin'
+        run: |
+          brew install erlang elixir
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Build release
+        run: |
+          mix deps.get --only prod
+          mix compile
+          mix release --overwrite
+
+      - name: Package release
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ASSET_NAME="beamcore-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
+          tar -czf "$ASSET_NAME" -C _build/prod/rel/agent .
+          echo "ASSET_NAME=$ASSET_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: beamcore-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ env.ASSET_NAME }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum beamcore-*.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/beamcore-*.tar.gz
+            artifacts/SHA256SUMS
