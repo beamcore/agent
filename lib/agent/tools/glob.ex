@@ -4,7 +4,7 @@ defmodule Beamcore.Agent.Tools.Glob do
   """
 
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.Tools.{CommandRunner, PathSafety}
 
   @description """
   Find workspace files matching a glob pattern, e.g. "**/*.ex", relative to a path.
@@ -195,6 +195,7 @@ defmodule Beamcore.Agent.Tools.Glob do
 
       _path ->
         try do
+          opts = Keyword.put(opts, :env, CommandRunner.external_env(Keyword.get(opts, :env, [])))
           {output, exit_code} = System.cmd(command, args, opts)
           {:ok, output, exit_code}
         rescue

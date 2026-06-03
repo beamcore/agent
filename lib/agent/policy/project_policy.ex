@@ -318,7 +318,10 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     end
   end
 
-  defp confirm_satisfied?(name, %{mode: :restricted_write}) when name in @write_tools, do: true
+  defp confirm_satisfied?(name, %{mode: mode})
+       when name in @write_tools and mode in [:unrestricted, :development, :restricted_write],
+       do: true
+
   defp confirm_satisfied?(name, _runtime_policy) when name in @write_tools, do: false
   defp confirm_satisfied?(_name, _runtime_policy), do: true
 

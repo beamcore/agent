@@ -570,7 +570,7 @@ defmodule Beamcore.TUI.Events do
       :ok ->
         state
         |> State.set_session(%{state.session | client: Beamcore.OpenAI.client()})
-        |> State.add_message(:system, "Beamcore login saved.")
+        |> State.add_message(:system, Commands.login_saved_message())
 
       {:error, :empty_value} ->
         State.add_message(state, :system, "Login token was empty; nothing was saved.")

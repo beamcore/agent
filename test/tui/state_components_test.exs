@@ -82,7 +82,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert Beamcore.Config.mistral_api_key() == "secret-tui-token"
     assert state.history == []
     assert ExRatatui.textarea_get_value(state.textarea) == ""
-    assert Enum.any?(state.messages, &(&1.content == "Beamcore login saved."))
+    assert Enum.any?(state.messages, &String.contains?(&1.content, "Beamcore login saved."))
     refute Enum.any?(state.messages, &String.contains?(&1.content, "secret-tui-token"))
 
     refute Enum.any?(
@@ -327,7 +327,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     text = Enum.join(lines, "\n")
 
     assert text =~ "Timeline item 1/2"
-    assert text =~ "modify_file (write) lib/a.ex"
+    assert text =~ "modify_file create_file lib/a.ex"
     assert text =~ "tool: modify_file"
     assert text =~ "state: done"
     assert text =~ "output:\nWrote file"
@@ -466,18 +466,18 @@ defmodule Beamcore.TUI.StateComponentsTest do
       state
       |> State.add_activity(
         "modify_file",
-        %{"path" => "lib/foo.ex", "content" => content},
+        %{"operation" => "create_file", "path" => "lib/foo.ex", "content" => content},
         :running
       )
       |> State.update_activity(
         "modify_file",
-        %{"path" => "lib/foo.ex", "content" => content},
+        %{"operation" => "create_file", "path" => "lib/foo.ex", "content" => content},
         "Wrote file"
       )
 
     [event] = state.activity
 
-    assert event.label == "modify_file (write) lib/foo.ex (3000 bytes)"
+    assert event.label == "modify_file create_file lib/foo.ex (3000 bytes)"
     assert event.status == :done
     refute event.summary =~ content
     refute inspect(event) =~ content
@@ -486,13 +486,11 @@ defmodule Beamcore.TUI.StateComponentsTest do
   test "activity labels use very-pretty compact tool formatting" do
     cases = [
       {"read", %{"path" => "README.md"}, "read README.md"},
-      {"modify_file", %{"path" => "lib/foo.ex", "content" => "abc"},
-       "modify_file (write) lib/foo.ex (3 bytes)"},
-      {"modify_file",
-       %{"path" => "lib/foo.ex", "edits" => [%{"search" => "a", "replace" => "b"}]},
-       "modify_file (edit) lib/foo.ex (1 edits)"},
-      {"test_tool", %{"args" => "test/agent_test.exs"},
-       "test_tool test/agent_test.exs"},
+      {"modify_file", %{"operation" => "create_file", "path" => "lib/foo.ex", "content" => "abc"},
+       "modify_file create_file lib/foo.ex (3 bytes)"},
+      {"modify_file", %{"operation" => "replace_exact", "path" => "lib/foo.ex"},
+       "modify_file replace_exact lib/foo.ex"},
+      {"test_tool", %{"args" => "test/agent_test.exs"}, "test_tool test/agent_test.exs"},
       {"git", %{"operation" => "status"}, "git status"},
       {"fs", %{"operation" => "mkdir", "path" => "lib/new_dir"}, "fs mkdir lib/new_dir"},
       {"task", %{"name" => "sneezing_walrus", "model" => "mistral-small"},
@@ -510,12 +508,12 @@ defmodule Beamcore.TUI.StateComponentsTest do
     event =
       State.compact_activity(
         "modify_file",
-        %{"path" => "scratch/a.ex", "content" => "bad"},
+        %{"operation" => "create_file", "path" => "scratch/a.ex", "content" => "bad"},
         :blocked,
         "Error: Tool call blocked by project policy."
       )
 
-    assert event.label == "blocked modify_file (write) scratch/a.ex (3 bytes)"
+    assert event.label == "blocked modify_file create_file scratch/a.ex (3 bytes)"
     assert event.status == :blocked
     assert event.result =~ "project policy"
     refute event.label =~ "%{"
@@ -611,6 +609,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
   test "default runtime policy is autonomous while project policy can still narrow it" do
     assert :ok =
              ToolPolicy.allow_tool_call(ToolPolicy.default(), "modify_file", %{
+               "operation" => "create_file",
                "path" => "scratch/a.ex"
              })
   end
@@ -816,7 +815,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     |> State.update_activity("read", %{"path" => "README.md"}, "Read ok")
     |> State.update_activity(
       "modify_file",
-      %{"path" => "lib/a.ex", "content" => "abc"},
+      %{"operation" => "create_file", "path" => "lib/a.ex", "content" => "abc"},
       long_result
     )
     |> Map.put(:selected_activity, 0)

@@ -240,21 +240,14 @@ defmodule Beamcore.Agent.Core.Pretty do
 
   defp format_tool_args("modify_file", args, _context) do
     path = Map.get(args, "path", "unknown")
+    operation = Map.get(args, "operation", "unknown")
 
-    badge =
-      cond do
-        Map.has_key?(args, "content") ->
-          ToolDisplay.byte_badge(%{"content" => Map.get(args, "content")}) || "(0 bytes)"
-
-        Map.has_key?(args, "edits") ->
-          ToolDisplay.modify_badge(args)
-
-        true ->
-          ""
-      end
+    badge = ToolDisplay.byte_badge(args) || ToolDisplay.modify_badge(args) || ""
 
     IO.puts(
-      colorize("path: ", &Colors.dim/0) <>
+      colorize("op: ", &Colors.dim/0) <>
+        colorize(operation, &Colors.bright_cyan/0) <>
+        colorize(" path: ", &Colors.dim/0) <>
         colorize(path, &Colors.bright_white/0) <>
         colorize(" #{badge}", &Colors.dim/0)
     )
@@ -436,7 +429,11 @@ defmodule Beamcore.Agent.Core.Pretty do
   Print a rate limit error.
     "
   def print_rate_limit_error do
-    print_error("Rate limit exceeded, please wait and try again")
+    print_error(Beamcore.Agent.Chat.RateLimit.message(nil))
+  end
+
+  def print_rate_limit_error(error) do
+    print_error(Beamcore.Agent.Chat.RateLimit.message(error))
   end
 
   @doc "
