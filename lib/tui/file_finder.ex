@@ -53,6 +53,8 @@ defmodule Beamcore.TUI.FileFinder do
   def search(query, file_cache \\ nil) do
     files = file_cache || load_files()
 
+    query = String.trim_leading(query, "[")
+
     if query == "" do
       Enum.take(files, @max_results)
     else
@@ -105,14 +107,14 @@ defmodule Beamcore.TUI.FileFinder do
   defp find_at_token(text) do
     # Walk backwards from end to find the last valid @ trigger
     # Valid: @ at position 0, or preceded by whitespace
-    case Regex.scan(~r/(?:^|(?<=\s))@([^\s]*)/, text, return: :index) do
+    case Regex.scan(~r/(?:^|(?<=\s))@([^\s\]]*)/, text, return: :index) do
       [] ->
         nil
 
       matches ->
         # Take the last match (closest to cursor)
         [full_match_index, capture_index] = List.last(matches)
-        {full_start, _full_len} = full_match_index
+        {full_start, full_len} = full_match_index
         {_cap_start, cap_len} = capture_index
 
         # The @ itself is at position full_start (or full_start + leading whitespace)
@@ -124,8 +126,13 @@ defmodule Beamcore.TUI.FileFinder do
             full_start + 1
           end
 
-        query = String.slice(text, at_pos + 1, cap_len)
-        {query, at_pos}
+        # Only trigger if the match extends to the end of the text (i.e. cursor is at/in the token)
+        if full_start + full_len == String.length(text) do
+          query = String.slice(text, at_pos + 1, cap_len)
+          {query, at_pos}
+        else
+          nil
+        end
     end
   end
 

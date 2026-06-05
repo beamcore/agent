@@ -6,7 +6,7 @@ defmodule Beamcore.TUI.Render do
   alias Beamcore.TUI.Components.{Activity, Chat, Help, Input, StatusBar}
   alias Beamcore.TUI.{Layout, Theme}
   alias ExRatatui.Layout.Rect
-  alias ExRatatui.Widgets.{Paragraph, SlashCommands}
+  alias ExRatatui.Widgets.{Paragraph, SlashCommands, Block, List, Popup}
 
   def render(state, frame) do
     area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
@@ -24,6 +24,7 @@ defmodule Beamcore.TUI.Render do
     |> maybe_activity_details(state, area)
     |> maybe_help(state, area)
     |> maybe_commands(state, area)
+    |> maybe_file_finder(state, area)
   end
 
   defp tiny(_state, area) do
@@ -86,5 +87,37 @@ defmodule Beamcore.TUI.Render do
     else
       widgets
     end
+  end
+
+  defp maybe_file_finder(widgets, %{file_finder_active?: true, file_finder_results: results} = state, area) when results != [] do
+    widgets ++ render_file_finder(state, area)
+  end
+
+  defp maybe_file_finder(widgets, _state, _area), do: widgets
+
+  defp render_file_finder(state, area) do
+    results = state.file_finder_results
+    selected = state.file_finder_selected
+    query = state.file_finder_query
+
+    list = %List{
+      items: results,
+      selected: selected,
+      highlight_style: Theme.style(:accent),
+      style: Theme.style(:panel)
+    }
+
+    popup = %Popup{
+      content: list,
+      block: %Block{
+        title: "Files: @#{query}",
+        borders: [:all],
+        border_type: :rounded
+      },
+      percent_width: 50,
+      percent_height: 40
+    }
+
+    [{popup, area}]
   end
 end
