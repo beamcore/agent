@@ -25,8 +25,14 @@ defmodule Beamcore.TUI.Components.Help do
     /yolo            Toggle session freedom mode
     /yolo on         Bypass project policy for this session
     /yolo off        Restore project policy
-    /login           Configure your Mistral API key
-    /logout          Clear stored Beamcore login
+    /api select      Open interactive API provider selector
+    /providers       Open interactive API provider selector
+    /api list        List all configured API providers
+    /api use <name>  Switch active API provider
+    /api add <args>  Add or update an API provider config
+    /api delete <n>  Delete an API provider config
+    /login           Configure default API key
+    /logout          Clear stored default login
     /quit /exit /q   Exit
 
     Keys
@@ -40,6 +46,7 @@ defmodule Beamcore.TUI.Components.Help do
     /                Open command suggestions
     Up/Down          Choose command suggestion when suggestions are open
     Ctrl+P / Ctrl+N  History, or choose command suggestion
+    Ctrl+O           Toggle interactive API provider selector
     Tab              Complete highlighted command suggestion
     Tab              Toggle timeline/tool details when suggestions are closed
     Timeline open: Up/Down choose item, Shift+Up/Down or PageUp/PageDown jump

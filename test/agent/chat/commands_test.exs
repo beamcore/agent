@@ -513,6 +513,94 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     refute output =~ "MISTRAL_API_KEY=test-api-key"
   end
 
+  test "/api commands manage multiple providers in config.dets" do
+    Beamcore.Agent.TestEnv.with_env(
+      %{
+        "MISTRAL_API_KEY" => nil,
+        "MISTRAL_BASE_URL" => nil,
+        "MISTRAL_CHAT_MODEL" => nil,
+        "API_KEY" => nil,
+        "API_BASE_URL" => nil,
+        "API_MODEL" => nil
+      },
+      fn ->
+        _ = Beamcore.Config.delete(:api_configs)
+        _ = Beamcore.Config.delete(:active_provider)
+
+        session = %Session{client: OpenaiEx.new("temp-key")}
+
+        # 1. /api list should show default state when empty
+        output =
+          capture_io(fn ->
+            Commands.execute("api list", session)
+          end)
+        assert output =~ "No custom providers configured yet"
+
+        # 2. Add openai provider with defaults
+        output =
+          capture_io(fn ->
+            result = Commands.execute("api add openai my-openai-key", session)
+            send(self(), {:add_openai_res, result})
+          end)
+        assert output =~ "Provider 'openai' configured successfully with defaults"
+        assert_receive {:add_openai_res, session1}
+        assert session1.client.token == "my-openai-key"
+        assert session1.client.base_url == "https://api.openai.com/v1"
+        assert Beamcore.Config.active_provider() == "openai"
+        assert Beamcore.Agent.Chat.API.default_model() == "gpt-4o"
+
+        # 3. Add custom provider with all args
+        output =
+          capture_io(fn ->
+            result = Commands.execute("api add custom tok-abc https://custom.api/v2 model-xyz", session1)
+            send(self(), {:add_custom_res, result})
+          end)
+        assert output =~ "Provider 'custom' configured successfully"
+        assert_receive {:add_custom_res, session2}
+        assert session2.client.token == "tok-abc"
+        assert session2.client.base_url == "https://custom.api/v2"
+        assert Beamcore.Config.active_provider() == "custom"
+        assert Beamcore.Agent.Chat.API.default_model() == "model-xyz"
+
+        # 4. List providers
+        output =
+          capture_io(fn ->
+            Commands.execute("api list", session2)
+          end)
+        assert output =~ "openai (https://api.openai.com/v1)"
+        assert output =~ "* custom (https://custom.api/v2)"
+
+        # 5. Switch active provider using /api use
+        output =
+          capture_io(fn ->
+            result = Commands.execute("api use openai", session2)
+            send(self(), {:use_openai_res, result})
+          end)
+        assert output =~ "Switched active provider to 'openai'"
+        assert_receive {:use_openai_res, session3}
+        assert session3.client.token == "my-openai-key"
+        assert Beamcore.Config.active_provider() == "openai"
+
+        # 6. Delete provider
+        output =
+          capture_io(fn ->
+            result = Commands.execute("api delete openai", session3)
+            send(self(), {:delete_openai_res, result})
+          end)
+        assert output =~ "Provider 'openai' deleted"
+        assert output =~ "Reset active provider to 'mistral'"
+        assert_receive {:delete_openai_res, _session4}
+        assert Beamcore.Config.active_provider() == "mistral"
+      end
+    )
+  end
+
+  test "/api select and /providers commands return provider select tuple" do
+    session = %Session{}
+    assert {:provider_select, ^session} = Commands.execute("api select", session)
+    assert {:provider_select, ^session} = Commands.execute("providers", session)
+  end
+
   defp with_tmp_cwd(fun) do
     tmp =
       Path.join(

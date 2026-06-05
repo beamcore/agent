@@ -272,7 +272,7 @@ defmodule Beamcore.Agent.Tools.TestToolTest do
   test "detects Makefile and runs make test" do
     temp_dir = "tmp/test_make_#{System.unique_integer([:positive])}"
     File.mkdir_p!(temp_dir)
-    File.touch!(Path.join(temp_dir, "Makefile"))
+    File.write!(Path.join(temp_dir, "Makefile"), "test:\n\techo 'run'")
     on_exit(fn -> File.rm_rf!(temp_dir) end)
 
     parent = self()
@@ -290,6 +290,23 @@ defmodule Beamcore.Agent.Tools.TestToolTest do
 
     assert result["ok"]
     assert_receive {:called, "make", ["test"]}
+  end
+
+  test "detects Makefile without test target and suggests fallback" do
+    temp_dir = "tmp/test_make_missing_#{System.unique_integer([:positive])}"
+    File.mkdir_p!(temp_dir)
+    # Touch mix.exs to provide a fallback recommendation (mix test)
+    File.touch!(Path.join(temp_dir, "mix.exs"))
+    # Write a Makefile without a test target
+    File.write!(Path.join(temp_dir, "Makefile"), "build:\n\techo 'build'")
+    on_exit(fn -> File.rm_rf!(temp_dir) end)
+
+    result = TestTool.execute(%{"workdir" => temp_dir}) |> decode!()
+
+    refute result["ok"]
+    assert result["summary"] =~ "missing the 'test' target"
+    assert result["summary"] =~ "mix test"
+    assert result["output_tail"] =~ "mix test"
   end
 
   defp with_env(values, fun) do

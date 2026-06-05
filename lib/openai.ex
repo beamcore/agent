@@ -32,7 +32,7 @@ defmodule Beamcore.OpenAI do
   """
   def client do
     api_key = api_key!()
-    base_url = env("MISTRAL_BASE_URL", @base_url)
+    base_url = resolve_base_url()
 
     OpenaiEx.new(api_key)
     |> OpenaiEx.with_base_url(base_url)
@@ -40,6 +40,10 @@ defmodule Beamcore.OpenAI do
   end
 
   def configured?, do: api_key_value() != nil
+
+  def client_safe do
+    if configured?(), do: client(), else: nil
+  end
 
   def env_api_key_present?, do: api_key_source() == :env
 
@@ -49,10 +53,18 @@ defmodule Beamcore.OpenAI do
   end
 
   def auth_diagnostics do
-    env_token = env("MISTRAL_API_KEY")
-    config_token = Beamcore.Config.mistral_api_key() |> normalize_env()
+    active = Beamcore.Config.active_provider()
+    env_token = env("API_KEY") || env("#{String.upcase(active)}_API_KEY") || (if active == "mistral", do: env("MISTRAL_API_KEY"), else: nil)
+
+    config_token =
+      case Beamcore.Config.get_provider(active) do
+        %{"api_key" => key} -> Beamcore.Config.decrypted_api_key(key)
+        _ -> nil
+      end || (if active == "mistral", do: Beamcore.Config.mistral_api_key(), else: nil)
+
     {source, selected_token} = api_key_source_and_value()
     config_path = Beamcore.Config.path() |> Path.expand()
+    base_url = resolve_base_url()
 
     %{
       env_token_present?: is_binary(env_token),
@@ -60,7 +72,7 @@ defmodule Beamcore.OpenAI do
       selected_token_source: source,
       selected_token_length: token_length(selected_token),
       selected_token_has_mistral_prefix?: token_prefix?(selected_token),
-      base_url: env("MISTRAL_BASE_URL", @base_url),
+      base_url: base_url,
       model: Beamcore.Agent.Chat.API.default_model(),
       auth_header_present?: is_binary(selected_token),
       auth_header_scheme: if(is_binary(selected_token), do: "Bearer", else: "missing"),
@@ -180,8 +192,23 @@ defmodule Beamcore.OpenAI do
   end
 
   defp api_key_source_and_value do
-    env_token = env("MISTRAL_API_KEY")
-    config_token = Beamcore.Config.mistral_api_key() |> normalize_env()
+    active = Beamcore.Config.active_provider()
+
+    generic_env = env("API_KEY")
+    provider_env_name = "#{String.upcase(active)}_API_KEY"
+    provider_env = env(provider_env_name)
+
+    legacy_env = if active == "mistral", do: env("MISTRAL_API_KEY"), else: nil
+    env_token = generic_env || provider_env || legacy_env
+
+    provider_token =
+      case Beamcore.Config.get_provider(active) do
+        %{"api_key" => key} -> Beamcore.Config.decrypted_api_key(key)
+        _ -> nil
+      end
+
+    legacy_token = if active == "mistral", do: Beamcore.Config.mistral_api_key(), else: nil
+    config_token = provider_token || legacy_token
 
     cond do
       is_binary(env_token) -> {:env, env_token}
@@ -191,10 +218,29 @@ defmodule Beamcore.OpenAI do
   end
 
   defp url(path) do
-    base_url = env("MISTRAL_BASE_URL", @base_url)
+    base_url = resolve_base_url()
     url = String.trim_trailing(base_url, "/") <> "/" <> String.trim_leading(path, "/")
 
     {:ok, url}
+  end
+
+  defp resolve_base_url do
+    active = Beamcore.Config.active_provider()
+
+    generic_env = env("API_BASE_URL")
+    provider_env_name = "#{String.upcase(active)}_BASE_URL"
+    provider_env = env(provider_env_name)
+
+    legacy_env = if active == "mistral", do: env("MISTRAL_BASE_URL"), else: nil
+    env_url = generic_env || provider_env || legacy_env
+
+    provider_url =
+      case Beamcore.Config.get_provider(active) do
+        %{"base_url" => url} -> url
+        _ -> nil
+      end
+
+    env_url || provider_url || @base_url
   end
 
   defp env(name) do
@@ -203,9 +249,6 @@ defmodule Beamcore.OpenAI do
     |> normalize_env()
   end
 
-  defp env(name, default) do
-    env(name) || default
-  end
 
   defp normalize_env(nil), do: nil
 

@@ -6,6 +6,15 @@ defmodule Beamcore.Agent.Chat.Commands do
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.Policy.ProjectPolicy
 
+  @provider_defaults %{
+    "mistral" => %{base_url: "https://api.mistral.ai/v1", default_model: "mistral-medium-3-5"},
+    "ollama" => %{base_url: "http://127.0.0.1:11434/v1", default_model: "gemma4:latest"},
+    "openai" => %{base_url: "https://api.openai.com/v1", default_model: "gpt-4o"},
+    "deepseek" => %{base_url: "https://api.deepseek.com/v1", default_model: "deepseek-chat"}
+  }
+
+  def provider_defaults, do: @provider_defaults
+
   @doc """
   Handle a command and return the updated session.
   """
@@ -26,6 +35,10 @@ defmodule Beamcore.Agent.Chat.Commands do
       "login" -> handle_login_prompt(session, output)
       "login " <> token -> handle_login_token(token, session, output)
       "logout" -> handle_logout(session, output)
+      "api select" -> {:provider_select, session}
+      "providers" -> {:provider_select, session}
+      "api" -> handle_api(["list"], session, output)
+      "api " <> args -> handle_api(String.split(args, " ", trim: true), session, output)
       "help" -> handle_help(session, output)
       "policy" -> handle_policy([], session, output)
       "policy " <> args -> handle_policy(String.split(args, " ", trim: true), session, output)
@@ -101,7 +114,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     case store_login_token(token) do
       :ok ->
         output.(login_saved_message())
-        %{session | client: Beamcore.OpenAI.client()}
+        %{session | client: Beamcore.OpenAI.client_safe()}
 
       {:error, :empty_value} ->
         output.("Login token was empty; nothing was saved.")
@@ -113,6 +126,106 @@ defmodule Beamcore.Agent.Chat.Commands do
     :ok = Beamcore.Config.delete_mistral_api_key()
     output.("Beamcore login cleared.")
     session
+  end
+
+  defp handle_api(args, session, output) do
+    case args do
+      ["list"] ->
+        providers = Beamcore.Config.list_providers()
+        active = Beamcore.Config.active_provider()
+
+        output.("Configured API Providers (* denotes active):")
+
+        if map_size(providers) == 0 do
+          output.("  No custom providers configured yet. Active default: #{active}")
+        else
+          for {name, config} <- Enum.sort(providers) do
+            prefix = if name == active, do: "  * ", else: "    "
+            base_url = Map.get(config, "base_url")
+            model = Map.get(config, "default_model") || "default"
+            output.("#{prefix}#{name} (#{base_url}) - model: #{model}")
+          end
+        end
+        session
+
+      ["use", provider] ->
+        providers = Beamcore.Config.list_providers()
+        Beamcore.Config.set_active_provider(provider)
+
+        unless Map.has_key?(providers, provider) do
+          output.("Warning: Provider '#{provider}' is not configured yet. Run '/api add #{provider} <token>' to configure.")
+        end
+
+        output.("Switched active provider to '#{provider}'.")
+        %{session | client: Beamcore.OpenAI.client_safe()}
+
+      ["add", provider, token] ->
+        defaults = Map.get(@provider_defaults, provider, %{})
+        base_url = Map.get(defaults, :base_url)
+        default_model = Map.get(defaults, :default_model)
+
+        if base_url do
+          Beamcore.Config.put_provider(provider, %{
+            api_key: token,
+            base_url: base_url,
+            default_model: default_model
+          })
+          output.("Provider '#{provider}' configured successfully with defaults.")
+          Beamcore.Config.set_active_provider(provider)
+          %{session | client: Beamcore.OpenAI.client_safe()}
+        else
+          output.("Error: Unknown provider '#{provider}'. Please specify base URL and model:")
+          output.("Usage: /api add <provider> <token> <base_url> [<default_model>]")
+          session
+        end
+
+      ["add", provider, token, base_url] ->
+        defaults = Map.get(@provider_defaults, provider, %{})
+        default_model = Map.get(defaults, :default_model) || "default"
+
+        Beamcore.Config.put_provider(provider, %{
+          api_key: token,
+          base_url: base_url,
+          default_model: default_model
+        })
+        output.("Provider '#{provider}' configured successfully.")
+        Beamcore.Config.set_active_provider(provider)
+        %{session | client: Beamcore.OpenAI.client_safe()}
+
+      ["add", provider, token, base_url, default_model] ->
+        Beamcore.Config.put_provider(provider, %{
+          api_key: token,
+          base_url: base_url,
+          default_model: default_model
+        })
+        output.("Provider '#{provider}' configured successfully.")
+        Beamcore.Config.set_active_provider(provider)
+        %{session | client: Beamcore.OpenAI.client_safe()}
+
+      ["delete", provider] ->
+        providers = Beamcore.Config.list_providers()
+        if Map.has_key?(providers, provider) do
+          configs = Map.delete(providers, provider)
+          Beamcore.Config.put(:api_configs, Jason.encode!(configs))
+          output.("Provider '#{provider}' deleted.")
+
+          if Beamcore.Config.active_provider() == provider do
+            Beamcore.Config.set_active_provider("mistral")
+            output.("Reset active provider to 'mistral'.")
+          end
+        else
+          output.("Provider '#{provider}' not found.")
+        end
+        %{session | client: Beamcore.OpenAI.client_safe()}
+
+      _ ->
+        output.("Invalid /api command. Usage:")
+        output.("  /api list")
+        output.("  /api use <provider>")
+        output.("  /api add <provider> <token> [<base_url>] [<default_model>]")
+        output.("  /api delete <provider>")
+        session
+    end
   end
 
   defp handle_help(session, output) do
@@ -134,8 +247,14 @@ defmodule Beamcore.Agent.Chat.Commands do
       /yolo off - Restore project policy for this session
       /stop - Pause the session to add improved direction
       /continue - Resume the paused session
-      /login - Configure your Mistral API key
-      /logout - Clear stored Beamcore login
+      /api select - Open interactive API provider selector
+      /providers - Open interactive API provider selector
+      /api list - List all configured API providers
+      /api use <provider> - Switch active API provider
+      /api add <provider> <token> [<base_url>] [<default_model>] - Add/update provider config
+      /api delete <provider> - Delete a provider config
+      /login - Configure your default API key
+      /logout - Clear stored default login
       /env  - Print env variables with secrets redacted
       /help - Show this help message
     """)

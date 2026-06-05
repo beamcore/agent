@@ -10,7 +10,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
   def widget(state, mode) do
     usage = State.usage(state.session)
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
+    provider = Beamcore.Config.active_provider()
     model = State.model(state.session)
+    provider_model = "#{provider}/#{model}"
 
     tokens =
       "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
@@ -18,11 +20,11 @@ defmodule Beamcore.TUI.Components.StatusBar do
     text =
       case mode do
         :narrow ->
-          "#{mascot} · #{model} · #{tokens} tok"
+          "#{mascot} · #{provider_model} · #{tokens} tok"
 
         _ ->
           left = "#{mascot} · "
-          right = "#{model} · #{tokens} tok"
+          right = "#{provider_model} · #{tokens} tok"
 
           # Pad left to align right side
           padding = String.duplicate(" ", max(0, 40 - String.length(left)))
