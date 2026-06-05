@@ -4,7 +4,7 @@ defmodule Beamcore.TUI.Events do
   """
 
   alias Beamcore.Agent.Chat.{Commands, Loop}
-  alias Beamcore.TUI.{History, State}
+  alias Beamcore.TUI.{FileFinder, History, State}
   alias ExRatatui.Event
   alias ExRatatui.Widgets.SlashCommands
   alias ExRatatui.Widgets.SlashCommands.Command
@@ -147,6 +147,34 @@ defmodule Beamcore.TUI.Events do
     if ctrl?(mods), do: {:noreply, submit(state)}, else: handle_text_key("s", mods, state)
   end
 
+  defp handle_key(code, mods, %{file_finder_active?: true} = state) do
+    cond do
+      code == "up" && not ctrl?(mods) && not alt?(mods) && not shift?(mods) ->
+        {:noreply, State.select_file_finder_result(state, -1)}
+
+      code == "down" && not ctrl?(mods) && not alt?(mods) && not shift?(mods) ->
+        {:noreply, State.select_file_finder_result(state, 1)}
+
+      code == "p" && ctrl?(mods) ->
+        {:noreply, State.select_file_finder_result(state, -1)}
+
+      code == "n" && ctrl?(mods) ->
+        {:noreply, State.select_file_finder_result(state, 1)}
+
+      code == "enter" ->
+        {:noreply, accept_file_finder_selection(state)}
+
+      code in ["esc", "escape"] ->
+        {:noreply, State.deactivate_file_finder(state) |> State.mark_dirty()}
+
+      code == "tab" ->
+        {:noreply, accept_file_finder_selection(state)}
+
+      true ->
+        handle_text_key(code, mods, state)
+    end
+  end
+
   defp handle_key("j", mods, state) do
     if ctrl?(mods), do: {:noreply, insert_newline(state)}, else: handle_text_key("j", mods, state)
   end
@@ -275,7 +303,81 @@ defmodule Beamcore.TUI.Events do
   defp handle_text_key(code, mods, state) do
     ExRatatui.textarea_handle_key(state.textarea, code, mods)
     state = %{state | history_index: nil}
+    
+    # Check if this key press should trigger or update file finder
+    state = handle_file_finder_key(code, mods, state)
+    
     {:noreply, refresh_commands(state)}
+  end
+
+  defp handle_file_finder_key(_code, _mods, state) do
+    value = ExRatatui.textarea_get_value(state.textarea)
+    cursor_pos = ExRatatui.textarea_cursor(state.textarea)
+    
+    case FileFinder.parse(value, cursor_pos) do
+      {:file_query, query, _start, _end} ->
+        # Load files and update file finder state
+        cache = state.file_finder_cache || FileFinder.load_files()
+        results = FileFinder.search(query, cache)
+        
+        state =
+          if state.file_finder_active? do
+            State.update_file_finder_query(state, query, results)
+          else
+            State.activate_file_finder(state, query, results)
+          end
+          
+        state |> Map.put(:file_finder_cache, cache)
+      
+      :no_file_query ->
+        # Deactivate file finder if @ is not present
+        if state.file_finder_active? do
+          State.deactivate_file_finder(state)
+        else
+          state
+        end
+    end
+  end
+
+  defp accept_file_finder_selection(state) do
+    case Enum.at(state.file_finder_results, state.file_finder_selected) do
+      nil ->
+        state
+      
+      file_path ->
+        value = ExRatatui.textarea_get_value(state.textarea)
+        cursor_pos = ExRatatui.textarea_cursor(state.textarea)
+        
+        case FileFinder.parse(value, cursor_pos) do
+          {:file_query, _query, start, end_pos} ->
+            # Replace the @query with the selected file path without brackets
+            replacement = "@" <> file_path <> " "
+            new_value = 
+              String.slice(value, 0, start) <> 
+              replacement <> 
+              String.slice(value, end_pos..-1//1)
+            
+            ExRatatui.textarea_set_value(state.textarea, new_value)
+            
+            # Reposition the cursor right after the inserted file path
+            {target_row, target_col} = char_index_to_pos(new_value, start + String.length(replacement))
+            if target_row > 0, do: Enum.each(1..target_row, fn _ -> ExRatatui.textarea_handle_key(state.textarea, "down") end)
+            if target_col > 0, do: Enum.each(1..target_col, fn _ -> ExRatatui.textarea_handle_key(state.textarea, "right") end)
+
+            State.deactivate_file_finder(state)
+          
+          :no_file_query ->
+            state
+        end
+    end
+  end
+
+  defp char_index_to_pos(string, index) do
+    sub_str = String.slice(string, 0, index)
+    lines = String.split(sub_str, "\n", trim: false)
+    row = length(lines) - 1
+    col = String.length(List.last(lines))
+    {row, col}
   end
 
   defp navigate_history(state, :up) do

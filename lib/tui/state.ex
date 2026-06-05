@@ -33,7 +33,12 @@ defmodule Beamcore.TUI.State do
             history: [],
             history_index: nil,
             history_draft: "",
-            memory_total: nil
+            memory_total: nil,
+            file_finder_active?: false,
+            file_finder_query: "",
+            file_finder_results: [],
+            file_finder_selected: 0,
+            file_finder_cache: nil
 
   def new(terminal, textarea, opts \\ []) do
     client = client(opts)
@@ -306,5 +311,38 @@ defmodule Beamcore.TUI.State do
 
   def compact_text(value, limit \\ 180) do
     ToolDisplay.compact_text(value, limit)
+  end
+
+  # File finder state management
+  def activate_file_finder(state, query, results) do
+    %{state | 
+      file_finder_active?: true,
+      file_finder_query: query,
+      file_finder_results: results,
+      file_finder_selected: 0
+    } |> mark_dirty()
+  end
+
+  def deactivate_file_finder(state) do
+    %{state | 
+      file_finder_active?: false,
+      file_finder_query: "",
+      file_finder_results: [],
+      file_finder_selected: 0
+    } |> mark_dirty()
+  end
+
+  def update_file_finder_query(state, query, results) do
+    %{state | 
+      file_finder_query: query,
+      file_finder_results: results,
+      file_finder_selected: min(state.file_finder_selected, max(length(results) - 1, 0))
+    } |> mark_dirty()
+  end
+
+  def select_file_finder_result(state, offset) do
+    max_index = max(length(state.file_finder_results) - 1, 0)
+    selected = state.file_finder_selected + offset
+    %{state | file_finder_selected: selected |> max(0) |> min(max_index)} |> mark_dirty()
   end
 end
