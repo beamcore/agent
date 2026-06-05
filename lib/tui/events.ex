@@ -12,8 +12,14 @@ defmodule Beamcore.TUI.Events do
   @commands [
     %Command{name: "help", description: "Show commands and keybindings"},
     %Command{name: "env", description: "Print full env variables"},
-    %Command{name: "login", description: "Configure your Mistral API key"},
-    %Command{name: "logout", description: "Clear stored Beamcore login"},
+    %Command{name: "login", description: "Configure your default API key"},
+    %Command{name: "logout", description: "Clear stored default login"},
+    %Command{name: "api list", description: "List all configured API providers"},
+    %Command{name: "api select", description: "Open interactive provider selector"},
+    %Command{name: "api use ", description: "Switch active API provider"},
+    %Command{name: "api add ", description: "Add or update an API provider"},
+    %Command{name: "api delete ", description: "Delete an API provider configuration"},
+    %Command{name: "providers", description: "Open interactive provider selector"},
     %Command{name: "new", description: "Start a fresh session"},
     %Command{name: "context", description: "Show compact session context"},
     %Command{name: "context clear", description: "Clear compact session context"},
@@ -145,6 +151,34 @@ defmodule Beamcore.TUI.Events do
 
   defp handle_key("s", mods, state) do
     if ctrl?(mods), do: {:noreply, submit(state)}, else: handle_text_key("s", mods, state)
+  end
+
+  defp handle_key(code, mods, %{provider_selector_active?: true} = state) do
+    cond do
+      code == "up" && not ctrl?(mods) && not alt?(mods) && not shift?(mods) ->
+        {:noreply, State.select_provider_selector_result(state, -1)}
+
+      code == "down" && not ctrl?(mods) && not alt?(mods) && not shift?(mods) ->
+        {:noreply, State.select_provider_selector_result(state, 1)}
+
+      code == "p" && ctrl?(mods) ->
+        {:noreply, State.select_provider_selector_result(state, -1)}
+
+      code == "n" && ctrl?(mods) ->
+        {:noreply, State.select_provider_selector_result(state, 1)}
+
+      code == "enter" ->
+        {:noreply, accept_provider_selection(state)}
+
+      code in ["esc", "escape"] ->
+        {:noreply, State.deactivate_provider_selector(state) |> State.mark_dirty()}
+
+      code == "o" && ctrl?(mods) ->
+        {:noreply, State.deactivate_provider_selector(state) |> State.mark_dirty()}
+
+      true ->
+        {:noreply, state}
+    end
   end
 
   defp handle_key(code, mods, %{file_finder_active?: true} = state) do
@@ -296,6 +330,14 @@ defmodule Beamcore.TUI.Events do
   defp handle_key(code, _mods, %{show_activity_details: true} = state)
        when code in ["page_down", "pagedown", "pgdown"] do
     {:noreply, select_activity(state, 5)}
+  end
+
+  defp handle_key("o", mods, state) do
+    if ctrl?(mods) do
+      {:noreply, toggle_provider_selector(state)}
+    else
+      handle_text_key("o", mods, state)
+    end
   end
 
   defp handle_key(code, mods, state), do: handle_text_key(code, mods, state)
@@ -489,6 +531,10 @@ defmodule Beamcore.TUI.Events do
         ExRatatui.textarea_set_value(state.textarea, "")
         complete_login(%{state | show_commands: false}, value)
 
+      state.pending_provider_key? ->
+        ExRatatui.textarea_set_value(state.textarea, "")
+        complete_provider_key(%{state | show_commands: false}, value)
+
       String.starts_with?(value, "/") ->
         ExRatatui.textarea_set_value(state.textarea, "")
         state = maybe_record_command_history(state, value)
@@ -639,6 +685,12 @@ defmodule Beamcore.TUI.Events do
     |> State.mark_dirty()
   end
 
+  defp apply_command_result({:provider_select, session}, state, _command) do
+    state
+    |> State.set_session(session)
+    |> State.activate_provider_selector()
+  end
+
   defp apply_command_result(session, state, "new") do
     %{
       state
@@ -731,8 +783,80 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
-  defp close_panels(state),
-    do: %{state | show_help: false, show_commands: false, show_activity_details: false}
+  defp close_panels(state) do
+    state
+    |> Map.put(:show_help, false)
+    |> Map.put(:show_commands, false)
+    |> Map.put(:show_activity_details, false)
+    |> State.deactivate_provider_selector()
+  end
+
+  defp toggle_provider_selector(state) do
+    if state.provider_selector_active? do
+      State.deactivate_provider_selector(state)
+    else
+      State.activate_provider_selector(state)
+    end
+  end
+
+  defp accept_provider_selection(state) do
+    selected_idx = state.provider_selector_selected
+    results = state.provider_selector_results
+
+    case Enum.at(results, selected_idx) do
+      nil ->
+        state
+        |> State.deactivate_provider_selector()
+
+      {name, config, _is_active} ->
+        state = State.deactivate_provider_selector(state)
+        
+        # Check if the provider needs configuration (key input)
+        needs_key? =
+          cond do
+            name == "ollama" -> false
+            name == "mistral" and Beamcore.OpenAI.configured?() -> false
+            is_map(config) and not is_nil(Map.get(config, "api_key")) -> false
+            true -> true
+          end
+
+        if needs_key? do
+          state
+          |> Map.put(:pending_provider_key?, true)
+          |> Map.put(:pending_provider_name, name)
+          |> State.add_message(:system, "Provider '#{name}' requires an API key. Please type your API key and press Enter:")
+          |> State.mark_dirty()
+        else
+          # Just switch active provider
+          Beamcore.Config.set_active_provider(name)
+          state
+          |> State.set_session(%{state.session | client: Beamcore.OpenAI.client_safe()})
+          |> State.add_message(:system, "Switched active provider to '#{name}'.")
+          |> State.mark_dirty()
+        end
+    end
+  end
+
+  defp complete_provider_key(state, key) do
+    provider = state.pending_provider_name
+    state = %{state | pending_provider_key?: false, pending_provider_name: nil, history_index: nil}
+
+    defaults = Map.get(Beamcore.Agent.Chat.Commands.provider_defaults(), provider, %{})
+    base_url = Map.get(defaults, :base_url, "https://api.openai.com/v1")
+    default_model = Map.get(defaults, :default_model, "default")
+
+    Beamcore.Config.put_provider(provider, %{
+      api_key: key,
+      base_url: base_url,
+      default_model: default_model
+    })
+    Beamcore.Config.set_active_provider(provider)
+
+    state
+    |> State.set_session(%{state.session | client: Beamcore.OpenAI.client_safe()})
+    |> State.add_message(:system, "Provider '#{provider}' configured successfully and set as active.")
+    |> State.mark_dirty()
+  end
 
   defp key_press?(%{kind: kind}), do: kind in [nil, "press", :press]
 end

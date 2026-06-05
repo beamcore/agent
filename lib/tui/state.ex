@@ -38,7 +38,12 @@ defmodule Beamcore.TUI.State do
             file_finder_query: "",
             file_finder_results: [],
             file_finder_selected: 0,
-            file_finder_cache: nil
+            file_finder_cache: nil,
+            provider_selector_active?: false,
+            provider_selector_results: [],
+            provider_selector_selected: 0,
+            pending_provider_key?: false,
+            pending_provider_name: nil
 
   def new(terminal, textarea, opts \\ []) do
     client = client(opts)
@@ -215,7 +220,7 @@ defmodule Beamcore.TUI.State do
   def model(_session), do: Beamcore.Agent.Chat.API.default_model()
 
   def provider do
-    "mistral"
+    Beamcore.Config.active_provider()
   end
 
   def policy_status(session \\ nil)
@@ -344,5 +349,71 @@ defmodule Beamcore.TUI.State do
     max_index = max(length(state.file_finder_results) - 1, 0)
     selected = state.file_finder_selected + offset
     %{state | file_finder_selected: selected |> max(0) |> min(max_index)} |> mark_dirty()
+  end
+
+  # Provider selector state management
+  def load_providers_list do
+    custom_providers = Beamcore.Config.list_providers()
+    defaults = Beamcore.Agent.Chat.Commands.provider_defaults()
+    active = Beamcore.Config.active_provider()
+
+    # Get union of all provider names (defaults + custom)
+    provider_names = (Map.keys(defaults) ++ Map.keys(custom_providers)) |> Enum.uniq() |> Enum.sort()
+
+    Enum.map(provider_names, fn name ->
+      # Check if configured
+      config = Map.get(custom_providers, name)
+      is_active = (name == active)
+
+      {name, config, is_active}
+    end)
+  end
+
+  def format_provider_item({name, config, is_active}) do
+    prefix = if is_active, do: "* ", else: "  "
+    
+    config_info =
+      cond do
+        name == "mistral" and is_nil(config) ->
+          if Beamcore.OpenAI.configured?() do
+            "(configured via login/env) - model: #{Beamcore.Agent.Chat.API.default_model()}"
+          else
+            "[not configured]"
+          end
+        is_map(config) ->
+          base_url = Map.get(config, "base_url")
+          model = Map.get(config, "default_model") || "default"
+          "(#{base_url}) - model: #{model}"
+        true ->
+          "[not configured]"
+      end
+
+    "#{prefix}#{name} #{config_info}"
+  end
+
+  def activate_provider_selector(state) do
+    results = load_providers_list()
+    # Find the index of the active provider to highlight it initially
+    active_idx = Enum.find_index(results, fn {_name, _config, is_active} -> is_active end) || 0
+
+    %{state | 
+      provider_selector_active?: true,
+      provider_selector_results: results,
+      provider_selector_selected: active_idx
+    } |> mark_dirty()
+  end
+
+  def deactivate_provider_selector(state) do
+    %{state | 
+      provider_selector_active?: false,
+      provider_selector_results: [],
+      provider_selector_selected: 0
+    } |> mark_dirty()
+  end
+
+  def select_provider_selector_result(state, offset) do
+    max_index = max(length(state.provider_selector_results) - 1, 0)
+    selected = state.provider_selector_selected + offset
+    %{state | provider_selector_selected: selected |> max(0) |> min(max_index)} |> mark_dirty()
   end
 end

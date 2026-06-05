@@ -161,6 +161,86 @@ defmodule Beamcore.Config do
     mistral_api_key_hash() != nil
   end
 
+  @doc """
+  Returns a map of all configured providers.
+  """
+  def list_providers do
+    case get(:api_configs) do
+      nil -> %{}
+      json_str when is_binary(json_str) ->
+        case Jason.decode(json_str) do
+          {:ok, map} -> map
+          _ -> %{}
+        end
+    end
+  end
+
+  @doc """
+  Returns the configuration for a specific provider.
+  """
+  def get_provider(name) when is_binary(name) do
+    list_providers() |> Map.get(name)
+  end
+
+  @doc """
+  Saves a provider configuration. Encrypts the api_key if it's plaintext.
+  """
+  def put_provider(name, config) when is_binary(name) and is_map(config) do
+    api_key = Map.get(config, :api_key) || Map.get(config, "api_key")
+    base_url = Map.get(config, :base_url) || Map.get(config, "base_url")
+    default_model = Map.get(config, :default_model) || Map.get(config, "default_model")
+
+    encrypted_key =
+      cond do
+        is_nil(api_key) ->
+          nil
+        String.starts_with?(api_key, "encrypted:") ->
+          api_key
+        true ->
+          "encrypted:" <> Base.encode64(encrypt_api_key(api_key))
+      end
+
+    provider_map = %{
+      "base_url" => base_url,
+      "api_key" => encrypted_key,
+      "default_model" => default_model
+    }
+
+    providers = list_providers() |> Map.put(name, provider_map)
+    put(:api_configs, Jason.encode!(providers))
+  end
+
+  @doc """
+  Returns the plaintext decrypted API key.
+  """
+  def decrypted_api_key(nil), do: nil
+  def decrypted_api_key("encrypted:" <> encrypted_base64) do
+    case Base.decode64(encrypted_base64) do
+      {:ok, encrypted_bin} ->
+        try do
+          decrypt_api_key(encrypted_bin)
+        rescue
+          _ -> nil
+        end
+      _ -> nil
+    end
+  end
+  def decrypted_api_key(key) when is_binary(key), do: key
+
+  @doc """
+  Gets the active API provider.
+  """
+  def active_provider do
+    get(:active_provider) || System.get_env("ACTIVE_PROVIDER") || "mistral"
+  end
+
+  @doc """
+  Sets the active API provider.
+  """
+  def set_active_provider(name) when is_binary(name) do
+    put(:active_provider, name)
+  end
+
   defp mistral_api_key_hash, do: get(@mistral_api_key_hash)
 
   # In-memory cache using Agent

@@ -4,7 +4,7 @@ defmodule Beamcore.TUI.Render do
   """
 
   alias Beamcore.TUI.Components.{Activity, Chat, Help, Input, StatusBar}
-  alias Beamcore.TUI.{Layout, Theme}
+  alias Beamcore.TUI.{Layout, Theme, State}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Paragraph, SlashCommands, Block, List, Popup}
 
@@ -25,6 +25,7 @@ defmodule Beamcore.TUI.Render do
     |> maybe_help(state, area)
     |> maybe_commands(state, area)
     |> maybe_file_finder(state, area)
+    |> maybe_provider_selector(state, area)
   end
 
   defp tiny(_state, area) do
@@ -116,6 +117,38 @@ defmodule Beamcore.TUI.Render do
       },
       percent_width: 50,
       percent_height: 40
+    }
+
+    [{popup, area}]
+  end
+
+  defp maybe_provider_selector(widgets, %{provider_selector_active?: true} = state, area) do
+    widgets ++ render_provider_selector(state, area)
+  end
+
+  defp maybe_provider_selector(widgets, _state, _area), do: widgets
+
+  defp render_provider_selector(state, area) do
+    formatted_items =
+      Enum.map(state.provider_selector_results, &State.format_provider_item/1)
+
+    list = %List{
+      items: formatted_items,
+      selected: state.provider_selector_selected,
+      highlight_style: Theme.style(:accent),
+      style: Theme.style(:panel)
+    }
+
+    popup = %Popup{
+      content: list,
+      block: %Block{
+        title: "Select API Provider (Ctrl+O to close)",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: Theme.style(:border_hot)
+      },
+      percent_width: 70,
+      percent_height: 35
     }
 
     [{popup, area}]

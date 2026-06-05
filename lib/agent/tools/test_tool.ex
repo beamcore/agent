@@ -83,6 +83,66 @@ defmodule Beamcore.Agent.Tools.TestTool do
   defp detect_test_command(safe_workdir, args_str) do
     extra_args = CommandRunner.split_args(args_str)
 
+    if has_makefile?(safe_workdir) do
+      handle_makefile(safe_workdir, extra_args)
+    else
+      detect_fallback_command(safe_workdir, extra_args)
+    end
+  end
+
+  defp handle_makefile(safe_workdir, extra_args) do
+    case read_makefile_content(safe_workdir) do
+      {:ok, content} ->
+        if makefile_has_target?(content, "test") do
+          {:ok, "make", ["test" | extra_args], []}
+        else
+          # Detect fallback to suggest actionable improvement for the Makefile
+          fallback_suggestion =
+            case detect_fallback_command(safe_workdir, []) do
+              {:ok, executable, fallback_args, _opts} ->
+                cmd_str = Enum.join([executable | fallback_args], " ")
+                """
+                Please add a 'test' target to your Makefile. For example:
+
+                .PHONY: test
+                test:
+                \t#{cmd_str}
+                """
+
+              {:error, _} ->
+                """
+                Please add a 'test' target to your Makefile to run your tests.
+                """
+            end
+
+          {:error,
+           "A Makefile was detected in #{safe_workdir}, but it is missing the 'test' target.\n\n#{fallback_suggestion}"}
+        end
+
+      {:error, reason} ->
+        {:error, "Failed to read Makefile: #{inspect(reason)}"}
+    end
+  end
+
+  defp read_makefile_content(dir) do
+    file =
+      ["Makefile", "makefile", "GNUmakefile"]
+      |> Enum.map(&Path.join(dir, &1))
+      |> Enum.find(&File.exists?/1)
+
+    if file do
+      File.read(file)
+    else
+      {:error, :not_found}
+    end
+  end
+
+  defp makefile_has_target?(content, target) do
+    pattern = ~r/^[[:blank:]]*#{Regex.escape(target)}[[:blank:]]*::?/m
+    Regex.match?(pattern, content)
+  end
+
+  defp detect_fallback_command(safe_workdir, extra_args) do
     cond do
       # 1. Elixir/Mix
       File.exists?(Path.join(safe_workdir, "mix.exs")) ->
@@ -121,10 +181,6 @@ defmodule Beamcore.Agent.Tools.TestTool do
       # 7. Ruby/Rails
       File.exists?(Path.join(safe_workdir, "Gemfile")) ->
         resolve_ruby_test(safe_workdir, extra_args)
-
-      # 8. Makefile / make
-      has_makefile?(safe_workdir) ->
-        {:ok, "make", ["test" | extra_args], []}
 
       true ->
         {:error, "No supported build system or test suite detected in #{safe_workdir}."}

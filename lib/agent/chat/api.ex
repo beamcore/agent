@@ -12,7 +12,20 @@ defmodule Beamcore.Agent.Chat.API do
   @default_model "mistral-medium-3-5"
 
   def default_model do
-    Application.get_env(:agent, :chat_model, @default_model)
+    System.get_env("API_MODEL") ||
+      System.get_env("API_CHAT_MODEL") ||
+      System.get_env("MISTRAL_CHAT_MODEL") ||
+      System.get_env("MISTRAL_MODEL") ||
+      get_active_provider_default_model() ||
+      Application.get_env(:agent, :chat_model, @default_model)
+  end
+
+  defp get_active_provider_default_model do
+    provider_name = Beamcore.Config.active_provider()
+    case Beamcore.Config.get_provider(provider_name) do
+      %{"default_model" => model} when is_binary(model) -> model
+      _ -> nil
+    end
   end
 
   @doc """
