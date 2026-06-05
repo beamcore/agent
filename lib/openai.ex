@@ -54,7 +54,10 @@ defmodule Beamcore.OpenAI do
 
   def auth_diagnostics do
     active = Beamcore.Config.active_provider()
-    env_token = env("API_KEY") || env("#{String.upcase(active)}_API_KEY") || (if active == "mistral", do: env("MISTRAL_API_KEY"), else: nil)
+
+    env_token =
+      env("API_KEY") || env("#{String.upcase(active)}_API_KEY") ||
+        if active == "mistral", do: env("MISTRAL_API_KEY"), else: nil
 
     config_token =
       case Beamcore.Config.get_provider(active) do
@@ -248,7 +251,6 @@ defmodule Beamcore.OpenAI do
     |> System.get_env()
     |> normalize_env()
   end
-
 
   defp normalize_env(nil), do: nil
 

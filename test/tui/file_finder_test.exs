@@ -34,7 +34,7 @@ defmodule Beamcore.TUI.FileFinderTest do
   describe "search/2" do
     test "correctly trims leading [ from the query" do
       cache = ["lib/tui/file_finder.ex", "lib/tui/events.ex", "test/tui/history_test.exs"]
-      
+
       results = FileFinder.search("[lib", cache)
       assert "lib/tui/file_finder.ex" in results
       assert "lib/tui/events.ex" in results

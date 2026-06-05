@@ -166,7 +166,9 @@ defmodule Beamcore.Config do
   """
   def list_providers do
     case get(:api_configs) do
-      nil -> %{}
+      nil ->
+        %{}
+
       json_str when is_binary(json_str) ->
         case Jason.decode(json_str) do
           {:ok, map} -> map
@@ -194,8 +196,10 @@ defmodule Beamcore.Config do
       cond do
         is_nil(api_key) ->
           nil
+
         String.starts_with?(api_key, "encrypted:") ->
           api_key
+
         true ->
           "encrypted:" <> Base.encode64(encrypt_api_key(api_key))
       end
@@ -214,6 +218,7 @@ defmodule Beamcore.Config do
   Returns the plaintext decrypted API key.
   """
   def decrypted_api_key(nil), do: nil
+
   def decrypted_api_key("encrypted:" <> encrypted_base64) do
     case Base.decode64(encrypted_base64) do
       {:ok, encrypted_bin} ->
@@ -222,9 +227,12 @@ defmodule Beamcore.Config do
         rescue
           _ -> nil
         end
-      _ -> nil
+
+      _ ->
+        nil
     end
   end
+
   def decrypted_api_key(key) when is_binary(key), do: key
 
   @doc """

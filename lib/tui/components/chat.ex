@@ -49,6 +49,9 @@ defmodule Beamcore.TUI.Components.Chat do
       %{role: :error, content: content} ->
         bubble("Error", content, Theme.style(:error), wrap_width, :plain)
 
+      %{role: :local, content: content} ->
+        bubble("Ollama", content, Theme.style(:status_hot), wrap_width, :plain)
+
       %{content: content} ->
         bubble("System", content, Theme.style(:muted), wrap_width, :plain)
     end)
@@ -211,8 +214,14 @@ defmodule Beamcore.TUI.Components.Chat do
   end
 
   defp append_spinner(items, %{status: status} = state)
-       when status in [:thinking, :tool_running] do
-    label = if status == :tool_running, do: "… running tools", else: "… thinking"
+       when status in [:thinking, :tool_running, :local_search] do
+    label =
+      case status do
+        :tool_running -> "… running tools"
+        :local_search -> "… local search (FunctionGemma)"
+        _ -> "… thinking"
+      end
+
     set = if state.unicode?, do: :braille, else: :ascii
 
     items ++

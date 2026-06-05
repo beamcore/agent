@@ -120,6 +120,9 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event({:error, content}, state),
     do: State.add_message(state, :error, content)
 
+  def handle_runtime_event({:local_info, content}, state),
+    do: State.add_message(state, :local, content)
+
   def handle_runtime_event({:tool_queued, name, args}, state),
     do: State.add_activity(state, name, args, :queued)
 
@@ -345,32 +348,32 @@ defmodule Beamcore.TUI.Events do
   defp handle_text_key(code, mods, state) do
     ExRatatui.textarea_handle_key(state.textarea, code, mods)
     state = %{state | history_index: nil}
-    
+
     # Check if this key press should trigger or update file finder
     state = handle_file_finder_key(code, mods, state)
-    
+
     {:noreply, refresh_commands(state)}
   end
 
   defp handle_file_finder_key(_code, _mods, state) do
     value = ExRatatui.textarea_get_value(state.textarea)
     cursor_pos = ExRatatui.textarea_cursor(state.textarea)
-    
+
     case FileFinder.parse(value, cursor_pos) do
       {:file_query, query, _start, _end} ->
         # Load files and update file finder state
         cache = state.file_finder_cache || FileFinder.load_files()
         results = FileFinder.search(query, cache)
-        
+
         state =
           if state.file_finder_active? do
             State.update_file_finder_query(state, query, results)
           else
             State.activate_file_finder(state, query, results)
           end
-          
+
         state |> Map.put(:file_finder_cache, cache)
-      
+
       :no_file_query ->
         # Deactivate file finder if @ is not present
         if state.file_finder_active? do
@@ -385,29 +388,41 @@ defmodule Beamcore.TUI.Events do
     case Enum.at(state.file_finder_results, state.file_finder_selected) do
       nil ->
         state
-      
+
       file_path ->
         value = ExRatatui.textarea_get_value(state.textarea)
         cursor_pos = ExRatatui.textarea_cursor(state.textarea)
-        
+
         case FileFinder.parse(value, cursor_pos) do
           {:file_query, _query, start, end_pos} ->
             # Replace the @query with the selected file path without brackets
             replacement = "@" <> file_path <> " "
-            new_value = 
-              String.slice(value, 0, start) <> 
-              replacement <> 
-              String.slice(value, end_pos..-1//1)
-            
+
+            new_value =
+              String.slice(value, 0, start) <>
+                replacement <>
+                String.slice(value, end_pos..-1//1)
+
             ExRatatui.textarea_set_value(state.textarea, new_value)
-            
+
             # Reposition the cursor right after the inserted file path
-            {target_row, target_col} = char_index_to_pos(new_value, start + String.length(replacement))
-            if target_row > 0, do: Enum.each(1..target_row, fn _ -> ExRatatui.textarea_handle_key(state.textarea, "down") end)
-            if target_col > 0, do: Enum.each(1..target_col, fn _ -> ExRatatui.textarea_handle_key(state.textarea, "right") end)
+            {target_row, target_col} =
+              char_index_to_pos(new_value, start + String.length(replacement))
+
+            if target_row > 0,
+              do:
+                Enum.each(1..target_row, fn _ ->
+                  ExRatatui.textarea_handle_key(state.textarea, "down")
+                end)
+
+            if target_col > 0,
+              do:
+                Enum.each(1..target_col, fn _ ->
+                  ExRatatui.textarea_handle_key(state.textarea, "right")
+                end)
 
             State.deactivate_file_finder(state)
-          
+
           :no_file_query ->
             state
         end
@@ -810,7 +825,7 @@ defmodule Beamcore.TUI.Events do
 
       {name, config, _is_active} ->
         state = State.deactivate_provider_selector(state)
-        
+
         # Check if the provider needs configuration (key input)
         needs_key? =
           cond do
@@ -824,11 +839,15 @@ defmodule Beamcore.TUI.Events do
           state
           |> Map.put(:pending_provider_key?, true)
           |> Map.put(:pending_provider_name, name)
-          |> State.add_message(:system, "Provider '#{name}' requires an API key. Please type your API key and press Enter:")
+          |> State.add_message(
+            :system,
+            "Provider '#{name}' requires an API key. Please type your API key and press Enter:"
+          )
           |> State.mark_dirty()
         else
           # Just switch active provider
           Beamcore.Config.set_active_provider(name)
+
           state
           |> State.set_session(%{state.session | client: Beamcore.OpenAI.client_safe()})
           |> State.add_message(:system, "Switched active provider to '#{name}'.")
@@ -839,7 +858,13 @@ defmodule Beamcore.TUI.Events do
 
   defp complete_provider_key(state, key) do
     provider = state.pending_provider_name
-    state = %{state | pending_provider_key?: false, pending_provider_name: nil, history_index: nil}
+
+    state = %{
+      state
+      | pending_provider_key?: false,
+        pending_provider_name: nil,
+        history_index: nil
+    }
 
     defaults = Map.get(Beamcore.Agent.Chat.Commands.provider_defaults(), provider, %{})
     base_url = Map.get(defaults, :base_url, "https://api.openai.com/v1")
@@ -850,11 +875,15 @@ defmodule Beamcore.TUI.Events do
       base_url: base_url,
       default_model: default_model
     })
+
     Beamcore.Config.set_active_provider(provider)
 
     state
     |> State.set_session(%{state.session | client: Beamcore.OpenAI.client_safe()})
-    |> State.add_message(:system, "Provider '#{provider}' configured successfully and set as active.")
+    |> State.add_message(
+      :system,
+      "Provider '#{provider}' configured successfully and set as active."
+    )
     |> State.mark_dirty()
   end
 

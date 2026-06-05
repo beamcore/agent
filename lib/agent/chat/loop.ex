@@ -196,6 +196,10 @@ defmodule Beamcore.Agent.Chat.Loop do
     Session.log(session, user_message)
 
     messages = session.messages ++ [user_message]
+
+    {messages, session} =
+      Beamcore.Agent.Chat.SearchConductor.preflight(session, messages, content, policy, opts)
+
     process_messages(session, messages, pid, 0, policy, opts)
   end
 

@@ -90,7 +90,12 @@ defmodule Beamcore.TUI.Render do
     end
   end
 
-  defp maybe_file_finder(widgets, %{file_finder_active?: true, file_finder_results: results} = state, area) when results != [] do
+  defp maybe_file_finder(
+         widgets,
+         %{file_finder_active?: true, file_finder_results: results} = state,
+         area
+       )
+       when results != [] do
     widgets ++ render_file_finder(state, area)
   end
 

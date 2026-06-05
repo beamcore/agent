@@ -64,6 +64,7 @@ defmodule Beamcore.TUI.Components.Mascot do
   defp at(frames, step), do: Enum.at(frames, rem(max(step, 0), length(frames)))
 
   defp normalize(:thinking), do: :thinking
+  defp normalize(:local_search), do: :thinking
   defp normalize(:tool_running), do: :tool_running
   defp normalize(:generating), do: :generating
   defp normalize(:waiting_for_confirmation), do: :waiting_confirmation

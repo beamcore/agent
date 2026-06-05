@@ -274,7 +274,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       """)
 
     assert ToolPolicy.allowed_tool_names(policy) == ["read"]
-    assert {:error, _message} = ToolPolicy.allow_tool_call(policy, "test_tool", %{"args" => "test"})
+
+    assert {:error, _message} =
+             ToolPolicy.allow_tool_call(policy, "test_tool", %{"args" => "test"})
   end
 
   test "read_only keeps git constrained and allows test_tool" do
