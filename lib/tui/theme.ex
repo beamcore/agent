@@ -45,6 +45,7 @@ defmodule Beamcore.TUI.Theme do
   def style(name), do: Map.fetch!(@styles, name)
 
   def border(:thinking), do: style(:border_hot)
+  def border(:local_search), do: style(:border_hot)
   def border(:tool_running), do: style(:running)
   def border(:waiting_for_confirmation), do: style(:running)
   def border(:error), do: style(:error)

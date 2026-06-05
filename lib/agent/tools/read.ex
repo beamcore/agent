@@ -142,7 +142,7 @@ defmodule Beamcore.Agent.Tools.Read do
         total_lines when total_lines <= @small_file_threshold ->
           # Read the entire file once
           all_lines = File.read!(path) |> String.split("\n", trim: false)
-          
+
           # If offset + limit covers the entire file, return all lines
           if start_idx + limit >= total_lines do
             formatted_lines =
@@ -160,11 +160,12 @@ defmodule Beamcore.Agent.Tools.Read do
                 "<type>file</type>",
                 "<content>"
               ] ++ formatted_lines ++ ["\n(End of file)", "</content>"]
-            
+
             Enum.join(output, "\n")
           else
             # Slice the cached lines
             sliced_lines = Enum.slice(all_lines, start_idx, limit)
+
             formatted_lines =
               sliced_lines
               |> Enum.with_index(offset)

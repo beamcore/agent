@@ -534,6 +534,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
           capture_io(fn ->
             Commands.execute("api list", session)
           end)
+
         assert output =~ "No custom providers configured yet"
 
         # 2. Add openai provider with defaults
@@ -542,6 +543,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
             result = Commands.execute("api add openai my-openai-key", session)
             send(self(), {:add_openai_res, result})
           end)
+
         assert output =~ "Provider 'openai' configured successfully with defaults"
         assert_receive {:add_openai_res, session1}
         assert session1.client.token == "my-openai-key"
@@ -552,9 +554,12 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
         # 3. Add custom provider with all args
         output =
           capture_io(fn ->
-            result = Commands.execute("api add custom tok-abc https://custom.api/v2 model-xyz", session1)
+            result =
+              Commands.execute("api add custom tok-abc https://custom.api/v2 model-xyz", session1)
+
             send(self(), {:add_custom_res, result})
           end)
+
         assert output =~ "Provider 'custom' configured successfully"
         assert_receive {:add_custom_res, session2}
         assert session2.client.token == "tok-abc"
@@ -567,6 +572,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
           capture_io(fn ->
             Commands.execute("api list", session2)
           end)
+
         assert output =~ "openai (https://api.openai.com/v1)"
         assert output =~ "* custom (https://custom.api/v2)"
 
@@ -576,6 +582,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
             result = Commands.execute("api use openai", session2)
             send(self(), {:use_openai_res, result})
           end)
+
         assert output =~ "Switched active provider to 'openai'"
         assert_receive {:use_openai_res, session3}
         assert session3.client.token == "my-openai-key"
@@ -587,6 +594,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
             result = Commands.execute("api delete openai", session3)
             send(self(), {:delete_openai_res, result})
           end)
+
         assert output =~ "Provider 'openai' deleted"
         assert output =~ "Reset active provider to 'mistral'"
         assert_receive {:delete_openai_res, _session4}

@@ -22,6 +22,7 @@ defmodule Beamcore.Agent.Chat.API do
 
   defp get_active_provider_default_model do
     provider_name = Beamcore.Config.active_provider()
+
     case Beamcore.Config.get_provider(provider_name) do
       %{"default_model" => model} when is_binary(model) -> model
       _ -> nil

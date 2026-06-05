@@ -135,8 +135,11 @@ defmodule Beamcore.Proxy do
   @spec describe() :: String.t() | nil
   def describe do
     case https_proxy() do
-      nil -> nil
-      %URI{host: host, port: port, scheme: scheme} -> "#{scheme}://#{host}:#{port || default_port(scheme)}"
+      nil ->
+        nil
+
+      %URI{host: host, port: port, scheme: scheme} ->
+        "#{scheme}://#{host}:#{port || default_port(scheme)}"
     end
   end
 

@@ -146,6 +146,7 @@ defmodule Beamcore.Agent.Chat.Commands do
             output.("#{prefix}#{name} (#{base_url}) - model: #{model}")
           end
         end
+
         session
 
       ["use", provider] ->
@@ -153,7 +154,9 @@ defmodule Beamcore.Agent.Chat.Commands do
         Beamcore.Config.set_active_provider(provider)
 
         unless Map.has_key?(providers, provider) do
-          output.("Warning: Provider '#{provider}' is not configured yet. Run '/api add #{provider} <token>' to configure.")
+          output.(
+            "Warning: Provider '#{provider}' is not configured yet. Run '/api add #{provider} <token>' to configure."
+          )
         end
 
         output.("Switched active provider to '#{provider}'.")
@@ -170,6 +173,7 @@ defmodule Beamcore.Agent.Chat.Commands do
             base_url: base_url,
             default_model: default_model
           })
+
           output.("Provider '#{provider}' configured successfully with defaults.")
           Beamcore.Config.set_active_provider(provider)
           %{session | client: Beamcore.OpenAI.client_safe()}
@@ -188,6 +192,7 @@ defmodule Beamcore.Agent.Chat.Commands do
           base_url: base_url,
           default_model: default_model
         })
+
         output.("Provider '#{provider}' configured successfully.")
         Beamcore.Config.set_active_provider(provider)
         %{session | client: Beamcore.OpenAI.client_safe()}
@@ -198,12 +203,14 @@ defmodule Beamcore.Agent.Chat.Commands do
           base_url: base_url,
           default_model: default_model
         })
+
         output.("Provider '#{provider}' configured successfully.")
         Beamcore.Config.set_active_provider(provider)
         %{session | client: Beamcore.OpenAI.client_safe()}
 
       ["delete", provider] ->
         providers = Beamcore.Config.list_providers()
+
         if Map.has_key?(providers, provider) do
           configs = Map.delete(providers, provider)
           Beamcore.Config.put(:api_configs, Jason.encode!(configs))
@@ -216,6 +223,7 @@ defmodule Beamcore.Agent.Chat.Commands do
         else
           output.("Provider '#{provider}' not found.")
         end
+
         %{session | client: Beamcore.OpenAI.client_safe()}
 
       _ ->

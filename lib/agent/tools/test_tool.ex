@@ -13,13 +13,15 @@ defmodule Beamcore.Agent.Tools.TestTool do
       type: "function",
       function: %{
         name: name(),
-        description: "Run the project's tests. Automatically detects the build system and runs tests (e.g. 'mix test', 'pytest', 'make test', 'cargo test', 'npm test').",
+        description:
+          "Run the project's tests. Automatically detects the build system and runs tests (e.g. 'mix test', 'pytest', 'make test', 'cargo test', 'npm test').",
         parameters: %{
           type: "object",
           properties: %{
             args: %{
               type: "string",
-              description: "Optional arguments to pass to the test runner (e.g., test filter or specific file paths)",
+              description:
+                "Optional arguments to pass to the test runner (e.g., test filter or specific file paths)",
               default: ""
             },
             workdir: %{
@@ -101,6 +103,7 @@ defmodule Beamcore.Agent.Tools.TestTool do
             case detect_fallback_command(safe_workdir, []) do
               {:ok, executable, fallback_args, _opts} ->
                 cmd_str = Enum.join([executable | fallback_args], " ")
+
                 """
                 Please add a 'test' target to your Makefile. For example:
 
@@ -218,7 +221,11 @@ defmodule Beamcore.Agent.Tools.TestTool do
     cond do
       venv_path ->
         # Use python from venv to run -m pytest or use pytest executable if it exists
-        env = [{"VIRTUAL_ENV", Path.expand(venv_path)}, {"PYTHONPATH", System.get_env("PYTHONPATH") || ""}]
+        env = [
+          {"VIRTUAL_ENV", Path.expand(venv_path)},
+          {"PYTHONPATH", System.get_env("PYTHONPATH") || ""}
+        ]
+
         python_exe = Path.join(venv_path, "bin/python")
         pytest_exe = Path.join(venv_path, "bin/pytest")
 
@@ -238,17 +245,19 @@ defmodule Beamcore.Agent.Tools.TestTool do
 
   defp poetry_project?(dir) do
     path = Path.join(dir, "pyproject.toml")
-    File.exists?(path) and (case File.read(path) do
-      {:ok, content} -> String.contains?(content, "poetry")
-      _ -> false
-    end)
+
+    File.exists?(path) and
+      case File.read(path) do
+        {:ok, content} -> String.contains?(content, "poetry")
+        _ -> false
+      end
   end
 
   defp resolve_ruby_test(safe_workdir, extra_args) do
     cond do
       # Rails
       File.exists?(Path.join(safe_workdir, "config/application.rb")) or
-        File.exists?(Path.join(safe_workdir, "bin/rails")) ->
+          File.exists?(Path.join(safe_workdir, "bin/rails")) ->
         {:ok, "bundle", ["exec", "rails", "test" | extra_args], []}
 
       # RSpec

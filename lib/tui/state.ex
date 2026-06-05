@@ -134,7 +134,7 @@ defmodule Beamcore.TUI.State do
 
   def animation_interval(%{status: status, messages: messages}) do
     cond do
-      status in [:thinking, :tool_running] -> 160
+      status in [:thinking, :tool_running, :local_search] -> 160
       status == :waiting_for_confirmation -> 280
       messages == [] -> 360
       true -> 420
@@ -146,10 +146,17 @@ defmodule Beamcore.TUI.State do
     until_animation = max(animation_interval(state) - elapsed, 0)
 
     cond do
-      state.status in [:thinking, :tool_running] -> clamp_poll(until_animation, 18, 42)
-      state.show_commands -> 24
-      state.worker != nil -> clamp_poll(until_animation, 24, 48)
-      true -> clamp_poll(until_animation, 10, 16)
+      state.status in [:thinking, :tool_running, :local_search] ->
+        clamp_poll(until_animation, 18, 42)
+
+      state.show_commands ->
+        24
+
+      state.worker != nil ->
+        clamp_poll(until_animation, 24, 48)
+
+      true ->
+        clamp_poll(until_animation, 10, 16)
     end
   end
 
@@ -320,29 +327,35 @@ defmodule Beamcore.TUI.State do
 
   # File finder state management
   def activate_file_finder(state, query, results) do
-    %{state | 
-      file_finder_active?: true,
-      file_finder_query: query,
-      file_finder_results: results,
-      file_finder_selected: 0
-    } |> mark_dirty()
+    %{
+      state
+      | file_finder_active?: true,
+        file_finder_query: query,
+        file_finder_results: results,
+        file_finder_selected: 0
+    }
+    |> mark_dirty()
   end
 
   def deactivate_file_finder(state) do
-    %{state | 
-      file_finder_active?: false,
-      file_finder_query: "",
-      file_finder_results: [],
-      file_finder_selected: 0
-    } |> mark_dirty()
+    %{
+      state
+      | file_finder_active?: false,
+        file_finder_query: "",
+        file_finder_results: [],
+        file_finder_selected: 0
+    }
+    |> mark_dirty()
   end
 
   def update_file_finder_query(state, query, results) do
-    %{state | 
-      file_finder_query: query,
-      file_finder_results: results,
-      file_finder_selected: min(state.file_finder_selected, max(length(results) - 1, 0))
-    } |> mark_dirty()
+    %{
+      state
+      | file_finder_query: query,
+        file_finder_results: results,
+        file_finder_selected: min(state.file_finder_selected, max(length(results) - 1, 0))
+    }
+    |> mark_dirty()
   end
 
   def select_file_finder_result(state, offset) do
@@ -358,12 +371,13 @@ defmodule Beamcore.TUI.State do
     active = Beamcore.Config.active_provider()
 
     # Get union of all provider names (defaults + custom)
-    provider_names = (Map.keys(defaults) ++ Map.keys(custom_providers)) |> Enum.uniq() |> Enum.sort()
+    provider_names =
+      (Map.keys(defaults) ++ Map.keys(custom_providers)) |> Enum.uniq() |> Enum.sort()
 
     Enum.map(provider_names, fn name ->
       # Check if configured
       config = Map.get(custom_providers, name)
-      is_active = (name == active)
+      is_active = name == active
 
       {name, config, is_active}
     end)
@@ -371,7 +385,7 @@ defmodule Beamcore.TUI.State do
 
   def format_provider_item({name, config, is_active}) do
     prefix = if is_active, do: "* ", else: "  "
-    
+
     config_info =
       cond do
         name == "mistral" and is_nil(config) ->
@@ -380,10 +394,12 @@ defmodule Beamcore.TUI.State do
           else
             "[not configured]"
           end
+
         is_map(config) ->
           base_url = Map.get(config, "base_url")
           model = Map.get(config, "default_model") || "default"
           "(#{base_url}) - model: #{model}"
+
         true ->
           "[not configured]"
       end
@@ -396,19 +412,23 @@ defmodule Beamcore.TUI.State do
     # Find the index of the active provider to highlight it initially
     active_idx = Enum.find_index(results, fn {_name, _config, is_active} -> is_active end) || 0
 
-    %{state | 
-      provider_selector_active?: true,
-      provider_selector_results: results,
-      provider_selector_selected: active_idx
-    } |> mark_dirty()
+    %{
+      state
+      | provider_selector_active?: true,
+        provider_selector_results: results,
+        provider_selector_selected: active_idx
+    }
+    |> mark_dirty()
   end
 
   def deactivate_provider_selector(state) do
-    %{state | 
-      provider_selector_active?: false,
-      provider_selector_results: [],
-      provider_selector_selected: 0
-    } |> mark_dirty()
+    %{
+      state
+      | provider_selector_active?: false,
+        provider_selector_results: [],
+        provider_selector_selected: 0
+    }
+    |> mark_dirty()
   end
 
   def select_provider_selector_result(state, offset) do
