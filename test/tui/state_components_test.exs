@@ -313,10 +313,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert help_text =~ "/yolo off"
     refute help_text =~ "/confirm"
 
-    assert input_title =~ "Ctrl+S send"
-    assert input_title =~ "Enter newline"
-    assert input_title =~ "arrows move"
-    assert input_title =~ "Tab complete"
+    assert input_title =~ "Ctrl+s send"
+    assert input_title =~ "@ files"
     assert input_title =~ "/ commands"
   end
 

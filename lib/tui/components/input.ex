@@ -9,9 +9,9 @@ defmodule Beamcore.TUI.Components.Input do
 
     title =
       if pending? do
-        "Pending action · /cancel clears · Ctrl+S send · Enter newline · / commands"
+        "Pending action · /cancel clears · Ctrl+s send · @ files · / commands"
       else
-        "Ctrl+S send · Enter newline · arrows move · Tab complete · Esc close · / commands"
+        "Ctrl+s send · @ files · / commands"
       end
 
     %Textarea{
