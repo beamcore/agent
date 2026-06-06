@@ -50,7 +50,7 @@ defmodule Beamcore.TUI.Components.Chat do
         bubble("Error", content, Theme.style(:error), wrap_width, :plain)
 
       %{role: :local, content: content} ->
-        bubble("Ollama", content, Theme.style(:status_hot), wrap_width, :plain)
+        bubble("Helper", content, Theme.style(:status_hot), wrap_width, :plain)
 
       %{content: content} ->
         bubble("System", content, Theme.style(:muted), wrap_width, :plain)
@@ -218,7 +218,7 @@ defmodule Beamcore.TUI.Components.Chat do
     label =
       case status do
         :tool_running -> "… running tools"
-        :local_search -> "… local search (FunctionGemma)"
+        :local_search -> "… context helper (#{State.helper_label(state.session)})"
         _ -> "… thinking"
       end
 

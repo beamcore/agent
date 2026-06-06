@@ -87,6 +87,8 @@ defmodule Beamcore.TUI.FileFinder do
 
     (file_paths ++ dirs)
     |> Enum.reject(&ProjectPolicy.denied_path?/1)
+    |> Enum.filter(&safe_workspace_entry?/1)
+    |> Enum.uniq()
     |> Enum.sort()
   end
 
@@ -184,6 +186,15 @@ defmodule Beamcore.TUI.FileFinder do
         path
       end
     end)
+  end
+
+  defp safe_workspace_entry?(path) do
+    path = String.trim_trailing(path, "/")
+
+    case PathSafety.resolve(path) do
+      {:ok, _absolute} -> true
+      {:error, _reason} -> false
+    end
   end
 
   @doc """

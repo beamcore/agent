@@ -1,491 +1,348 @@
-# Beamcore.Agent
+# Beamcore Agent
 
-![AGPL-3.0 License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
+![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 
-Beamcore.Agent is a general-purpose CLI coding agent running inside an Elixir/Mix workspace. It can answer and write code in any language, while its self-development workflow is optimized for this Elixir project: bounded workspace tools, autonomous edits, compact session context, token-aware history, image generation, and repeatable Mix validation.
+Beamcore is a terminal coding agent built on Elixir/OTP. It can inspect, modify,
+test, and reason about projects in many languages while keeping all filesystem
+operations inside the selected workspace.
 
-## Core ideas
+The runtime is provider-neutral: Mistral, OpenAI-compatible services, Ollama,
+and custom OpenAI-compatible endpoints are configuration entries behind the
+same provider contract. Models are data, not separate implementations.
 
-- **General coding help**: answer standalone Java, Python, C++, JavaScript, Go, Rust, Erlang, Elixir, and other coding questions directly in chat.
-- **Elixir-first workspace workflow**: when improving this repository, understand the Mix project, edit small, test focused, validate with Mix.
-- **Safe tool execution**: file and git paths are workspace-relative; absolute paths, traversal, and symlink escapes are rejected.
-- **Autonomous by default**: fresh sessions can read, search, edit, write, patch, and validate immediately while runtime guards stay active.
-- **Compact context**: the agent remembers inspected files, modified files, validation state, and activity without storing full file contents.
-- **Token discipline**: tool outputs, mutation arguments, and history are compacted before they are sent back to Mistral.
-- **Image generation**: optional real image generation through Mistral Agents with the built-in `image_generation` tool.
+## Highlights
+
+- full-screen TUI with chat, activity timeline, provider selector, autocomplete,
+  multiline input, and `@` file search;
+- unified guarded `modify_file` tool with exact operations, checksums, atomic
+  writes, reread verification, and structured diffs;
+- workspace-bound PathSafety and optional project policy;
+- parallel sub-agents with provider-specific scheduling;
+- provider-neutral routing and per-provider cooldowns;
+- optional local context helper, disabled by default;
+- persistent memory, ledger, provider configuration, and login data;
+- OTP supervision for stateful runtime components.
+
+## OTP architecture
+
+Beamcore uses OTP only where ownership and recovery are useful. Pure parsing,
+formatting, validation, and routing functions remain ordinary modules.
+
+The application supervision tree owns:
+
+- `Beamcore.Config` — the single owner of `~/.beamcore/config.dets`, including
+  the in-memory secret cache and serialized DETS writes;
+- `Beamcore.Ledger` — action journal and metrics;
+- `Beamcore.Memory` — persistent repository memory;
+- `Beamcore.RateLimiter` — legacy request pacing for compatibility paths;
+- `Beamcore.Provider.Scheduler` — independent provider/account/model queues and
+  cooldowns;
+- `Beamcore.Agent.TaskSupervisor` — chat workers, discovery probes, and
+  supervised asynchronous work;
+- `Beamcore.Provider.Health` — cached provider model discovery and health probes;
+- TUI supervision, file mutation queue, status bar, and alignment services.
+
+A failing optional local helper or provider discovery probe does not terminate
+the primary chat session. Provider probes run below the task supervisor and are
+cached by `Provider.Health`.
+
+## Provider architecture
+
+The main request path is:
+
+```text
+Chat / sub-agent / helper
+          ↓
+Beamcore.Provider.Router
+          ↓
+Registry definition + capabilities
+          ↓
+Beamcore.Provider.Scheduler
+          ↓
+Protocol adapter
+```
+
+Current chat providers use the OpenAI-compatible protocol adapter. Provider
+brands such as Mistral, OpenAI, DeepSeek, Ollama `/v1`, OpenRouter, Groq, LM
+Studio, vLLM, or LocalAI should normally be registry/configuration entries, not
+new adapter modules. A new adapter is needed only for a genuinely different
+protocol, such as Anthropic Messages or Gemini GenerateContent.
+
+Provider and model choices are stored in session role selections:
+
+- **primary** — planning, reasoning, final answers, and normal tool orchestration;
+- **helper** — optional bounded context scout;
+- **fallback** — reserved for provider failover.
+
+Concurrent sessions and sub-agents carry their own immutable role selections.
+
+## Optional local helper
+
+The local helper is **off by default**. Beamcore does not contact Ollama or any
+other local model unless the user explicitly chooses a provider and model.
+There is no automatic Gemma selection.
+
+```text
+/helper status
+/helper list
+/helper models ollama
+/helper use ollama qwen2.5-coder:latest
+/helper off
+```
+
+Any discovered local model may be selected. The helper receives only a reduced
+read-only tool set for workspace search and context preparation. It cannot call
+`modify_file`, destructive filesystem operations, command execution, git
+mutation, or recursive sub-agents.
+
+If the helper is unavailable, times out, or produces an invalid result, the
+primary request continues without it. Helper progress appears as transient TUI
+status and does not flood the chat transcript with inspected error terms.
+
+For development, an explicit local primary model can be launched with:
+
+```bash
+make chat-local LOCAL_MODEL=qwen2.5-coder:latest
+```
+
+Use `LOCAL_PROVIDER=<name>` when the provider is not `ollama`.
 
 ## Requirements
 
-- Elixir 1.12+
-- Erlang/OTP 24+
-- A Mistral API key for real chat/API calls
+For development from source:
 
-## Setup
+- Elixir 1.12 or newer;
+- Erlang/OTP 24 or newer;
+- Git;
+- credentials for a remote provider or a reachable local provider.
+
+Prebuilt releases do not require Elixir on the target machine.
+
+## Development setup
 
 ```bash
 git clone https://github.com/beamcore/agent.git
 cd agent
-make deps
-make init
-```
-
-For local development, `make chat` loads `.env` from this repository if present:
-
-```env
-MISTRAL_API_KEY=your_api_key_here
-MISTRAL_BASE_URL=https://api.mistral.ai/v1
-BEAMCORE_IMAGE_PROVIDER=mistral
-MISTRAL_IMAGE_MODEL=mistral-medium-latest
-MISTRAL_IMAGE_AGENT_ID=
-```
-
-`.env` is ignored by git. Keep `.env.example` committed with empty placeholders only.
-Installed `beamcore` does not load project `.env` files; run `/login` once in
-the chat UI to store your Mistral API key in `~/.beamcore/config.dets`.
-
-## Make targets
-
-| Target | Description |
-|---|---|
-| `make deps` | Install dependencies. |
-| `make compile` | Compile the project. |
-| `make test` | Run ExUnit tests. |
-| `make format` | Format the project. |
-| `make chat` | Start the primary polished terminal UI agent chat. |
-| `make chat-plain` | Start the plain emergency fallback. |
-| `make run-ledger` | Run the ledger service standalone as a globally registered cluster member. |
-| `make init` | Create the `$HOME/.beamcore` config directory if missing. |
-| `make install` | Build a production release and install a local executable. |
-| `make uninstall` | Remove the installed release/executable while preserving the `$HOME/.beamcore` config directory. |
-| `make clean` | Remove `_build` and `deps`. |
-| `make help` | Show available targets. |
-
-## Installed CLI
-
-After `make install`, the user-facing command is `beamcore`:
-
-```bash
-beamcore          # start interactive chat/TUI in the foreground
-beamcore start    # start the OTP release in background/service mode
-beamcore stop     # stop the running release
-beamcore remote   # attach to the running release
-```
-
-Additional arguments are forwarded to the underlying release binary.
-
-The installed CLI uses `MISTRAL_API_KEY` from the OS environment first. If it is
-not set, it reads the token stored by `/login`. The stored config is local DETS
-storage with owner-only file permissions where supported; it is not encrypted.
-
-`make install` writes the launcher to `$HOME/.local/bin/beamcore`. If that
-directory is not in `PATH`, the installer prints the exact shell command to add
-it and the full launcher path for a one-time run. To opt in to updating your
-shell config automatically:
-
-```bash
-make install PATH_UPDATE=1
-```
-
-You may still need to `source` the printed shell rc file or open a new terminal.
-Windows is not the primary install path yet.
-
-## Primary chat
-
-Run the product with:
-
-```bash
+make dev-setup
 make chat
 ```
 
-`make chat` starts the main terminal UI. The UI is the product experience: chat,
-tool activity, autonomous edits, project policy status, image generation status,
-and token state all live in one screen. If the TUI cannot start because the terminal is
-not interactive or unsupported, the app prints a short reason and starts the
-plain emergency fallback.
+`make chat` may load the repository `.env` for development only. Installed
+Beamcore does not load arbitrary project `.env` files.
 
-The fallback can be forced when needed:
+Example development `.env`:
 
-```bash
-make chat-plain
-mix run -e "Beamcore.Agent.chat(:plain)"
+```env
+MISTRAL_API_KEY=
+MISTRAL_BASE_URL=https://api.mistral.ai/v1
+API_CHAT_MODEL=mistral-medium-3-5
 ```
 
-The TUI and fallback use the same runtime: one session flow, one tool policy
-system, one dispatcher, one context model, and one image generation flow.
+Never commit a real `.env`.
 
-## TUI keybindings
+## Installation
+
+### Published release
+
+```bash
+make install
+```
+
+This uses `install.sh` to download a published release. If no GitHub release has
+been published yet, install from source instead.
+
+### Local source build
+
+```bash
+make install-dev
+```
+
+The launcher is installed at `~/.local/bin/beamcore` and the release at
+`~/.beamcore/app` by default.
+
+```bash
+beamcore          # foreground interactive TUI
+beamcore start    # start OTP release service
+beamcore stop     # stop service
+beamcore remote   # attach to service
+```
+
+The installer preserves `~/.beamcore`, including provider config, memory, and
+ledger data.
+
+## Provider configuration
+
+Open the provider selector with `Ctrl+O`, `/providers`, or `/api select`.
+
+```text
+/api list
+/api use mistral
+/api add openrouter <token> https://openrouter.ai/api/v1 <model>
+/api delete openrouter
+```
+
+For the legacy default Mistral flow:
+
+```text
+/login
+/logout
+```
+
+Provider secrets are stored in `~/.beamcore/config.dets`. `Beamcore.Config` is
+the supervised owner of this file and serializes access. Secrets are encrypted
+at rest with a machine-bound AES-256-GCM key and the file is restricted to
+`0600` where supported. This protects casual disk exposure but is not equivalent
+to macOS Keychain, Linux Secret Service, or a hardware-backed credential store.
+
+Operating-system environment variables take precedence over stored secrets.
+
+## TUI controls
 
 | Key | Action |
 |---|---|
-| `Enter` | Send the current message. |
-| `Shift+Enter` | Insert a newline when supported by the terminal. |
-| `Ctrl+S` | Send the current message. |
-| `Tab` | Open the tool details popup. |
-| `Up` / `Down` | Scroll chat or move through command suggestions. |
-| `Esc` | Close popups and command suggestions. |
+| `Ctrl+S` | Send the current input. |
+| `Enter` | Insert a newline in multiline input. |
+| `Shift+Enter` / `Alt+Enter` / `Ctrl+J` | Newline fallback, depending on terminal. |
+| `Ctrl+O` | Open provider selector. |
+| `@` | Search workspace files from the input. |
+| `Tab` | Complete suggestions or open activity details. |
+| `Up` / `Down` | Navigate suggestions, timeline, or chat scroll. |
+| `Esc` | Close suggestions, help, details, or selectors. |
 | `Ctrl+C` | Exit cleanly. |
 
-## Chat commands
+The TUI formats provider and tool failures into bounded readable messages.
+Optional-helper progress is kept in the status bar instead of chat history.
+
+## Main commands
 
 | Command | Description |
 |---|---|
-| `/new` | Start a fresh chat session and reset context. |
-| `/paste` | Enter multi-line input mode; finish with `/end`. |
-| `<<<` | Alternative multi-line input mode; finish with `>>>`. |
-| `/context` | Print compact session context. |
-| `/context clear` | Clear compact session context. |
-| `/policy` | Show project policy summary. |
-| `/policy show` | Show normalized project policy config. |
-| `/policy init` | Create `.beamcore/policy.json` from the example. |
-| `/policy deny path <pattern>` | Add a denied path pattern. |
-| `/policy allow-write <pattern>` | Add an allowed write path pattern. |
-| `/policy read-only <pattern>` | Add a read-only path pattern. |
-| `/policy tool <tool> allow\|deny` | Set a tool permission. |
-| `/policy remove ...` | Remove a policy entry; weakening changes require `--confirm`. |
-| `/policy reset --confirm` | Delete the local policy config. |
-| `/policy reload` | Reload and summarize policy from disk. |
-| `/yolo` | Toggle session freedom mode. |
-| `/yolo on` | Bypass project policy for this session. |
-| `/yolo off` | Restore project policy for this session. |
-| `/login` | Store your Mistral API key in `~/.beamcore/config.dets`. |
-| `/logout` | Clear the stored Beamcore login token. |
-| `/help` | Show command help. |
-| `/quit`, `/exit`, `/q` | Exit the TUI. |
+| `/new` | Start a fresh session. |
+| `/context` | Show compact session context. |
+| `/context clear` | Clear compact context. |
+| `/providers`, `/api select` | Open provider selector. |
+| `/api list` | List configured providers. |
+| `/api use <provider>` | Change the primary provider. |
+| `/api add ...` | Add/update an OpenAI-compatible provider. |
+| `/helper status` | Show helper selection. |
+| `/helper models <provider>` | Discover models through supervised provider health. |
+| `/helper use <provider> <model>` | Enable exactly the selected helper model. |
+| `/helper off` | Disable helper; this is the default. |
+| `/login`, `/logout` | Manage the legacy default Mistral login. |
+| `/policy ...` | Inspect or edit deterministic project policy. |
+| `/yolo on`, `/yolo off` | Bypass/restore project policy for this session. |
+| `/timeline` | Inspect tool activity. |
+| `/stop`, `/continue` | Pause/resume a session between turns. |
+| `/help` | Show help. |
+| `/quit`, `/exit`, `/q` | Exit. |
 
-The plain fallback also keeps `/paste` and `<<<` multi-line input for emergency
-line-based operation.
+## File search with `@`
 
-## TUI layout
+Typing `@` opens workspace file suggestions. Results are deduplicated and
+filtered through PathSafety, including symlink-escape protection. Build output,
+dependencies, and ignored paths should not be used as model context unless
+explicitly requested.
 
-- **Wide**: chat transcript, right activity/tool sidebar, bottom input, clean
-  centered header, and compact status bar with a tiny state indicator.
-- **Medium**: chat transcript, compact activity strip, command bar, and status bar.
-- **Narrow**: single-column chat, command bar, compact status, and activity
-  details via `Tab`.
-- **Tiny**: a minimal terminal-too-small screen with a fallback hint.
+## Tools
 
-The empty state is intentional: it shows the product title, a short
-description, example prompts, `/help`, autonomous-tool hints, and
-session/model/provider details. The header stays clean and professional; the
-compact status indicator shows agent state while tool calls live in the activity
-rail instead of decorative UI.
+| Tool | Purpose |
+|---|---|
+| `read` | Read workspace files and directories. |
+| `grep` | Search file contents. |
+| `glob` | Find files by pattern. |
+| `tree` | Show a compact workspace tree. |
+| `modify_file` | Create or modify files through guarded transactional operations. |
+| `fs` | Limited filesystem operations with explicit destructive guards. |
+| `git` | Bounded repository operations. |
+| `test_tool` | Detect and run the project test/build system. |
+| `task` | Delegate bounded work to sub-agents. |
+| `memory` | Store and recall repository-scoped knowledge. |
+| `plan` | Record a non-mutating plan. |
+| `reflect` | Review current work with bounded context. |
+| `web_get` | Optional explicit HTTP GET. |
+| `image_generation` | Optional image generation provider boundary. |
 
-## Activity timeline
+`modify_file` rejects missing or ambiguous anchors, invalid ranges, binary
+files, path escapes, no-op changes, and checksum mismatches. It applies edits in
+memory, writes atomically, rereads the file, verifies the result, and returns a
+structured diff and checksums.
 
-Tools are first-class UI events. The timeline shows compact labels for `plan`,
-`read`, `modify_file`, `fs`, `grep`, `glob`, `tree`, `git`, `mix`,
-`image_generation`, `reflect`, blocked attempts, validation events, and errors.
+## Workspace and policy safety
 
-Examples:
+All file tools are workspace-relative. Absolute paths, `..` traversal, and
+symlink escapes are rejected by PathSafety.
 
-```text
-read README.md
-write lib/foo.ex
-mix test
-image_generation -> generated/architecture.png
-blocked write scratch/a.ex
-```
-
-Tool states are `queued`, `running`, `done`, `blocked`, and `error`. The normal
-UI never dumps raw tool maps or full file payloads.
-
-## Image generation UI
-
-When `image_generation` runs, the activity timeline shows the prompt summary,
-output path, running/done/error status, saved file path, and an
-`open generated/file.png` hint after success. The TUI does not require external
-image viewers.
-
-## TUI troubleshooting
-
-- **Terminal too small**: enlarge the terminal; tiny mode shows a clear warning.
-- **TUI does not start**: `make chat` prints the reason and falls back to plain mode.
-- **tmux**: use a recent tmux and a capable `$TERM`, such as `screen-256color`.
-- **SSH**: make sure the remote session has an interactive TTY and useful `$TERM`.
-- **Truecolor**: truecolor is not required; the theme uses terminal-safe colors.
-- **Plain fallback**: use `make chat-plain` only when the TUI cannot run.
-
-## General coding questions
-
-The current workspace is Elixir/Mix, but the assistant is not Elixir-only. It should answer standalone programming questions in the requested language without refusing or forcing the answer back to this repository. For example, a question like `can you write something in Java?` should receive a Java example directly in chat.
-
-Workspace mutation rules still apply to every language: creating or editing Java, Python, C++, or any other files stays inside workspace path safety and optional project policy. Mix validation only validates this Elixir project; the agent should not claim it compiled or ran non-Elixir code unless an appropriate project tool exists.
-
-## Autonomous mutation flow
-
-Fresh sessions are autonomous. For normal user text, the agent may inspect,
-write, edit, patch, and validate directly. If a runtime guard blocks a tool
-call, the agent receives the error and should self-correct by choosing an
-allowed path or tool when possible.
-
-Use project policy when you want stricter control over what the autonomous agent
-can read, write, or execute.
-
-## Explicit Policy blocks
-
-Advanced users and tests can narrow a turn with an explicit machine-readable policy:
-
-```text
-/paste
-Policy:
-mode: restricted_write
-allowed_write_paths:
-- scratch/example.ex
-allowed_tools:
-- write
-- mix
-blocked_tools:
-- task
-- web_get
-- git
-
-Task:
-Create scratch/example.ex and run focused validation.
-/end
-```
-
-Supported modes:
-
-- `read_only`
-- `development`
-- `restricted_write`
-
-If a `Policy:` block has an invalid mode, the runtime fails closed and disables mutation tools.
-
-## Optional project policy
-
-Projects can add `.beamcore/policy.json` to make runtime permissions stricter. Missing config preserves the default autonomous behavior. Project policy is enforced in code, not only in the prompt, and cannot bypass workspace path safety.
-
-The local config is ignored by git. Use `.beamcore/policy.example.json` as the checked-in template.
-
-`/yolo` toggles a session-local freedom mode. In normal autonomous mode,
-ProjectPolicy remains active. In freedom mode, `.beamcore/policy.json`
-restrictions are bypassed for the current session only; hard workspace,
-path-safety, and tool-specific guards still apply. Use `/yolo off` to restore
-ProjectPolicy enforcement.
+Projects may add `.beamcore/policy.json` to restrict tools and paths. `/yolo`
+bypasses project policy only for the current session; it never disables
+PathSafety or hard tool guards.
 
 Example:
 
 ```json
 {
   "version": 1,
-  "deny_paths": [".env", ".env.*", "secrets/**", "private/**", "_build/**", "deps/**", ".git/**"],
-  "read_only_paths": ["config/prod.exs", "mix.lock"],
-  "allow_write_paths": ["lib/**", "test/**", "README.md", "generated/**"],
+  "deny_paths": [".env", ".env.*", "secrets/**", "_build/**", "deps/**", ".git/**"],
+  "read_only_paths": ["mix.lock"],
+  "allow_write_paths": ["lib/**", "test/**", "README.md", "scratch/**"],
   "tool_permissions": {
     "read": "allow",
     "grep": "allow",
     "glob": "allow",
     "tree": "allow",
-    "write": "allow",
-    "edit": "allow",
-    "patch": "allow",
-    "fs": "allow",
-        "git": "allow",
-        "test_tool": "allow",
-        "memory": "allow",
-        "image_generation": "allow",
-        "task": "deny",
-        "web_get": "deny"
+    "modify_file": "confirm",
+    "fs": "confirm",
+    "git": "allow",
+    "test_tool": "allow",
+    "task": "deny"
   }
 }
 ```
 
-- `deny_paths` always wins, for reads and writes.
-- `read_only_paths` can be read/searched/listed but cannot be mutated.
-- `allow_write_paths` is optional; when present, writes must match one of these patterns.
-- `tool_permissions` is optional and supports `allow` and `deny`.
-- Invalid JSON fails closed and blocks tools until the file is fixed.
-- Normal agent mutation tools cannot edit `.beamcore/policy.json`; policy changes must come from deterministic `/policy` commands or manual user edits.
-- Stricter `/policy` changes apply immediately. Weaker changes, such as removing a deny path or setting a denied tool to `allow`, require `--confirm`.
+## Rate limiting and concurrency
 
-## Tools
+Parallel sub-agents remain supported. Provider calls pass through
+`Beamcore.Provider.Scheduler`, keyed by provider, account fingerprint, and
+model. A remote provider cooldown does not block unrelated local-model work.
+The legacy global limiter remains only for compatibility paths that have not
+migrated to provider routing.
 
-| Tool | Description |
-|---|---|
-| `plan` | Records an optional non-mutating planning note. |
-| `read` | Reads workspace-relative files/directories with offset/limit support. |
-| `grep` | Searches file content with workspace boundary checks and fallback if `rg` is unavailable. |
-| `glob` | Finds files by glob pattern with workspace boundary checks and fallback if `rg` is unavailable. |
-| `tree` | Prints a compact workspace tree. |
-| `modify_file` | Unified tool to create, overwrite, and edit files robustly. |
-| `fs` | Performs limited filesystem operations; destructive actions require explicit confirmation. |
-| `git` | Performs bounded git operations inside the workspace. |
-| `test_tool` | Automatically detects the project's build system and runs tests (e.g. `mix test`, `pytest`, `make test`, `cargo test`, `npm test`). |
-| `memory` | Recalls, remembers, lists, and forgets scoped persistent repository knowledge. |
-| `image_generation` | Uses Mistral Agents with the built-in `image_generation` tool, downloads generated files, and saves them to allowed workspace paths. |
-| `web_get` | Fetches external URLs using HTTP GET only when explicitly enabled, using a token-efficient HTML cleaning pipeline. |
-| `reflect` | Performs AI-powered self-reflection with scoped context to critically review user input and current iteration output. |
-| `task` | Delegates to sub-agents only when explicitly enabled. |
+## Persistent data
 
-
-## Image generation
-
-The `image_generation` tool performs real API calls through a provider layer. The default provider is `mistral`. Mistral image generation follows the documented Agents flow: create or reuse an agent with `tools: [%{type: "image_generation"}]`, start a conversation with that agent, extract `tool_file` chunks from the response, and download generated files through `/v1/files/{file_id}/content`. Downloaded files are validated as PNG, JPEG, or WebP before they are written to disk, so JSON/error payloads are not saved as broken images.
-
-Example explicit policy:
+Default user files:
 
 ```text
-/paste
-Policy:
-mode: restricted_write
-allowed_write_paths:
-- generated/architecture.png
-allowed_tools:
-- image_generation
-blocked_tools:
-- task
-- web_get
-- git
-- write
-- edit
-- patch
-- fs
-
-Task:
-Generate a clean architecture diagram for this Elixir CLI agent. Use a dark terminal-inspired style, show Chat Loop, Tool Policy, Dispatcher, Tools, Mistral API, and Session Context. Save it to generated/architecture.png.
-/end
+~/.beamcore/config.dets   provider credentials and preferences
+~/.beamcore/memory.dets   repository memory
+~/.beamcore/ledger.jsonl  action journal
+~/.beamcore/app           installed release
 ```
 
-Optional environment variables:
-
-| Variable | Description |
-|---|---|
-| `BEAMCORE_IMAGE_PROVIDER` | Image generation provider. Currently supported: `mistral`. Defaults to `mistral`. |
-| `MISTRAL_IMAGE_MODEL` | Model used when creating a temporary Mistral image agent. Defaults to `mistral-medium-latest`. |
-| `MISTRAL_IMAGE_AGENT_ID` | Existing Mistral image-generation agent ID. If set, the tool reuses it instead of creating a temporary agent. |
-
-## Validation loop
-
-The `mix` tool supports `validate`, which runs:
-
-1. `mix format --check-formatted`
-2. `mix compile`
-3. `mix test`
-
-Manual equivalent:
+## Validation
 
 ```bash
-mix format --check-formatted
-mix compile
+make format-check
+mix compile --warnings-as-errors
 mix test
-mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})'
+MIX_ENV=prod mix release --overwrite
 ```
 
-## Runtime safety
+## Troubleshooting
 
-- No shell/bash/sh/zsh tool exists.
-- Runtime code does not depend on `Mix.env/0` or test-only branches.
-- Tool calls are authorized before execution.
-- Optional `.beamcore/policy.json` can further restrict tools and paths at runtime.
-- Blocked tool calls are printed as blocked, not as successful execution.
-- Mutation tool arguments and outputs are compacted in active API history.
-- `task` and `web_get` are hidden unless explicitly enabled.
-- `image_generation` is hidden unless explicitly enabled and must write to an allowed output path.
-
-## Recent Changes
-
-### Module Namespace Flattening (2026-05-28)
-To simplify imports and reduce nesting, the following core modules were moved from `Beamcore.Agent.*` to the top-level `Beamcore.*` namespace:
-- `Beamcore.Agent.OpenAI` → `Beamcore.OpenAI`
-- `Beamcore.Agent.Chat.RateLimiter` → `Beamcore.RateLimiter`
-- `Beamcore.Agent.Retry` → `Beamcore.Retry`
-- `Beamcore.Agent.Tools.FileMutationQueue` → `Beamcore.FileMutationQueue`
-
-All internal references and tests have been updated. External code using these modules should update imports accordingly.
-
-### Edit Tool Improvements
-The `edit` tool now:
-- Uses **byte-level precision** for UTF-8 safety (emoji, multi-byte characters).
-- Adapts line endings (LF/CRLF) automatically.
-- Normalizes Unicode smart quotes/dashes in `old_string` (but never modifies file content silently).
-- Supports atomic writes (temp file + rename).
-- De-obfuscates Cloudflare email placeholders (`[email\@protected]` → `$@`).
-- Preserves trailing newlines to prevent line merging.
-
-### Alignment Guard Removal
-The Alignment conflict check was removed from the `edit` tool. File coordination now belongs in a middleware/interceptor layer, not baked into individual tools. The `Beamcore.Alignment` GenServer itself remains available for custom coordination logic.
-
-## Architecture
-
-- `Beamcore.Agent.Chat.Loop` handles input, tool execution, policy messages, and status updates.
-- `Beamcore.Agent.Chat.ToolPolicy` parses explicit `Policy:` blocks and enforces runtime permissions.
-- `Beamcore.Agent.Chat.Context` stores compact session metadata.
-- `Beamcore.Agent.Tools.Dispatcher` routes authorized tool calls.
-- `Beamcore.Agent.Tools.Plan` stores pending mutation plans.
-- `Beamcore.Agent.Tools.ImageGeneration` is the safe local tool that validates output paths and saves generated image bytes.
-- `Beamcore.Agent.Providers.ImageGeneration` dispatches image requests to the configured provider.
-- `Beamcore.Agent.Providers.Mistral` implements Mistral Agents image generation through `Beamcore.OpenAI` REST helpers.
-- `Beamcore.OpenAI` is the single Mistral API boundary: OpenaiEx chat client plus binary-safe REST helpers for Agents, Conversations, and Files.
-- `Beamcore.Agent.Core.SysPrompt` defines the coding-agent behavior and response style.
-
-## Development checklist
-
-Before committing:
-
-```bash
-git diff --check
-mix format --check-formatted
-mix compile
-mix test
-mix run -e 'IO.puts Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})'
-```
-
-Also verify that `.env`, `scratch/`, `eval/`, temporary files, and generated artifacts are not staged unless intentionally requested.
-
-## Developer console (IEx)
-
-You can start an interactive Elixir console to test functions and tools directly:
-
-```bash
-iex -S mix
-```
-
-Once in the console, you can call any public function from the Beamcore.Agent modules.
-For example, to test the Mix tool validation:
-
-```elixir
-Beamcore.Agent.Tools.Mix.execute(%{"command" => "validate"})
-```
-
-Or to inspect available tools:
-
-```elixir
-Beamcore.Agent.Tools.Dispatcher.list_tools()
-```
-
-To search for files using glob patterns:
-
-```elixir
-Beamcore.Agent.Tools.Glob.execute(%{"pattern" => "**/*.ex", "limit" => 10})
-```
-
-To search file contents with grep:
-
-```elixir
-Beamcore.Agent.Tools.Grep.execute(%{"pattern" => "defmodule", "include" => "*.ex"})
-```
-
-To read a file directly:
-
-```elixir
-Beamcore.Agent.Tools.Read.execute(%{"filePath" => "README.md", "limit" => 50})
-```
-
-To fetch a web resource (note: requires explicit policy permission):
-
-```elixir
-Beamcore.Agent.Tools.WebGet.execute(%{"url" => "https://example.com"})
-```
-
-The full workspace context is available, so you can also read files, compile modules,
-and run tests directly from the console. This is useful for rapid iteration and
-debugging during development.
+- **No published release**: use `make install-dev` from a source checkout.
+- **Provider not configured**: open `Ctrl+O`, use `/api add`, or use `/login`
+  for the legacy Mistral flow.
+- **Local helper starts unexpectedly**: run `/helper off`; helper is designed to
+  be disabled by default.
+- **Local helper unavailable**: confirm the exact selected model exists with
+  `/helper models <provider>`. The primary request should still continue.
+- **TUI output is unreadable after an error**: current errors are bounded and
+  normalized; report the original provider/tool event rather than pasting a
+  raw nested term.
+- **macOS/iTerm viewport differs from Linux**: Beamcore uses ExRatatui frame
+  dimensions and resize events. Remaining alternate-screen behavior belongs to
+  the terminal abstraction dependency and may require an ExRatatui update.
 
 ## License
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
-
-See [LICENSE](LICENSE) for the full license text.
-
-© 2024 [Beamcore.Agent Contributors](https://github.com/beamcore/agent)
+Beamcore Agent is licensed under the GNU Affero General Public License v3.0.
+See [LICENSE](LICENSE).

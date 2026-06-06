@@ -18,17 +18,21 @@ defmodule Beamcore.TUI.Components.StatusBar do
       "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
 
     text =
-      case mode do
-        :narrow ->
-          "#{mascot} · #{provider_model} · #{tokens} tok"
+      case state.notice do
+        notice when is_binary(notice) and notice != "" ->
+          "#{mascot} · #{notice}"
 
         _ ->
-          left = "#{mascot} · "
-          right = "#{provider_model} · #{tokens} tok"
+          case mode do
+            :narrow ->
+              "#{mascot} · #{provider_model} · #{tokens} tok"
 
-          # Pad left to align right side
-          padding = String.duplicate(" ", max(0, 40 - String.length(left)))
-          "#{left}#{padding}#{right}"
+            _ ->
+              left = "#{mascot} · "
+              right = "#{provider_model} · #{tokens} tok"
+              padding = String.duplicate(" ", max(0, 40 - String.length(left)))
+              "#{left}#{padding}#{right}"
+          end
       end
       |> Wrap.truncate_line(220)
 

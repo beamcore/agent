@@ -9,7 +9,8 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
       "MISTRAL_API_KEY" => "test-api-key",
-      "MISTRAL_BASE_URL" => nil
+      "MISTRAL_BASE_URL" => nil,
+      "BEAMCORE_SEARCH_CONDUCTOR" => "false"
     })
 
     Process.delete(:mock_completions_create)

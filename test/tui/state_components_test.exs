@@ -318,6 +318,49 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert input_title =~ "/ commands"
   end
 
+  test "Ctrl+O provider selector uses registry diagnostics without leaking secrets" do
+    assert :ok =
+             Beamcore.Config.put_provider("openai", %{
+               api_key: "secret-openai-token",
+               base_url: "https://api.openai.com/v1",
+               default_model: "gpt-4o"
+             })
+
+    state = input_state("")
+
+    {:noreply, state} = Events.handle_event(key("o", ["ctrl"]), state)
+
+    assert state.provider_selector_active?
+    assert Enum.any?(state.provider_selector_results, &(&1.name == "openai"))
+
+    formatted =
+      state.provider_selector_results
+      |> Enum.map_join("\n", &State.format_provider_item/1)
+
+    assert formatted =~ "openai configured"
+    assert formatted =~ "gpt-4o"
+    assert formatted =~ "remote"
+    refute formatted =~ "secret-openai-token"
+  end
+
+  test "Ctrl+O can select Ollama without prompting for an API key" do
+    state = input_state("")
+    {:noreply, state} = Events.handle_event(key("o", ["ctrl"]), state)
+
+    selected =
+      Enum.find_index(state.provider_selector_results, &(&1.name == "ollama")) ||
+        flunk("expected ollama in provider selector")
+
+    state = %{state | provider_selector_selected: selected}
+
+    {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    refute state.provider_selector_active?
+    refute state.pending_provider_key?
+    assert Beamcore.Config.active_provider() == "ollama"
+    assert Enum.any?(state.messages, &String.contains?(&1.content, "Switched active provider"))
+  end
+
   test "timeline details show compact selected activity" do
     state = timeline_state()
     selected = Enum.at(state.activity, state.selected_activity)

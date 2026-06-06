@@ -560,7 +560,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       # 1. Mock the API call
       Process.put(:mock_completions_create, fn _client, params ->
-        assert params.model == "mistral-small-2603"
+        assert params.model == "mistral-medium-3-5"
 
         {:ok,
          %{

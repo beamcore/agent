@@ -4,7 +4,7 @@ defmodule Beamcore.TUI.Events do
   """
 
   alias Beamcore.Agent.Chat.{Commands, Loop}
-  alias Beamcore.TUI.{FileFinder, History, State}
+  alias Beamcore.TUI.{ErrorFormatter, FileFinder, History, State}
   alias ExRatatui.Event
   alias ExRatatui.Widgets.SlashCommands
   alias ExRatatui.Widgets.SlashCommands.Command
@@ -20,6 +20,11 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "api add ", description: "Add or update an API provider"},
     %Command{name: "api delete ", description: "Delete an API provider configuration"},
     %Command{name: "providers", description: "Open interactive provider selector"},
+    %Command{name: "helper status", description: "Show optional helper selection"},
+    %Command{name: "helper list", description: "List helper-capable providers"},
+    %Command{name: "helper models ", description: "List models from a local provider"},
+    %Command{name: "helper use ", description: "Choose helper provider and model"},
+    %Command{name: "helper off", description: "Disable optional helper model"},
     %Command{name: "new", description: "Start a fresh session"},
     %Command{name: "context", description: "Show compact session context"},
     %Command{name: "context clear", description: "Clear compact session context"},
@@ -115,13 +120,16 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event({:session, session}, state), do: State.set_session(state, session)
 
   def handle_runtime_event({:assistant, content}, state),
-    do: State.add_message(state, :assistant, content)
+    do: state |> State.clear_notice() |> State.add_message(:assistant, content)
 
   def handle_runtime_event({:error, content}, state),
-    do: State.add_message(state, :error, content)
+    do: state |> State.clear_notice() |> State.add_message(:error, ErrorFormatter.format(content))
 
+  # Helper progress is transient status, not chat history. Keeping it out of the
+  # transcript prevents nested provider errors and inspected terms from flooding
+  # the TUI.
   def handle_runtime_event({:local_info, content}, state),
-    do: State.add_message(state, :local, content)
+    do: State.set_notice(state, content)
 
   def handle_runtime_event({:tool_queued, name, args}, state),
     do: State.add_activity(state, name, args, :queued)
@@ -738,7 +746,7 @@ defmodule Beamcore.TUI.Events do
     case Commands.store_login_token(token) do
       :ok ->
         state
-        |> State.set_session(%{state.session | client: Beamcore.OpenAI.client()})
+        |> State.set_session(state.session)
         |> State.add_message(:system, Commands.login_saved_message())
 
       {:error, :empty_value} ->
@@ -823,14 +831,14 @@ defmodule Beamcore.TUI.Events do
         state
         |> State.deactivate_provider_selector()
 
-      {name, config, _is_active} ->
+      %{name: name, config: config} = provider ->
         state = State.deactivate_provider_selector(state)
 
         # Check if the provider needs configuration (key input)
         needs_key? =
           cond do
-            name == "ollama" -> false
-            name == "mistral" and Beamcore.OpenAI.configured?() -> false
+            not Beamcore.Provider.Registry.provider_requires_key?(name) -> false
+            provider.configured? -> false
             is_map(config) and not is_nil(Map.get(config, "api_key")) -> false
             true -> true
           end
@@ -849,7 +857,9 @@ defmodule Beamcore.TUI.Events do
           Beamcore.Config.set_active_provider(name)
 
           state
-          |> State.set_session(%{state.session | client: Beamcore.OpenAI.client_safe()})
+          |> State.set_session(
+            Beamcore.Agent.Chat.Session.set_primary_provider(state.session, name)
+          )
           |> State.add_message(:system, "Switched active provider to '#{name}'.")
           |> State.mark_dirty()
         end
@@ -879,7 +889,9 @@ defmodule Beamcore.TUI.Events do
     Beamcore.Config.set_active_provider(provider)
 
     state
-    |> State.set_session(%{state.session | client: Beamcore.OpenAI.client_safe()})
+    |> State.set_session(
+      Beamcore.Agent.Chat.Session.set_primary_provider(state.session, provider)
+    )
     |> State.add_message(
       :system,
       "Provider '#{provider}' configured successfully and set as active."

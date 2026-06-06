@@ -527,7 +527,10 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
         _ = Beamcore.Config.delete(:api_configs)
         _ = Beamcore.Config.delete(:active_provider)
 
-        session = %Session{client: OpenaiEx.new("temp-key")}
+        session = %Session{
+          client: OpenaiEx.new("temp-key"),
+          roles: Beamcore.Provider.Selection.default()
+        }
 
         # 1. /api list should show default state when empty
         output =
@@ -546,8 +549,9 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
         assert output =~ "Provider 'openai' configured successfully with defaults"
         assert_receive {:add_openai_res, session1}
-        assert session1.client.token == "my-openai-key"
-        assert session1.client.base_url == "https://api.openai.com/v1"
+        assert session1.client == nil
+        assert session1.roles.primary.provider == "openai"
+        assert session1.roles.primary.model == "gpt-4o"
         assert Beamcore.Config.active_provider() == "openai"
         assert Beamcore.Agent.Chat.API.default_model() == "gpt-4o"
 
@@ -562,8 +566,9 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
         assert output =~ "Provider 'custom' configured successfully"
         assert_receive {:add_custom_res, session2}
-        assert session2.client.token == "tok-abc"
-        assert session2.client.base_url == "https://custom.api/v2"
+        assert session2.client == nil
+        assert session2.roles.primary.provider == "custom"
+        assert session2.roles.primary.model == "model-xyz"
         assert Beamcore.Config.active_provider() == "custom"
         assert Beamcore.Agent.Chat.API.default_model() == "model-xyz"
 
@@ -585,7 +590,9 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
         assert output =~ "Switched active provider to 'openai'"
         assert_receive {:use_openai_res, session3}
-        assert session3.client.token == "my-openai-key"
+        assert session3.client == nil
+        assert session3.roles.primary.provider == "openai"
+        assert session3.roles.primary.model == "gpt-4o"
         assert Beamcore.Config.active_provider() == "openai"
 
         # 6. Delete provider
@@ -630,4 +637,23 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       end
     end)
   end
+
+  test "/helper use selects an arbitrary configured model and /helper off disables it" do
+    session = Beamcore.OpenAI.client() |> Session.new()
+    output = fn _message -> :ok end
+
+    assert session.roles.helper == nil
+
+    session = Commands.execute("helper use ollama qwen2.5-coder:latest", session, output: output)
+
+    assert session.roles.helper == %{
+             provider: "ollama",
+             model: "qwen2.5-coder:latest",
+             enabled: true
+           }
+
+    session = Commands.execute("helper off", session, output: output)
+    assert session.roles.helper.enabled == false
+  end
+
 end

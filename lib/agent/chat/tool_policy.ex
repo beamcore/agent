@@ -17,6 +17,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           | :development
           | :read_only
           | :restricted_write
+          | :local_context_helper
           | :invalid_policy
   @type t :: %{
           mode: mode(),
@@ -29,6 +30,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
         }
 
   @read_only_tools ~w(read grep glob tree git test_tool memory reflect)
+  @local_context_helper_tools ~w(read grep glob tree git memory reflect)
   @unconfirmed_tools ~w(read grep glob tree plan git memory reflect)
   @restricted_write_tools ~w(read grep glob modify_file fs test_tool memory reflect)
   @development_tools ~w(read grep glob modify_file tree git fs test_tool memory)
@@ -84,6 +86,26 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   end
 
   @doc """
+  Policy used by the optional local context helper.
+
+  The helper is allowed to inspect and summarize context, but it cannot mutate
+  files, spawn sub-agents, run shell commands, or use network tools. This is a
+  runtime policy, not a prompt convention.
+  """
+  @spec local_context_helper(t()) :: t()
+  def local_context_helper(parent_policy \\ default()) do
+    %{
+      mode: :local_context_helper,
+      allow_task: false,
+      allow_network: false,
+      allowed_write_paths: [],
+      allowed_tools: @local_context_helper_tools,
+      blocked_tools: @all_tool_names -- @local_context_helper_tools,
+      project_policy_bypassed?: project_policy_bypassed?(parent_policy)
+    }
+  end
+
+  @doc """
   Returns the allowed tool names for the given policy.
   """
   @spec allowed_tool_names(t()) :: [binary()]
@@ -114,6 +136,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       restricted_write?(policy) ->
         allow_restricted_write(policy, name, args)
 
+      local_context_helper?(policy) and name == "git" ->
+        allow_read_only_git(args)
+
       true ->
         :ok
     end
@@ -134,6 +159,10 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   @spec restricted_write?(t()) :: boolean()
   def restricted_write?(%{mode: :restricted_write}), do: true
   def restricted_write?(_policy), do: false
+
+  @spec local_context_helper?(t()) :: boolean()
+  def local_context_helper?(%{mode: :local_context_helper}), do: true
+  def local_context_helper?(_policy), do: false
 
   @spec project_policy_bypassed?(t()) :: boolean()
   def project_policy_bypassed?(policy), do: Map.get(policy, :project_policy_bypassed?, false)
@@ -291,6 +320,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   defp base_allowed_tool_names(%{mode: :read_only} = policy),
     do: apply_tool_filters(@read_only_tools, policy)
 
+  defp base_allowed_tool_names(%{mode: :local_context_helper} = policy),
+    do: apply_tool_filters(@local_context_helper_tools, policy)
+
   defp base_allowed_tool_names(%{mode: :restricted_write} = policy) do
     @restricted_write_tools
     |> maybe_add("task", Map.get(policy, :allow_task, false))
@@ -401,6 +433,10 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
 
   defp blocked_message(%{mode: :restricted_write}, name) do
     "Tool call blocked by restricted-write policy: #{name}. Only explicitly allowed file writes are permitted."
+  end
+
+  defp blocked_message(%{mode: :local_context_helper}, name) do
+    "Tool call blocked by local_context_helper policy: #{name}. Helper tools are read-only and cannot mutate workspace state."
   end
 
   defp blocked_message(_policy, name), do: "Tool call blocked by policy: #{name}."

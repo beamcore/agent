@@ -20,7 +20,8 @@ defmodule Beamcore.Agent.Chat.Session do
     :project_nature,
     :workspace_root,
     :context,
-    :pending_user_message
+    :pending_user_message,
+    :roles
   ]
 
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
@@ -77,7 +78,8 @@ defmodule Beamcore.Agent.Chat.Session do
       project_nature: {language, build_system},
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
-      pending_user_message: nil
+      pending_user_message: nil,
+      roles: Keyword.get(opts, :roles, Beamcore.Provider.Selection.default())
     }
     |> then(&log(&1, system_message))
   end
@@ -88,6 +90,41 @@ defmodule Beamcore.Agent.Chat.Session do
       | pending_user_message: nil,
         context: Beamcore.Agent.Chat.Context.clear_pending_action(session.context)
     }
+  end
+
+  def set_primary_provider(session, provider, model \\ nil) do
+    model = model || provider_default_model(provider) || Beamcore.Agent.Chat.API.default_model()
+    roles = session.roles || Beamcore.Provider.Selection.default()
+
+    %{
+      session
+      | roles: Beamcore.Provider.Selection.put_primary(roles, provider, model),
+        client: nil
+    }
+  end
+
+  defp provider_default_model(provider) do
+    case Beamcore.Provider.Registry.get(provider) do
+      %{default_model: model} -> model
+      _ -> nil
+    end
+  end
+
+  @doc """
+  Enables the optional context helper for this session.
+  """
+  def set_helper_provider(session, provider, model) do
+    roles = session.roles || Beamcore.Provider.Selection.default()
+
+    %{session | roles: Beamcore.Provider.Selection.put_helper(roles, provider, model, true)}
+  end
+
+  @doc """
+  Disables the optional context helper for this session.
+  """
+  def disable_helper(session) do
+    roles = session.roles || Beamcore.Provider.Selection.default()
+    %{session | roles: Beamcore.Provider.Selection.disable_helper(roles)}
   end
 
   @doc """
@@ -271,7 +308,13 @@ defmodule Beamcore.Agent.Chat.Session do
            trimmed ++ [summary_prompt],
            [],
            :main,
-           model: "mistral-small-2603"
+           selection: Beamcore.Provider.Selection.primary(session.roles),
+           model:
+             Map.get(
+               Beamcore.Provider.Selection.primary(session.roles),
+               :model,
+               "mistral-small-2603"
+             )
          ) do
       {:ok, %{message: %{"content" => summary}}} ->
         validated = validate_summary(summary)

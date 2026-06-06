@@ -84,7 +84,7 @@ defmodule Beamcore.Agent.Chat.Loop do
           case Commands.store_login_token(input) do
             :ok ->
               IO.puts(Commands.login_saved_message())
-              %{session | client: Beamcore.OpenAI.client()}
+              session
 
             {:error, :empty_value} ->
               IO.puts("Login token was empty; nothing was saved.")
@@ -147,16 +147,17 @@ defmodule Beamcore.Agent.Chat.Loop do
     end
   end
 
+  defp ensure_client(
+         %{roles: %{primary: %{provider: _provider, model: _model}}} = session,
+         _opts
+       ),
+       do: {:ok, session}
+
   defp ensure_client(%{client: nil} = session, opts) do
-    try do
-      {:ok, %{session | client: Beamcore.OpenAI.client()}}
-    rescue
-      error in Beamcore.OpenAI.MissingConfigError ->
-        message = Exception.message(error)
-        maybe_print(opts, fn -> Pretty.print_error(message) end)
-        emit(opts, {:error, message})
-        {:error, session}
-    end
+    message = Beamcore.Provider.Registry.missing_config_message()
+    maybe_print(opts, fn -> Pretty.print_error(message) end)
+    emit(opts, {:error, message})
+    {:error, session}
   end
 
   defp ensure_client(session, _opts), do: {:ok, session}
@@ -228,6 +229,7 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> inject_policy_message(policy, tools)
 
     case API.execute(session.client, api_messages, tools, :main,
+           selection: Beamcore.Provider.Selection.primary(session.roles),
            silent: Keyword.get(opts, :silent, false),
            retry_config: Keyword.get(opts, :retry_config)
          ) do
@@ -342,6 +344,12 @@ defmodule Beamcore.Agent.Chat.Loop do
       {:error, %OpenaiEx.Error{kind: :api_timeout_error}} ->
         maybe_print(opts, &Pretty.print_timeout_error/0)
         emit(opts, {:error, "API request timed out. Retrying with longer timeout..."})
+        emit(opts, {:status, :error})
+        session
+
+      {:error, %Beamcore.Provider.Error{} = error} ->
+        maybe_print(opts, fn -> Pretty.print_error(error.message) end)
+        emit(opts, {:error, error.message})
         emit(opts, {:status, :error})
         session
 

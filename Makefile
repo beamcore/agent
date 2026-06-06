@@ -22,7 +22,7 @@ LOAD_ENV = set -a; [ ! -f .env ] || . ./.env; set +a;
 .PHONY: all help
 .PHONY: install install-dev uninstall
 .PHONY: deps compile release test format format-check dialyzer check check-full
-.PHONY: chat chat-plain chat-ollama chat-plain-ollama shell run-ledger run-memory
+.PHONY: chat chat-plain chat-local chat-plain-local shell run-ledger run-memory
 .PHONY: dev-setup init config-status version clean update
 
 all: compile
@@ -190,13 +190,15 @@ chat: compile
 chat-plain: compile
 	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
 
-## chat-ollama: Start the TUI chat pre-configured for local Ollama
-chat-ollama: compile
-	$(LOAD_ENV) MISTRAL_BASE_URL=http://127.0.0.1:11434/v1 MISTRAL_API_KEY=ollama MISTRAL_CHAT_MODEL=gemma4:latest mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
+## chat-local: Start TUI with an explicitly selected local provider/model
+chat-local: compile
+	@test -n "$(LOCAL_MODEL)" || { echo "error: set LOCAL_MODEL, e.g. make chat-local LOCAL_MODEL=qwen2.5-coder:latest"; exit 1; }
+	$(LOAD_ENV) ACTIVE_PROVIDER=$${LOCAL_PROVIDER:-ollama} API_CHAT_MODEL="$(LOCAL_MODEL)" mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
 
-## chat-plain-ollama: Start the plain fallback chat pre-configured for local Ollama
-chat-plain-ollama: compile
-	$(LOAD_ENV) MISTRAL_BASE_URL=http://127.0.0.1:11434/v1 MISTRAL_API_KEY=ollama MISTRAL_CHAT_MODEL=gemma4:latest mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
+## chat-plain-local: Start plain chat with an explicit local provider/model
+chat-plain-local: compile
+	@test -n "$(LOCAL_MODEL)" || { echo "error: set LOCAL_MODEL, e.g. make chat-plain-local LOCAL_MODEL=qwen2.5-coder:latest"; exit 1; }
+	$(LOAD_ENV) ACTIVE_PROVIDER=$${LOCAL_PROVIDER:-ollama} API_CHAT_MODEL="$(LOCAL_MODEL)" mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
 
 ## run-ledger: Run ledger service standalone (cluster member)
 run-ledger: compile

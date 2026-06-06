@@ -1,8 +1,10 @@
 defmodule Beamcore.Agent.Chat.SearchConductor do
   @moduledoc """
-  Pre-flight workspace search conductor.
-  Uses a local, fast model (like FunctionGemma or Gemma4 via Ollama) to pre-fetch context
-  before invoking the main, large reasoning model.
+  Optional pre-flight workspace search conductor.
+
+  It runs only when the user explicitly enables a helper provider/model. The
+  helper is provider-neutral and may be any configured model with suitable
+  chat/tool capabilities.
   """
 
   alias Beamcore.Agent.Chat.Context
@@ -12,14 +14,6 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
 
   require Logger
 
-  @http_client Application.compile_env(:agent, :http_client, :httpc)
-  @completions_module Application.compile_env(
-                        :agent,
-                        :completions_module,
-                        OpenaiEx.Chat.Completions
-                      )
-  @default_base_url "http://127.0.0.1:11434/v1"
-  @model_search_order ["functiongemma:latest", "gemma4:latest", "gemma:latest", "gemma:2b"]
   @search_tools ["grep", "glob", "tree", "read"]
 
   @system_prompt """
@@ -61,23 +55,18 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
   Response: Okay, let's proceed with prompt adjustments. No search needed.
   """
 
-
   @doc """
-  Performs pre-flight workspace search if Ollama and a suitable model are available.
+  Performs pre-flight workspace search only when a helper role is enabled.
   Returns the updated session with search messages and updated context.
   """
   def preflight(session, messages, content, policy, opts \\ []) do
-    # Only run search conductor if enabled in environment (default is true)
+    # The helper is opt-in. The environment switch can additionally disable it.
     if System.get_env("BEAMCORE_SEARCH_CONDUCTOR") == "false" do
       {messages, session}
     else
-      base_url =
-        System.get_env("OLLAMA_BASE_URL") || System.get_env("BEAMCORE_OLLAMA_BASE_URL") ||
-          @default_base_url
-
-      case detect_model(base_url) do
-        {:ok, model} ->
-          run_preflight(session, messages, content, model, base_url, policy, opts)
+      case helper_selection(session) do
+        {:ok, selection} ->
+          run_preflight(session, messages, content, selection, policy, opts)
 
         _ ->
           # Silently fallback to main reasoning flow
@@ -86,72 +75,13 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
     end
   end
 
-  # Helper to query Ollama for model availability
-  def check_availability(base_url, model) do
-    base_url = String.trim_trailing(base_url, "/")
-
-    # Try OpenAI-compatible /models endpoint
-    case get_request("#{base_url}/models") do
-      {:ok, %{"data" => models}} when is_list(models) ->
-        Enum.any?(models, fn m -> m["id"] == model end)
-
-      _ ->
-        # Fallback to Ollama native /api/tags
-        root_url = String.replace(base_url, ~r|/v1$|, "")
-
-        case get_request("#{root_url}/api/tags") do
-          {:ok, %{"models" => models}} when is_list(models) ->
-            Enum.any?(models, fn m -> m["name"] == model end)
-
-          _ ->
-            false
-        end
-    end
-  end
-
-  defp detect_model(base_url) do
-    case System.get_env("OLLAMA_MODEL") || System.get_env("BEAMCORE_OLLAMA_MODEL") do
-      model when is_binary(model) and model != "" ->
-        if check_availability(base_url, model), do: {:ok, model}, else: {:error, :not_found}
-
-      _ ->
-        # Try search order
-        active_model =
-          Enum.find(@model_search_order, fn candidate ->
-            check_availability(base_url, candidate)
-          end)
-
-        if active_model, do: {:ok, active_model}, else: {:error, :not_found}
-    end
-  end
-
-  defp get_request(url) do
-    request = {to_charlist(url), []}
-
-    case @http_client.request(:get, request, [timeout: 300], []) do
-      {:ok, {{_http, status, _reason}, _headers, body}} when status in 200..299 ->
-        Jason.decode(normalize_body(body))
-
-      _ ->
-        {:error, :failed}
-    end
-  end
-
-  defp normalize_body(body) when is_binary(body), do: body
-  defp normalize_body(body) when is_list(body), do: IO.iodata_to_binary(body)
-  defp normalize_body(body), do: IO.iodata_to_binary(body)
-
-  defp run_preflight(session, messages, content, model, base_url, policy, opts) do
-    tools = search_tool_specs(policy)
+  defp run_preflight(session, messages, content, selection, policy, opts) do
+    helper_policy = ToolPolicy.local_context_helper(policy)
+    tools = search_tool_specs(helper_policy)
 
     if Enum.empty?(tools) do
       {messages, session}
     else
-      client =
-        OpenaiEx.new("ollama")
-        |> OpenaiEx.with_base_url(base_url)
-        |> OpenaiEx.with_receive_timeout(5000)
-
       preflight_prompt_messages = [
         %{role: "system", content: @system_prompt},
         %{role: "user", content: content}
@@ -159,19 +89,23 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
 
       # Indicate to TUI and console that local search is starting
       emit(opts, {:status, :local_search})
-      emit(opts, {:local_info, "Checking workspace search needs via local model (#{model})..."})
+
+      emit(
+        opts,
+        {:local_info, "Checking workspace search needs via helper model (#{selection.model})..."}
+      )
 
       maybe_print(opts, fn ->
         IO.puts(
           IO.ANSI.cyan() <>
-            "* Ollama (#{model}) -> checking workspace search needs..." <> IO.ANSI.reset()
+            "* Helper (#{selection.provider}/#{selection.model}) -> checking workspace search needs..." <>
+            IO.ANSI.reset()
         )
       end)
 
-      # Call Ollama completions
       res =
-        @completions_module.create(client, %{
-          model: model,
+        Beamcore.Provider.Router.chat(selection, %{
+          model: selection.model,
           messages: preflight_prompt_messages,
           tools: tools
         })
@@ -180,7 +114,7 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
         {:ok, %{"choices" => [%{"message" => assistant_message} | _]}} ->
           if has_tool_calls?(assistant_message) do
             emit(opts, {:local_info, "Local search tools detected. Running local pre-flight..."})
-            execute_preflight_tools(session, messages, assistant_message, policy, opts)
+            execute_preflight_tools(session, messages, assistant_message, helper_policy, opts)
           else
             emit(opts, {:local_info, "No search tools needed."})
             emit(opts, {:status, :thinking})
@@ -188,9 +122,9 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
           end
 
         error ->
-          emit(opts, {:local_info, "Failed to query local model."})
+          # Helper failure must never pollute or stop the primary chat flow.
           emit(opts, {:status, :thinking})
-          Logger.debug("Ollama pre-flight completions call failed: #{inspect(error)}")
+          Logger.debug("Optional helper pre-flight failed: #{safe_error(error)}")
           {messages, session}
       end
     end
@@ -255,7 +189,7 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
     emit(opts, {:local_info, "Local pre-flight search completed. Context pre-fetched."})
 
     maybe_print(opts, fn ->
-      IO.puts(IO.ANSI.cyan() <> "* Ollama -> pre-flight search completed." <> IO.ANSI.reset())
+      IO.puts(IO.ANSI.cyan() <> "* Helper -> pre-flight search completed." <> IO.ANSI.reset())
     end)
 
     # Restore status to thinking for the main reasoning loop
@@ -350,4 +284,44 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
   end
 
   defp compact_event_content(content), do: inspect(content)
+
+  defp helper_selection(%{roles: roles}) do
+    case Beamcore.Provider.Selection.helper(roles) do
+      %{enabled: true, provider: provider, model: model} = selection
+      when is_binary(provider) and is_binary(model) ->
+        validate_helper_selection(selection)
+
+      _ ->
+        {:error, :disabled}
+    end
+  end
+
+  defp helper_selection(_session), do: {:error, :disabled}
+
+  defp validate_helper_selection(selection) do
+    with {:ok, provider} <- Beamcore.Provider.Registry.validate_selection(selection.provider),
+         true <- provider.capabilities.chat do
+      validate_discovered_model(provider, selection)
+    else
+      _ -> {:error, :unavailable}
+    end
+  end
+
+  # Discovery validates the exact model selected by the user. It never silently
+  # replaces that model with Gemma, FunctionGemma, or another guessed default.
+  defp validate_discovered_model(
+         %{name: provider, discovery: discovery},
+         %{model: model} = selection
+       )
+       when is_atom(discovery) do
+    if Beamcore.Provider.Health.model_available?(provider, model),
+      do: {:ok, selection},
+      else: {:error, :unavailable}
+  end
+
+  defp validate_discovered_model(_provider, selection), do: {:ok, selection}
+
+  defp safe_error({:error, %{message: message}}) when is_binary(message), do: message
+  defp safe_error({:error, reason}), do: inspect(reason, limit: 8, printable_limit: 240)
+  defp safe_error(reason), do: inspect(reason, limit: 8, printable_limit: 240)
 end

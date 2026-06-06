@@ -31,6 +31,10 @@ defmodule Beamcore.TUI.Components.Help do
     /api use <name>  Switch active API provider
     /api add <args>  Add or update an API provider config
     /api delete <n>  Delete an API provider config
+    /helper status   Show optional helper selection
+    /helper models <provider>
+    /helper use <provider> <model>
+    /helper off      Disable helper (default)
     /login           Configure default API key
     /logout          Clear stored default login
     /quit /exit /q   Exit

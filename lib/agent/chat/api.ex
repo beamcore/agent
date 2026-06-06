@@ -42,24 +42,14 @@ defmodule Beamcore.Agent.Chat.API do
       else
         tools = tools || []
 
-        retry_config = Keyword.get(opts, :retry_config) || retry_config()
-
-        Beamcore.RateLimiter.wait()
-
         model = Keyword.get(opts, :model, default_model())
+
+        retry_config = Keyword.get(opts, :retry_config) || retry_config()
 
         Beamcore.Retry.execute(
           fn ->
             try do
-              response =
-                @completions_module.create(
-                  client,
-                  %{
-                    model: model,
-                    messages: messages,
-                    tools: tools
-                  }
-                )
+              response = execute_provider_call(client, model, messages, tools, opts)
 
               case response do
                 {:error, %OpenaiEx.Error{kind: :bad_request} = error} ->
@@ -91,6 +81,25 @@ defmodule Beamcore.Agent.Chat.API do
           retry_config
         )
       end
+    end
+  end
+
+  defp execute_provider_call(client, model, messages, tools, opts) do
+    case Keyword.get(opts, :selection) do
+      %{provider: _provider} = selection ->
+        Beamcore.Provider.Router.chat(selection, %{
+          model: model,
+          messages: messages,
+          tools: tools
+        })
+
+      _ ->
+        Beamcore.RateLimiter.wait()
+
+        @completions_module.create(
+          client,
+          %{model: model, messages: messages, tools: tools}
+        )
     end
   end
 
