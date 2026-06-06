@@ -51,6 +51,60 @@ defmodule Beamcore.ConfigTest do
     refute Config.configured?(:mistral_api_key)
   end
 
+
+  test "helper is disabled by default and persists explicit provider/model choice" do
+    refute Config.helper_enabled?()
+    assert Config.helper_selection() == nil
+
+    assert :ok = Config.put_helper_selection("ollama", "qwen2.5-coder:latest")
+
+    assert Config.helper_enabled?()
+    assert Config.helper_selection() == %{
+             provider: "ollama",
+             model: "qwen2.5-coder:latest",
+             enabled: true
+           }
+
+    assert :ok = Config.disable_helper()
+    refute Config.helper_enabled?()
+    assert Config.helper_selection() == nil
+  end
+
   defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
   defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
+end
+
+# OTP ownership regression coverage. Kept outside the main module to avoid
+# changing the original test setup semantics.
+defmodule Beamcore.ConfigOwnershipTest do
+  use ExUnit.Case, async: false
+
+  test "config store is supervised and serializes concurrent writes" do
+    assert is_pid(Process.whereis(Beamcore.Config))
+
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_config_owner_#{System.unique_integer([:positive])}.dets"
+      )
+
+    previous = Application.get_env(:agent, :config_dets_path)
+    Application.put_env(:agent, :config_dets_path, path)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:agent, :config_dets_path, previous),
+        else: Application.delete_env(:agent, :config_dets_path)
+
+      File.rm(path)
+    end)
+
+    1..8
+    |> Task.async_stream(fn index ->
+      Beamcore.Config.put(String.to_atom("otp_test_#{index}"), "value-#{index}")
+    end)
+    |> Enum.each(fn {:ok, result} -> assert result == :ok end)
+
+    assert Beamcore.Config.get(:otp_test_8) == "value-8"
+  end
 end

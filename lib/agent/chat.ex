@@ -24,11 +24,13 @@ defmodule Beamcore.Agent.Chat do
         client
 
       :error ->
-        if Beamcore.OpenAI.configured?() do
-          Beamcore.OpenAI.client()
-        else
-          IO.puts(Beamcore.OpenAI.missing_config_message())
-          nil
+        case Beamcore.Provider.Registry.validate_selection(Beamcore.Config.active_provider()) do
+          {:ok, _provider} ->
+            nil
+
+          {:error, _reason} ->
+            IO.puts(Beamcore.Provider.Registry.missing_config_message())
+            nil
         end
     end
   end

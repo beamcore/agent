@@ -22,10 +22,13 @@ defmodule Beamcore.Agent do
     maybe_connect_ledger_node()
 
     children = [
+      Beamcore.Config,
       Beamcore.Ledger,
       Beamcore.Memory,
       Beamcore.RateLimiter,
+      Beamcore.Provider.Scheduler,
       {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
+      Beamcore.Provider.Health,
       Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor,
       Beamcore.FileMutationQueue,
@@ -56,12 +59,14 @@ defmodule Beamcore.Agent do
   end
 
   @doc """
-  Get the OpenAI client.
+  Returns the legacy Mistral/OpenaiEx compatibility client.
+
+  New provider-neutral chat code should use `Beamcore.Provider.Router`.
   """
   def client, do: Beamcore.OpenAI.client()
 
   @doc """
-  Make a test API call to verify the client works.
+  Makes a legacy Mistral compatibility test call.
   """
   def test_api_call do
     client = Beamcore.OpenAI.client()
@@ -130,12 +135,15 @@ defmodule Beamcore.Agent do
       Keyword.has_key?(opts, :client) ->
         :ok
 
-      Beamcore.OpenAI.configured?() ->
-        :ok
-
       true ->
-        print_missing_config_error()
-        :ok
+        case Beamcore.Provider.Registry.validate_selection(Beamcore.Config.active_provider()) do
+          {:ok, _provider} ->
+            :ok
+
+          {:error, _reason} ->
+            print_missing_config_error()
+            :ok
+        end
     end
   end
 
@@ -145,14 +153,7 @@ defmodule Beamcore.Agent do
         String.contains?(reason, "Beamcore is not configured yet")
 
   defp print_missing_config_error do
-    IO.puts("""
-    Beamcore is not configured yet.
-
-    Run /login and paste your Mistral API key (stored securely as hash).
-
-    For development only, you may also set MISTRAL_API_KEY or use .env with make chat.
-    """)
-
+    IO.puts(Beamcore.Provider.Registry.missing_config_message())
     {:error, :missing_config}
   end
 

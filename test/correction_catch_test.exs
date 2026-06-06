@@ -5,7 +5,8 @@ defmodule Beamcore.Agent.Chat.CorrectionCatchTest do
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
-      "MISTRAL_API_KEY" => "test-api-key"
+      "MISTRAL_API_KEY" => "test-api-key",
+      "BEAMCORE_SEARCH_CONDUCTOR" => "false"
     })
   end
 

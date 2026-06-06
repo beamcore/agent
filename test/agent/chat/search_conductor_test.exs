@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
   alias Beamcore.Agent.Chat.SearchConductor
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.Chat.ToolPolicy
+  alias Beamcore.Provider.OllamaDiscovery
   alias Beamcore.Agent.TestEnv
 
   setup do
@@ -16,7 +17,7 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
     {:ok, session: session}
   end
 
-  test "check_availability/2 matches model via OpenAI-compatible models endpoint", %{
+  test "Ollama discovery matches model via OpenAI-compatible models endpoint", %{
     session: _session
   } do
     Process.put(:mock_http_request, fn _method, request, _http_opts, _opts ->
@@ -42,12 +43,16 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
       end
     end)
 
-    assert SearchConductor.check_availability("http://127.0.0.1:11434/v1", "functiongemma:latest")
-    assert SearchConductor.check_availability("http://127.0.0.1:11434/v1", "gemma4:latest")
-    refute SearchConductor.check_availability("http://127.0.0.1:11434/v1", "nonexistent:latest")
+    assert OllamaDiscovery.check_availability(
+             "http://127.0.0.1:11434/v1",
+             "functiongemma:latest"
+           )
+
+    assert OllamaDiscovery.check_availability("http://127.0.0.1:11434/v1", "gemma4:latest")
+    refute OllamaDiscovery.check_availability("http://127.0.0.1:11434/v1", "nonexistent:latest")
   end
 
-  test "check_availability/2 falls back to Ollama native /api/tags endpoint", %{session: _session} do
+  test "Ollama discovery falls back to native /api/tags endpoint", %{session: _session} do
     Process.put(:mock_http_request, fn _method, request, _http_opts, _opts ->
       url_chars = elem(request, 0)
       url_str = to_string(url_chars)
@@ -74,8 +79,32 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
       end
     end)
 
-    assert SearchConductor.check_availability("http://127.0.0.1:11434/v1", "functiongemma:latest")
-    refute SearchConductor.check_availability("http://127.0.0.1:11434/v1", "gemma4:latest")
+    assert OllamaDiscovery.check_availability(
+             "http://127.0.0.1:11434/v1",
+             "functiongemma:latest"
+           )
+
+    refute OllamaDiscovery.check_availability("http://127.0.0.1:11434/v1", "gemma4:latest")
+  end
+
+  test "preflight/5 does not contact a helper unless the user enabled one", %{session: session} do
+    Process.put(:mock_completions_create, fn _client, _params ->
+      flunk("helper should not be called while disabled")
+    end)
+
+    messages = session.messages
+
+    {updated_messages, updated_session} =
+      SearchConductor.preflight(
+        session,
+        messages,
+        "find policy code",
+        ToolPolicy.default(),
+        silent: true
+      )
+
+    assert updated_messages == messages
+    assert updated_session == session
   end
 
   test "preflight/5 returns unmodified state if conductor is disabled", %{session: session} do
@@ -90,11 +119,14 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
     end)
   end
 
-  test "preflight/5 runs search tools and updates context when Ollama is available", %{
+  test "preflight/5 uses the exact helper model explicitly selected by the user", %{
     session: session
   } do
     TestEnv.with_env(%{"OLLAMA_MODEL" => nil, "BEAMCORE_OLLAMA_MODEL" => nil}, fn ->
-      # 1. Stub HTTP calls to claim functiongemma:latest is available
+      selected_model = "qwen2.5-coder:latest"
+      session = Session.set_helper_provider(session, "ollama", selected_model)
+
+      # 1. Stub HTTP calls to claim the selected model is available
       Process.put(:mock_http_request, fn _method, request, _http_opts, _opts ->
         url_chars = elem(request, 0)
         url_str = to_string(url_chars)
@@ -107,7 +139,7 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
                [],
                Jason.encode!(%{
                  "data" => [
-                   %{"id" => "functiongemma:latest"}
+                   %{"id" => selected_model}
                  ]
                })
              }}
@@ -119,7 +151,7 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
 
       # 2. Stub Completions call to return a tool call to grep
       Process.put(:mock_completions_create, fn _client, params ->
-        assert params.model == "functiongemma:latest"
+        assert params.model == selected_model
 
         {:ok,
          %{

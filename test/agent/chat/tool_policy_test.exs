@@ -37,6 +37,50 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     end
   end
 
+  test "local context helper exposes only bounded read-only tools" do
+    policy = ToolPolicy.local_context_helper(ToolPolicy.yolo(project_policy_bypassed?: true))
+    names = ToolPolicy.allowed_tool_names(policy)
+
+    assert policy.mode == :local_context_helper
+    assert "read" in names
+    assert "grep" in names
+    assert "glob" in names
+    assert "tree" in names
+    assert "git" in names
+    refute "modify_file" in names
+    refute "fs" in names
+    refute "task" in names
+    refute "web_get" in names
+  end
+
+  test "local context helper blocks mutation tools even if requested directly" do
+    policy = ToolPolicy.local_context_helper()
+
+    assert {:error, modify_message} =
+             ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
+
+    assert modify_message =~ "local_context_helper"
+
+    assert {:error, fs_message} =
+             ToolPolicy.allow_tool_call(policy, "fs", %{
+               "operation" => "remove",
+               "path" => "scratch/a.ex"
+             })
+
+    assert fs_message =~ "local_context_helper"
+  end
+
+  test "local context helper allows only read-only git operations" do
+    policy = ToolPolicy.local_context_helper()
+
+    assert :ok == ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "status"})
+
+    assert {:error, message} =
+             ToolPolicy.allow_tool_call(policy, "git", %{"operation" => "commit"})
+
+    assert message =~ "read-only policy"
+  end
+
   test "parses Policy mode read_only" do
     policy =
       ToolPolicy.from_user_message("""

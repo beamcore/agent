@@ -6,14 +6,12 @@ defmodule Beamcore.Agent.Chat.Commands do
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.Policy.ProjectPolicy
 
-  @provider_defaults %{
-    "mistral" => %{base_url: "https://api.mistral.ai/v1", default_model: "mistral-medium-3-5"},
-    "ollama" => %{base_url: "http://127.0.0.1:11434/v1", default_model: "gemma4:latest"},
-    "openai" => %{base_url: "https://api.openai.com/v1", default_model: "gpt-4o"},
-    "deepseek" => %{base_url: "https://api.deepseek.com/v1", default_model: "deepseek-chat"}
-  }
-
-  def provider_defaults, do: @provider_defaults
+  def provider_defaults do
+    Beamcore.Provider.Registry.defaults()
+    |> Map.new(fn {name, config} ->
+      {name, %{base_url: config.base_url, default_model: config.default_model}}
+    end)
+  end
 
   @doc """
   Handle a command and return the updated session.
@@ -39,6 +37,8 @@ defmodule Beamcore.Agent.Chat.Commands do
       "providers" -> {:provider_select, session}
       "api" -> handle_api(["list"], session, output)
       "api " <> args -> handle_api(String.split(args, " ", trim: true), session, output)
+      "helper" -> handle_helper(["status"], session, output)
+      "helper " <> args -> handle_helper(String.split(args, " ", trim: true), session, output)
       "help" -> handle_help(session, output)
       "policy" -> handle_policy([], session, output)
       "policy " <> args -> handle_policy(String.split(args, " ", trim: true), session, output)
@@ -114,7 +114,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     case store_login_token(token) do
       :ok ->
         output.(login_saved_message())
-        %{session | client: Beamcore.OpenAI.client_safe()}
+        session
 
       {:error, :empty_value} ->
         output.("Login token was empty; nothing was saved.")
@@ -160,10 +160,10 @@ defmodule Beamcore.Agent.Chat.Commands do
         end
 
         output.("Switched active provider to '#{provider}'.")
-        %{session | client: Beamcore.OpenAI.client_safe()}
+        Session.set_primary_provider(session, provider)
 
       ["add", provider, token] ->
-        defaults = Map.get(@provider_defaults, provider, %{})
+        defaults = Map.get(provider_defaults(), provider, %{})
         base_url = Map.get(defaults, :base_url)
         default_model = Map.get(defaults, :default_model)
 
@@ -176,7 +176,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
           output.("Provider '#{provider}' configured successfully with defaults.")
           Beamcore.Config.set_active_provider(provider)
-          %{session | client: Beamcore.OpenAI.client_safe()}
+          Session.set_primary_provider(session, provider, default_model)
         else
           output.("Error: Unknown provider '#{provider}'. Please specify base URL and model:")
           output.("Usage: /api add <provider> <token> <base_url> [<default_model>]")
@@ -184,7 +184,7 @@ defmodule Beamcore.Agent.Chat.Commands do
         end
 
       ["add", provider, token, base_url] ->
-        defaults = Map.get(@provider_defaults, provider, %{})
+        defaults = Map.get(provider_defaults(), provider, %{})
         default_model = Map.get(defaults, :default_model) || "default"
 
         Beamcore.Config.put_provider(provider, %{
@@ -195,7 +195,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
         output.("Provider '#{provider}' configured successfully.")
         Beamcore.Config.set_active_provider(provider)
-        %{session | client: Beamcore.OpenAI.client_safe()}
+        Session.set_primary_provider(session, provider, default_model)
 
       ["add", provider, token, base_url, default_model] ->
         Beamcore.Config.put_provider(provider, %{
@@ -206,7 +206,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
         output.("Provider '#{provider}' configured successfully.")
         Beamcore.Config.set_active_provider(provider)
-        %{session | client: Beamcore.OpenAI.client_safe()}
+        Session.set_primary_provider(session, provider, default_model)
 
       ["delete", provider] ->
         providers = Beamcore.Config.list_providers()
@@ -217,14 +217,15 @@ defmodule Beamcore.Agent.Chat.Commands do
           output.("Provider '#{provider}' deleted.")
 
           if Beamcore.Config.active_provider() == provider do
-            Beamcore.Config.set_active_provider("mistral")
-            output.("Reset active provider to 'mistral'.")
+            default_provider = Beamcore.Provider.Registry.default_primary_provider_name()
+            Beamcore.Config.set_active_provider(default_provider)
+            output.("Reset active provider to '#{default_provider}'.")
           end
         else
           output.("Provider '#{provider}' not found.")
         end
 
-        %{session | client: Beamcore.OpenAI.client_safe()}
+        session
 
       _ ->
         output.("Invalid /api command. Usage:")
@@ -234,6 +235,86 @@ defmodule Beamcore.Agent.Chat.Commands do
         output.("  /api delete <provider>")
         session
     end
+  end
+
+  defp handle_helper(["status"], session, output) do
+    case Beamcore.Provider.Selection.helper(session.roles) do
+      %{enabled: true, provider: provider, model: model} ->
+        output.("Helper enabled: #{provider}/#{model}")
+
+      _ ->
+        output.("Helper disabled. Use /helper use <provider> <model> to enable it.")
+    end
+
+    session
+  end
+
+  defp handle_helper(["list"], session, output) do
+    local_providers =
+      Beamcore.Provider.Registry.list()
+      |> Enum.filter(& &1.capabilities.local)
+
+    case local_providers do
+      [] ->
+        output.("No local helper providers are configured.")
+
+      providers ->
+        Enum.each(providers, fn provider ->
+          configured = if provider.configured?, do: "configured", else: "not configured"
+          output.("  #{provider.name} · local · #{configured}")
+        end)
+    end
+
+    session
+  end
+
+  defp handle_helper(["models", provider], session, output) do
+    case Beamcore.Provider.Registry.get(provider) do
+      nil ->
+        output.("Unknown provider '#{provider}'.")
+
+      _provider ->
+        case Beamcore.Provider.Registry.models(provider) do
+          [] -> output.("No models discovered for '#{provider}'.")
+          models -> Enum.each(models, &output.("  #{&1.id}"))
+        end
+    end
+
+    session
+  end
+
+  defp handle_helper(["off"], session, output) do
+    :ok = Beamcore.Config.disable_helper()
+    output.("Optional context helper disabled.")
+    Session.disable_helper(session)
+  end
+
+  defp handle_helper(["use", provider, model], session, output) do
+    case Beamcore.Provider.Registry.validate_selection(provider) do
+      {:ok, %{capabilities: %{chat: true, local: true}}} ->
+        case Beamcore.Config.put_helper_selection(provider, model) do
+          :ok ->
+            output.("Helper enabled with #{provider}/#{model}.")
+            Session.set_helper_provider(session, provider, model)
+
+          {:error, :empty_value} ->
+            output.("Provider and model must not be empty.")
+            session
+        end
+
+      {:ok, _provider} ->
+        output.("Provider '#{provider}' is not an available local chat provider.")
+        session
+
+      {:error, error} ->
+        output.("Cannot enable helper: #{error.message}")
+        session
+    end
+  end
+
+  defp handle_helper(_args, session, output) do
+    output.("Usage: /helper status | /helper list | /helper models <provider> | /helper use <provider> <model> | /helper off")
+    session
   end
 
   defp handle_help(session, output) do
@@ -261,6 +342,11 @@ defmodule Beamcore.Agent.Chat.Commands do
       /api use <provider> - Switch active API provider
       /api add <provider> <token> [<base_url>] [<default_model>] - Add/update provider config
       /api delete <provider> - Delete a provider config
+      /helper status - Show optional helper selection
+      /helper list - List providers available for helper use
+      /helper models <provider> - Discover models for a local provider
+      /helper use <provider> <model> - Enable an explicitly selected local helper model
+      /helper off - Disable the helper completely
       /login - Configure your default API key
       /logout - Clear stored default login
       /env  - Print env variables with secrets redacted

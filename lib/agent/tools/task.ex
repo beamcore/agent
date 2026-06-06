@@ -5,7 +5,6 @@ defmodule Beamcore.Agent.Tools.Task do
 
   alias Beamcore.Agent.Chat.{API, ToolPolicy}
   alias Beamcore.Agent.Tools.Dispatcher
-  alias Beamcore.OpenAI
 
   @description """
   Run a bounded sub-agent only when the user explicitly asks for delegation.
@@ -93,21 +92,27 @@ defmodule Beamcore.Agent.Tools.Task do
     }
 
     policy = ToolPolicy.subagent(prompt)
-    process_subagent(messages, 0, name, initial_state, policy)
+    selection = task_selection(params)
+    process_subagent(messages, 0, name, initial_state, policy, selection)
   end
 
-  defp process_subagent(_messages, depth, _name, _state, _policy) when depth >= 8 do
+  defp process_subagent(_messages, depth, _name, _state, _policy, _selection) when depth >= 8 do
     "Error: Sub-agent reached tool depth limit of 8."
   end
 
-  defp process_subagent(_messages, _depth, name, %{consecutive_errors: errors}, _policy)
+  defp process_subagent(
+         _messages,
+         _depth,
+         name,
+         %{consecutive_errors: errors},
+         _policy,
+         _selection
+       )
        when errors >= 3 do
     "Error: Sub-agent #{name} hit #{errors} consecutive API errors. Aborting to prevent loop."
   end
 
-  defp process_subagent(messages, depth, name, state, policy) do
-    client = OpenAI.client()
-
+  defp process_subagent(messages, depth, name, state, policy, selection) do
     tools =
       policy
       |> Dispatcher.tool_specs()
@@ -115,7 +120,7 @@ defmodule Beamcore.Agent.Tools.Task do
 
     trimmed = messages |> trim_messages() |> ensure_valid_message_order()
 
-    case API.execute(client, trimmed, tools, {:subagent, name}) do
+    case API.execute(nil, trimmed, tools, {:subagent, name}, selection: selection) do
       {:ok, %{message: message, raw_response: _raw_response}} ->
         new_messages = messages ++ [message]
 
@@ -155,7 +160,15 @@ defmodule Beamcore.Agent.Tools.Task do
               end)
 
             new_state = %{state | consecutive_errors: 0, tool_call_history: updated_history}
-            process_subagent(new_messages ++ tool_responses, depth + 1, name, new_state, policy)
+
+            process_subagent(
+              new_messages ++ tool_responses,
+              depth + 1,
+              name,
+              new_state,
+              policy,
+              selection
+            )
           end
         else
           message["content"] || "Sub-agent completed but produced no text response."
@@ -173,7 +186,7 @@ defmodule Beamcore.Agent.Tools.Task do
               consecutive_errors: state.consecutive_errors + 1
           }
 
-          process_subagent(aggressively_trimmed, depth, name, new_state, policy)
+          process_subagent(aggressively_trimmed, depth, name, new_state, policy, selection)
         else
           "Error: Sub-agent #{name} received bad_request after trimming. Cannot recover."
         end
@@ -205,7 +218,7 @@ defmodule Beamcore.Agent.Tools.Task do
         if new_state.consecutive_errors >= 3 do
           "Error: Sub-agent #{name} hit #{new_state.consecutive_errors} consecutive API errors. Last: #{error.kind} (#{error_details}#{error_body})"
         else
-          process_subagent(messages, depth, name, new_state, policy)
+          process_subagent(messages, depth, name, new_state, policy, selection)
         end
 
       {:error, reason} ->
@@ -278,5 +291,13 @@ defmodule Beamcore.Agent.Tools.Task do
     else
       Enum.random(@funny_names)
     end
+  end
+
+  defp task_selection(params) do
+    selection = Beamcore.Provider.Selection.default()
+    primary = Beamcore.Provider.Selection.primary(selection)
+    provider = Map.get(params, "provider", primary.provider)
+    model = Map.get(params, "model", primary.model)
+    %{provider: provider, model: model, enabled: true}
   end
 end

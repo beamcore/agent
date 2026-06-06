@@ -43,7 +43,8 @@ defmodule Beamcore.TUI.State do
             provider_selector_results: [],
             provider_selector_selected: 0,
             pending_provider_key?: false,
-            pending_provider_name: nil
+            pending_provider_name: nil,
+            notice: nil
 
   def new(terminal, textarea, opts \\ []) do
     client = client(opts)
@@ -54,7 +55,13 @@ defmodule Beamcore.TUI.State do
     messages =
       if client,
         do: [],
-        else: [%{role: :system, content: Beamcore.OpenAI.missing_config_message()}]
+        else: [
+          %{
+            role: :system,
+            content:
+              "Beamcore is not configured for the selected primary provider. Use Ctrl+O or /api select to choose/configure one."
+          }
+        ]
 
     %__MODULE__{
       terminal: terminal,
@@ -73,7 +80,7 @@ defmodule Beamcore.TUI.State do
   defp client(opts) do
     case Keyword.fetch(opts, :client) do
       {:ok, client} -> client
-      :error -> if Beamcore.OpenAI.configured?(), do: Beamcore.OpenAI.client()
+      :error -> nil
     end
   end
 
@@ -99,6 +106,13 @@ defmodule Beamcore.TUI.State do
   end
 
   def set_status(state, status), do: %{state | status: status} |> mark_dirty()
+
+  def set_notice(state, content) when is_binary(content) do
+    content = Beamcore.TUI.ErrorFormatter.format(content)
+    %{state | notice: if(content == "", do: nil, else: content)} |> mark_dirty()
+  end
+
+  def clear_notice(state), do: %{state | notice: nil} |> mark_dirty()
 
   def paused?(%{status: :paused}), do: true
   def paused?(_state), do: false
@@ -230,6 +244,15 @@ defmodule Beamcore.TUI.State do
     Beamcore.Config.active_provider()
   end
 
+  def helper_label(%{roles: roles}) do
+    case Beamcore.Provider.Selection.helper(roles) do
+      %{enabled: true, provider: provider, model: model} -> "#{provider}/#{model}"
+      _ -> "helper"
+    end
+  end
+
+  def helper_label(_session), do: "helper"
+
   def policy_status(session \\ nil)
 
   def policy_status(%{project_policy_bypassed?: true}), do: "policy: bypassed"
@@ -278,8 +301,8 @@ defmodule Beamcore.TUI.State do
       status: display.status,
       label: display.label,
       summary: display.summary,
-      result: result,
-      args: args
+      result: compact_activity_result(result),
+      args: compact_args(args)
     }
   end
 
@@ -320,6 +343,18 @@ defmodule Beamcore.TUI.State do
   end
 
   def compact_args(args), do: args
+
+  defp compact_activity_result(nil), do: nil
+
+  defp compact_activity_result(result) when is_binary(result) do
+    ToolDisplay.compact_text(result, 1_200)
+  end
+
+  defp compact_activity_result(result) do
+    result
+    |> inspect(pretty: false, limit: 16, printable_limit: 1_000)
+    |> ToolDisplay.compact_text(1_200)
+  end
 
   def compact_text(value, limit \\ 180) do
     ToolDisplay.compact_text(value, limit)
@@ -366,51 +401,38 @@ defmodule Beamcore.TUI.State do
 
   # Provider selector state management
   def load_providers_list do
-    custom_providers = Beamcore.Config.list_providers()
-    defaults = Beamcore.Agent.Chat.Commands.provider_defaults()
-    active = Beamcore.Config.active_provider()
-
-    # Get union of all provider names (defaults + custom)
-    provider_names =
-      (Map.keys(defaults) ++ Map.keys(custom_providers)) |> Enum.uniq() |> Enum.sort()
-
-    Enum.map(provider_names, fn name ->
-      # Check if configured
-      config = Map.get(custom_providers, name)
-      is_active = name == active
-
-      {name, config, is_active}
-    end)
+    Beamcore.Provider.Registry.list()
   end
 
-  def format_provider_item({name, config, is_active}) do
-    prefix = if is_active, do: "* ", else: "  "
+  def format_provider_item(%{} = provider) do
+    helper = Beamcore.Config.helper_selection()
 
-    config_info =
-      cond do
-        name == "mistral" and is_nil(config) ->
-          if Beamcore.OpenAI.configured?() do
-            "(configured via login/env) - model: #{Beamcore.Agent.Chat.API.default_model()}"
-          else
-            "[not configured]"
-          end
-
-        is_map(config) ->
-          base_url = Map.get(config, "base_url")
-          model = Map.get(config, "default_model") || "default"
-          "(#{base_url}) - model: #{model}"
-
-        true ->
-          "[not configured]"
+    roles =
+      [
+        provider.active? && "primary",
+        is_map(helper) && helper.provider == provider.name && "helper:#{helper.model}"
+      ]
+      |> Enum.reject(&(&1 in [nil, false]))
+      |> Enum.join(",")
+      |> case do
+        "" -> ""
+        value -> " [#{value}]"
       end
 
-    "#{prefix}#{name} #{config_info}"
+    prefix = if provider.active?, do: "* ", else: "  "
+    state = if provider.configured?, do: "configured", else: "not configured"
+    scope = if provider.capabilities.local, do: "local", else: "remote"
+    tools = if provider.capabilities.tool_calls, do: "tools", else: "text"
+    model = provider.default_model || "choose model"
+    base_url = provider.base_url || "custom endpoint"
+
+    "#{prefix}#{provider.name}#{roles} #{state} · #{scope} · #{tools} · #{model} · #{base_url}"
   end
 
   def activate_provider_selector(state) do
     results = load_providers_list()
     # Find the index of the active provider to highlight it initially
-    active_idx = Enum.find_index(results, fn {_name, _config, is_active} -> is_active end) || 0
+    active_idx = Enum.find_index(results, fn provider -> provider.active? end) || 0
 
     %{
       state
