@@ -60,7 +60,9 @@ defmodule Beamcore.TUI do
     # Initialize presentational states for all three screens
     f1_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :agent))
     f2_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :chat))
-    f3_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :research))
+
+    f3_state =
+      State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :research))
 
     state = %MultiScreenState{
       active_screen: :f1,
@@ -128,6 +130,7 @@ defmodule Beamcore.TUI do
 
       {:noreply, new_screen_state} ->
         new_state = put_screen_state(state, screen, new_screen_state)
+
         if new_screen_state.status == :quit do
           {:stop, new_state}
         else
@@ -143,11 +146,14 @@ defmodule Beamcore.TUI do
   @impl true
   def handle_info(:tick, state) do
     now = System.monotonic_time(:millisecond)
-    new_state = %{state |
-      f1_state: State.tick(state.f1_state, now),
-      f2_state: State.tick(state.f2_state, now),
-      f3_state: State.tick(state.f3_state, now)
+
+    new_state = %{
+      state
+      | f1_state: State.tick(state.f1_state, now),
+        f2_state: State.tick(state.f2_state, now),
+        f3_state: State.tick(state.f3_state, now)
     }
+
     {:noreply, new_state}
   end
 
@@ -200,6 +206,31 @@ defmodule Beamcore.TUI do
         active_screen = state.active_screen
         active_state = MultiScreenState.get_active(state)
         new_active = Events.finish_worker(active_state, session)
+        {:noreply, put_screen_state(state, active_screen, new_active)}
+    end
+  end
+
+  @impl true
+  def handle_info({:agent_error, worker_pid, error, stacktrace}, state) do
+    formatted_error = Exception.format(:error, error, stacktrace)
+
+    cond do
+      state.f1_state.worker == worker_pid ->
+        new_f1 = Events.fail_worker(state.f1_state, formatted_error)
+        {:noreply, %{state | f1_state: new_f1}}
+
+      state.f2_state.worker == worker_pid ->
+        new_f2 = Events.fail_worker(state.f2_state, formatted_error)
+        {:noreply, %{state | f2_state: new_f2}}
+
+      state.f3_state.worker == worker_pid ->
+        new_f3 = Events.fail_worker(state.f3_state, formatted_error)
+        {:noreply, %{state | f3_state: new_f3}}
+
+      true ->
+        active_screen = state.active_screen
+        active_state = MultiScreenState.get_active(state)
+        new_active = Events.fail_worker(active_state, formatted_error)
         {:noreply, put_screen_state(state, active_screen, new_active)}
     end
   end

@@ -128,6 +128,7 @@ defmodule Beamcore.Config do
 
   def active_provider(screen_type) do
     screen_type = screen_type || :agent
+
     case get(:"active_provider_#{screen_type}") do
       nil -> default_provider_for_screen(screen_type)
       value -> value
@@ -137,6 +138,7 @@ defmodule Beamcore.Config do
   def set_active_provider(screen_type, name) when is_binary(name) do
     screen_type = screen_type || :agent
     put(:"active_provider_#{screen_type}", name)
+
     if screen_type == :agent do
       set_active_provider(name)
     end
@@ -144,6 +146,7 @@ defmodule Beamcore.Config do
 
   def active_model(screen_type) do
     screen_type = screen_type || :agent
+
     case get(:"active_model_#{screen_type}") do
       nil -> default_model_for_screen(screen_type)
       value -> value

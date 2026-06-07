@@ -233,6 +233,7 @@ defmodule Beamcore.Agent.Chat.Loop do
     api_messages =
       messages
       |> Session.prepare_for_api(session.context, 24)
+      |> inject_research_harness(session)
       |> inject_policy_message(policy, tools)
 
     case API.execute(session.client, api_messages, tools, :main,
@@ -555,5 +556,130 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp print_tool_execution(name, args, _content) do
     Pretty.print_tool_call(name, args)
+  end
+
+  defp inject_research_harness(messages, %{screen_type: :research} = session) do
+    main_topic = get_main_topic(session)
+    files_list = list_research_files(session.workspace_root)
+    index_content = read_research_index(session.workspace_root)
+
+    harness_message = %{
+      role: "system",
+      content: Beamcore.Agent.Core.Prompts.research_harness(main_topic, files_list, index_content)
+    }
+
+    case messages do
+      [system, context | rest] when is_map(system) and is_map(context) ->
+        role1 = system[:role] || system["role"]
+        role2 = context[:role] || context["role"]
+        content2 = context[:content] || context["content"] || ""
+
+        if role1 == "system" and role2 == "system" and
+             String.starts_with?(content2, "Known session context:") do
+          [system, context, harness_message | rest]
+        else
+          [system, harness_message, context | rest]
+        end
+
+      [system | rest] when is_map(system) ->
+        [system, harness_message | rest]
+
+      other ->
+        [harness_message | other]
+    end
+  end
+
+  defp inject_research_harness(messages, _session), do: messages
+
+  defp get_main_topic(session) do
+    in_memory =
+      Enum.find_value(session.messages, fn msg ->
+        role = msg[:role] || msg["role"]
+        content = msg[:content] || msg["content"]
+
+        if role in [:user, "user"] and is_binary(content) and String.trim(content) != "" do
+          String.trim(content)
+        else
+          nil
+        end
+      end)
+
+    if in_memory do
+      in_memory
+    else
+      if session.log_file && File.exists?(session.log_file) do
+        session.log_file
+        |> File.stream!()
+        |> Enum.find_value(fn line ->
+          case Jason.decode(line) do
+            {:ok, %{"role" => "user", "content" => content}} ->
+              if is_binary(content) and String.trim(content) != "",
+                do: String.trim(content),
+                else: nil
+
+            {:ok, %{role: "user", content: content}} ->
+              if is_binary(content) and String.trim(content) != "",
+                do: String.trim(content),
+                else: nil
+
+            _ ->
+              nil
+          end
+        end)
+      else
+        "Unknown (Main topic not found)"
+      end
+    end
+  end
+
+  defp list_research_files(workspace_root) do
+    if workspace_root && File.dir?(workspace_root) do
+      workspace_root
+      |> Path.join("**/*.md")
+      |> Path.wildcard()
+      |> Enum.map(fn abs_path ->
+        rel_path = Path.relative_to(abs_path, workspace_root)
+
+        size =
+          case File.stat(abs_path) do
+            {:ok, %File.Stat{size: size}} -> size
+            _ -> 0
+          end
+
+        {rel_path, size}
+      end)
+      |> Enum.reject(fn {rel_path, _size} -> rel_path == "research_index.md" end)
+      |> Enum.map(fn {rel_path, size} -> "- #{rel_path} (#{size} bytes)" end)
+      |> Enum.join("\n")
+      |> case do
+        "" -> "(No research artifacts created yet)"
+        list -> list
+      end
+    else
+      "(No research directory)"
+    end
+  end
+
+  defp read_research_index(workspace_root) do
+    if workspace_root do
+      index_file = Path.join(workspace_root, "research_index.md")
+
+      if File.exists?(index_file) do
+        case File.read(index_file) do
+          {:ok, content} -> String.trim(content)
+          _ -> "(Unable to read research_index.md)"
+        end
+      else
+        "(research_index.md does not exist yet)"
+      end
+    else
+      "(No workspace root)"
+    end
+  end
+
+  if Code.ensure_loaded?(Mix) and Mix.env() == :test do
+    def test_inject_research_harness(messages, session) do
+      inject_research_harness(messages, session)
+    end
   end
 end

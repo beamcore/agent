@@ -421,15 +421,18 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     case name do
       "modify_file" ->
         path = Map.get(args, "path") || ""
+
         if String.ends_with?(path, ".md") do
           allow_research_path(path)
         else
-          {:error, "Tool call blocked: research screen is restricted to modifying only .md files."}
+          {:error,
+           "Tool call blocked: research screen is restricted to modifying only .md files."}
         end
 
       "fs" ->
         operation = Map.get(args, "operation")
         path = Map.get(args, "path") || ""
+
         case operation do
           "mkdir" ->
             allow_research_path(path)
@@ -438,21 +441,38 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
             if String.ends_with?(path, ".md") do
               allow_research_path(path)
             else
-              {:error, "Tool call blocked: research screen is restricted to creating only .md files."}
+              {:error,
+               "Tool call blocked: research screen is restricted to creating only .md files."}
             end
 
-          "exist" -> :ok
-          "stat" -> :ok
+          "exist" ->
+            :ok
+
+          "stat" ->
+            :ok
+
           _ ->
-            {:error, "Tool call blocked: research screen is restricted to mkdir, touch, exist, and stat operations."}
+            {:error,
+             "Tool call blocked: research screen is restricted to mkdir, touch, exist, and stat operations."}
         end
 
-      "read" -> :ok
-      "grep" -> :ok
-      "glob" -> :ok
-      "tree" -> :ok
-      "web_get" -> :ok
-      _ -> {:error, blocked_message(policy, name)}
+      "read" ->
+        :ok
+
+      "grep" ->
+        :ok
+
+      "glob" ->
+        :ok
+
+      "tree" ->
+        :ok
+
+      "web_get" ->
+        :ok
+
+      _ ->
+        {:error, blocked_message(policy, name)}
     end
   end
 

@@ -3,7 +3,7 @@ defmodule Beamcore.TUI.Events do
   Event handling for the primary TUI.
   """
 
-  alias Beamcore.Agent.Chat.{Commands, Loop}
+  alias Beamcore.Agent.Chat.{Commands, Loop, Session}
   alias Beamcore.TUI.{ErrorFormatter, FileFinder, History, State}
   alias ExRatatui.Event
   alias ExRatatui.Widgets.SlashCommands
@@ -43,6 +43,19 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
     %Command{name: "stop", description: "Pause the session to add improved direction"},
+    %Command{
+      name: "continue",
+      description: "Resume the paused research session, optional alignment"
+    },
+    %Command{name: "resume", description: "Alias for continue"},
+    %Command{
+      name: "drop",
+      description: "Discard/delete the current research session and restart fresh"
+    },
+    %Command{
+      name: "kick",
+      description: "Force trigger next turn in research session immediately"
+    },
     %Command{name: "quit", description: "Exit"},
     %Command{name: "exit", description: "Exit"},
     %Command{name: "q", description: "Exit"}
@@ -153,6 +166,14 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event(_event, state), do: state
 
   def finish_worker(state, session), do: State.finish_worker(state, session)
+
+  def fail_worker(state, error_msg) do
+    state
+    |> State.add_message(:system, "Agent crashed: #{error_msg}")
+    |> Map.put(:worker, nil)
+    |> Map.put(:status, :idle)
+    |> State.mark_dirty()
+  end
 
   defp handle_key("c", mods, state) do
     if ctrl?(mods), do: {:stop, state}, else: handle_text_key("c", mods, state)
@@ -527,53 +548,53 @@ defmodule Beamcore.TUI.Events do
   defp submit(%{worker: worker} = state) when not is_nil(worker),
     do: State.add_message(state, :system, "Agent is still working.")
 
-  defp submit(%{paused?: true} = state) do
-    # When paused, don't process regular messages - they'll be handled by /continue
-    value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
-
-    cond do
-      value == "" ->
-        state
-
-      String.starts_with?(value, "/") ->
-        ExRatatui.textarea_set_value(state.textarea, "")
-        state = maybe_record_command_history(state, value)
-        run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
-
-      true ->
-        # Keep the message in the textarea for /continue to pick up
-        state
-    end
-  end
-
   defp submit(state) do
-    value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
+    if State.paused?(state) do
+      # When paused, don't process regular messages - they'll be handled by /continue
+      value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
 
-    cond do
-      value == "" ->
-        state
+      cond do
+        value == "" ->
+          state
 
-      state.pending_login? ->
-        ExRatatui.textarea_set_value(state.textarea, "")
-        complete_login(%{state | show_commands: false}, value)
+        String.starts_with?(value, "/") ->
+          ExRatatui.textarea_set_value(state.textarea, "")
+          state = maybe_record_command_history(state, value)
+          run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
 
-      state.pending_provider_key? ->
-        ExRatatui.textarea_set_value(state.textarea, "")
-        complete_provider_key(%{state | show_commands: false}, value)
+        true ->
+          # Keep the message in the textarea for /continue to pick up
+          state
+      end
+    else
+      value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
 
-      String.starts_with?(value, "/") ->
-        ExRatatui.textarea_set_value(state.textarea, "")
-        state = maybe_record_command_history(state, value)
-        run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
+      cond do
+        value == "" ->
+          state
 
-      true ->
-        ExRatatui.textarea_set_value(state.textarea, "")
-        state = record_history(state, value)
+        state.pending_login? ->
+          ExRatatui.textarea_set_value(state.textarea, "")
+          complete_login(%{state | show_commands: false}, value)
 
-        state
-        |> State.add_message(:user, value)
-        |> start_turn(value, nil)
-        |> Map.put(:show_commands, false)
+        state.pending_provider_key? ->
+          ExRatatui.textarea_set_value(state.textarea, "")
+          complete_provider_key(%{state | show_commands: false}, value)
+
+        String.starts_with?(value, "/") ->
+          ExRatatui.textarea_set_value(state.textarea, "")
+          state = maybe_record_command_history(state, value)
+          run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
+
+        true ->
+          ExRatatui.textarea_set_value(state.textarea, "")
+          state = record_history(state, value)
+
+          state
+          |> State.add_message(:user, value)
+          |> start_turn(value, nil)
+          |> Map.put(:show_commands, false)
+      end
     end
   end
 
@@ -672,6 +693,75 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
+  defp run_command(state, "continue") do
+    handle_continue_command(state, "")
+  end
+
+  defp run_command(state, "continue " <> alignment) do
+    handle_continue_command(state, alignment)
+  end
+
+  defp run_command(state, "resume") do
+    handle_continue_command(state, "")
+  end
+
+  defp run_command(state, "resume " <> alignment) do
+    handle_continue_command(state, alignment)
+  end
+
+  defp run_command(state, "drop") do
+    if state.worker != nil do
+      Process.exit(state.worker, :kill)
+    end
+
+    if state.screen_type == :research and state.session != nil do
+      session_id = state.session.session_id
+      research_dir = Path.join([System.user_home!(), ".beamcore", "research", session_id])
+      File.rm_rf(research_dir)
+      if state.session.log_file, do: File.rm(state.session.log_file)
+
+      opts = [
+        workspace_root: state.session.workspace_root,
+        screen_type: state.screen_type,
+        roles: state.session.roles
+      ]
+
+      new_session = Session.new(state.session.client, opts)
+
+      %{
+        state
+        | session: new_session,
+          messages: [],
+          activity: [],
+          selected_activity: 0,
+          activity_scroll_offset: 0,
+          worker: nil,
+          status: :idle
+      }
+      |> State.add_message(
+        :system,
+        "Research session dropped and reset. All artifacts and logs for this session have been deleted. You can start a new topic."
+      )
+    else
+      State.add_message(state, :system, "Drop command is only available in research sessions.")
+    end
+  end
+
+  defp run_command(state, "kick") do
+    if state.worker != nil do
+      State.add_message(state, :system, "Agent is already working.")
+    else
+      state = State.resume(state)
+
+      prompt =
+        "Continue with the next steps in your research plan. Use tools to gather and analyze information."
+
+      state
+      |> State.add_message(:system, "Kicking research loop...")
+      |> start_turn(prompt, nil)
+    end
+  end
+
   defp run_command(state, command) do
     result =
       Commands.execute(command, state.session,
@@ -679,6 +769,30 @@ defmodule Beamcore.TUI.Events do
       )
 
     apply_command_result(result, state, command)
+  end
+
+  defp handle_continue_command(state, alignment) do
+    alignment = String.trim(alignment)
+    state = State.resume(state)
+
+    cond do
+      alignment != "" ->
+        state
+        |> State.add_message(:user, alignment)
+        |> start_turn(alignment, nil)
+
+      state.screen_type == :research ->
+        prompt =
+          "Continue with the next steps in your research plan. Use tools to gather and analyze information."
+
+        state
+        |> State.add_message(:system, "Resuming research session...")
+        |> start_turn(prompt, nil)
+
+      true ->
+        state
+        |> State.add_message(:system, "Session resumed.")
+    end
   end
 
   defp open_timeline(state) do
@@ -781,16 +895,28 @@ defmodule Beamcore.TUI.Events do
     {:ok, pid} =
       start_turn_worker(fn ->
         current_worker_pid = self()
+
         if session.workspace_root do
           Process.put(:workspace_root, session.workspace_root)
         end
-        updated =
-          Loop.send_message(session, content, nil, policy,
-            silent: true,
-            event_handler: fn event -> send(parent, {:runtime_event, current_worker_pid, event}) end
-          )
 
-        send(parent, {:agent_done, self(), updated})
+        try do
+          updated =
+            Loop.send_message(session, content, nil, policy,
+              silent: true,
+              event_handler: fn event ->
+                send(parent, {:runtime_event, current_worker_pid, event})
+              end
+            )
+
+          send(parent, {:agent_done, self(), updated})
+        rescue
+          error ->
+            send(parent, {:agent_error, self(), error, __STACKTRACE__})
+        catch
+          kind, reason ->
+            send(parent, {:agent_error, self(), {kind, reason}, __STACKTRACE__})
+        end
       end)
 
     State.start_worker(state, pid)
@@ -905,7 +1031,8 @@ defmodule Beamcore.TUI.Events do
     Beamcore.Config.set_active_provider(provider)
     Beamcore.Config.set_active_model(state.screen_type, default_model)
 
-    new_session = Beamcore.Agent.Chat.Session.set_primary_provider(state.session, provider, default_model)
+    new_session =
+      Beamcore.Agent.Chat.Session.set_primary_provider(state.session, provider, default_model)
 
     state
     |> State.set_session(new_session)
@@ -921,7 +1048,9 @@ defmodule Beamcore.TUI.Events do
   """
   def maybe_auto_continue(state) do
     if auto_continue?(state) do
-      prompt = "Continue with the next steps in your research plan. Use tools to gather and analyze information."
+      prompt =
+        "Continue with the next steps in your research plan. Use tools to gather and analyze information."
+
       start_turn(state, prompt, nil)
     else
       state
@@ -938,18 +1067,23 @@ defmodule Beamcore.TUI.Events do
 
   defp user_message_last?(messages) do
     case List.last(messages) do
-      nil -> true
+      nil ->
+        true
+
       msg ->
         role = Map.get(msg, :role) || Map.get(msg, "role")
-        role == "user"
+        role in [:user, "user"]
     end
   end
 
   defp research_complete?(messages) do
     case List.last(messages) do
-      nil -> false
+      nil ->
+        false
+
       msg ->
         content = Map.get(msg, :content) || Map.get(msg, "content")
+
         if is_binary(content) do
           String.contains?(content, "RESEARCH_COMPLETE")
         else

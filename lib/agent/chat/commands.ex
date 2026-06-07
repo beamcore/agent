@@ -43,8 +43,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       "help" -> handle_help(session, output)
       "policy" -> handle_policy([], session, output)
       "policy " <> args -> handle_policy(String.split(args, " ", trim: true), session, output)
-      "stop" -> handle_stop(session, output)
-      "continue" -> handle_continue(session, output)
       _ -> handle_unknown(command, session, output, custom_output?)
     end
   end
@@ -144,6 +142,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     case args do
       ["list"] ->
         providers = Beamcore.Config.list_providers()
+
         active =
           case session.roles do
             %{primary: %{provider: provider}} -> provider
@@ -702,15 +701,5 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   defp list_block(key, values) do
     ["#{key}:" | Enum.map(values, &"- #{&1}")]
-  end
-
-  defp handle_stop(session, output) do
-    output.("Session paused. Type your improved direction and use /continue to resume.")
-    session
-  end
-
-  defp handle_continue(session, output) do
-    output.("Session resumed. Your message will be processed.")
-    session
   end
 end

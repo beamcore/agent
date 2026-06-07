@@ -108,6 +108,7 @@ defmodule Beamcore.Agent.Chat.API do
         Beamcore.RateLimiter.wait()
 
         params = %{model: model, messages: messages, tools: tools}
+
         params =
           [:temperature, :top_p, :max_tokens]
           |> Enum.reduce(params, fn key, acc ->

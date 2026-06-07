@@ -135,6 +135,7 @@ defmodule Beamcore.TUI.Render do
 
   defp render_provider_selector(state, area) do
     active_provider = State.provider(state.session)
+
     formatted_items =
       Enum.map(state.provider_selector_results, &State.format_provider_item(&1, active_provider))
 

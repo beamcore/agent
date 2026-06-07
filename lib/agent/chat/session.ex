@@ -70,58 +70,19 @@ defmodule Beamcore.Agent.Chat.Session do
         screen_type == :chat ->
           %{
             role: "system",
-            content: """
-            You are **Beamcore.Chat**: a concise, factual, robotic general-purpose AI assistant.
-
-            **Core Rules**:
-            - Respond in a clear, objective, and robotic tone.
-            - Minimize fluff: use structured bullet points, clear facts, and direct answers.
-            - You have access to the `web_get` tool to browse the web and retrieve pages. If you need to run search queries, you can do so by constructing a search engine URL (e.g., Yahoo Search: `https://search.yahoo.com/search?p=your+search+query`).
-            - Avoid assumptions; request clarification or use `web_get` if unsure.
-            """
+            content: Beamcore.Agent.Core.Prompts.chat_agent()
           }
 
         screen_type == :research ->
           %{
             role: "system",
-            content: """
-            You are **Beamcore.Research**, a specialized, robotic research agent designed for long, structured research iterations.
-            Your goal is to perform deep dives, gather facts, verify sources, and maintain a detailed, structured set of research notes in the workspace.
-
-            **Workspace Operations**:
-            - You must ONLY produce and modify Markdown (`.md`) files.
-            - You can create files and subdirectories to organize your research.
-            - Avoid creating nested directories or multiple subdirectories endlessly in separate turns. Create what you need and proceed.
-            - Always maintain an index file (e.g., `README.md` or `research_index.md`) listing your active research goals, the structure of your files, outstanding questions, and future digging paths.
-            - CRITICAL: Write your deconstructed plan to `research_index.md` in your very first turn (using `fs` with `touch` and `modify_file`, or writing directly with `modify_file`). Do not stop or wait after planning.
-
-            **Methodology**:
-            1. **Deconstruct & Plan**: Begin by deconstructing the user's research topic into a clear plan. Immediately create and write this plan to your index file (`research_index.md`).
-            2. **Search & Verify**: Once the index is created, immediately proceed to use `web_get` to search the web, fetch pages, and extract factual, high-quality information. Verify facts across multiple sources.
-            3. **Iterative Digging**: Do not stop at surface-level summaries. Recursively research subtopics, follow up on new leads, and write deep-dive notes into dedicated `.md` files.
-            4. **Continuous Feedback**: Review what you have written. Identify missing information, potential biases, or contradictions, and perform further search rounds to resolve them.
-            5. **Progress Logs**: Update your index file at the end of each turn with a summary of new findings and a list of remaining paths to explore.
-
-            **Robotic Behavior**:
-            - Respond in a factual, objective, and robotic tone.
-            - Prefer markdown tables, structured bullet points, and code blocks for organizing data.
-            - Do not make unverified claims. Clearly state if information is missing or conflicting.
-            - Act autonomously. Do not output conversational filler or ask the user for permission between tool calls. Continue using tools until the research objective is achieved.
-            - Be highly resilient. If a search engine blocks your request (e.g., returns 202, 403, or 401) or a URL fails to load, do not stop. Technical or network difficulties must not halt the research. Immediately pivot: try different search queries, use alternative search engines (e.g., Yahoo: `https://search.yahoo.com/search?p=query`, Google: `https://www.google.com/search?q=query`, DuckDuckGo: `https://html.duckduckgo.com/html/?q=query`), or navigate directly to known sites/news domains. The research must be completed.
-            - When all research tasks are completed and the final synthesis is written, output `RESEARCH_COMPLETE` in your final text response.
-
-            **Available Tools**:
-            - `web_get`: retrieve web pages. If you need to search, you must construct a search URL using a public search engine (e.g., Yahoo Search: `https://search.yahoo.com/search?p=your+search+query`). Do NOT try to call a non-existent search tool.
-            - `modify_file`: write and append to .md research files.
-            - `fs` (mkdir, touch, exist, stat): manage directories and file creation.
-            - `read`, `grep`, `glob`, `tree`: inspect your own workspace files and structure.
-            """
+            content: Beamcore.Agent.Core.Prompts.research_agent()
           }
 
         true ->
           %{
             role: "system",
-            content: Beamcore.Agent.Core.SysPrompt.generate(language, build_system)
+            content: Beamcore.Agent.Core.Prompts.dev_agent(language, build_system)
           }
       end
 
@@ -156,12 +117,7 @@ defmodule Beamcore.Agent.Chat.Session do
             {:ok, content} ->
               %{
                 role: "system",
-                content: """
-                [RESUMING RESEARCH SESSION]
-                You are resuming a previous research session. Below is the current content of your 'research_index.md' file. Read it carefully to understand the goals, structure, and pending tasks:
-
-                #{content}
-                """
+                content: Beamcore.Agent.Core.Prompts.research_resume(content)
               }
 
             _ ->
@@ -413,15 +369,7 @@ defmodule Beamcore.Agent.Chat.Session do
 
     summary_prompt = %{
       role: "user",
-      content: """
-      Summarize our conversation so far in a compact format. Include:
-      1. Key decisions made and their rationale
-      2. Current state of the work (what's done, what's in progress)
-      3. Files modified or created
-      4. Any errors encountered and how they were resolved
-      5. What needs to be done next
-      Keep it concise but preserve all critical context needed to continue seamlessly.
-      """
+      content: Beamcore.Agent.Core.Prompts.compaction_summary_request()
     }
 
     trimmed = trim_and_clean_messages(messages, 30)
@@ -447,12 +395,8 @@ defmodule Beamcore.Agent.Chat.Session do
 
         combined_system = %{
           role: "system",
-          content: """
-          #{system_content}
-
-          [Compacted session context — conversation continues seamlessly]
-          #{validated}
-          """
+          content:
+            Beamcore.Agent.Core.Prompts.compaction_rollover_system(system_content, validated)
         }
 
         new_session = %{
@@ -659,9 +603,14 @@ defmodule Beamcore.Agent.Chat.Session do
       content = msg[:content] || msg["content"]
       tool_calls = msg[:tool_calls] || msg["tool_calls"]
 
+      reasoning =
+        msg[:reasoning] || msg["reasoning"] || msg[:reasoning_content] || msg["reasoning_content"]
+
       role == "assistant" and
         (is_nil(content) or content == "" or (is_binary(content) and String.trim(content) == "")) and
-        (is_nil(tool_calls) or tool_calls == [])
+        (is_nil(tool_calls) or tool_calls == []) and
+        (is_nil(reasoning) or reasoning == "" or
+           (is_binary(reasoning) and String.trim(reasoning) == ""))
     end)
   end
 

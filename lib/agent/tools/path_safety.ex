@@ -62,7 +62,8 @@ defmodule Beamcore.Agent.Tools.PathSafety do
   def error(reason), do: "Error: #{reason}"
 
   def workspace_root do
-    Process.get(:workspace_root) || Application.get_env(:agent, :workspace_root) || canonical_path(File.cwd!())
+    Process.get(:workspace_root) || Application.get_env(:agent, :workspace_root) ||
+      canonical_path(File.cwd!())
   end
 
   def configure_workspace_root(root) when is_binary(root) do

@@ -69,15 +69,7 @@ defmodule Beamcore.Agent.Tools.Task do
     messages = [
       %{
         role: "system",
-        content: """
-        You are a bounded Beamcore.Agent sub-agent named #{name}.
-        Execute only the explicit task from the conductor.
-        Do not delegate to other sub-agents.
-        Do not modify files when the prompt is read-only or forbids changes.
-        Keep tool usage minimal and return a concise final result.
-
-        #{Beamcore.Agent.Core.SysPrompt.memory_guidelines_and_index()}
-        """
+        content: Beamcore.Agent.Core.Prompts.sub_agent(name)
       },
       %{
         role: "user",
