@@ -45,35 +45,140 @@ defmodule Beamcore.Agent.Chat.Session do
   Creates a new session and initializes the log file.
   """
   def new(client, opts \\ []) do
-    session_id = generate_name()
+    session_id = Keyword.get(opts, :session_id, generate_name())
     log_dir = Path.join([System.user_home!(), ".agent", "sessions"])
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
 
+    screen_type = Keyword.get(opts, :screen_type, :agent)
+
     workspace_root =
-      opts
-      |> Keyword.get(:workspace_root, Beamcore.Agent.Tools.PathSafety.workspace_root())
-      |> Beamcore.Agent.Tools.PathSafety.canonical_path()
+      if screen_type == :research do
+        research_dir = Path.join([System.user_home!(), ".beamcore", "research", session_id])
+        File.mkdir_p!(research_dir)
+        research_dir
+      else
+        opts
+        |> Keyword.get(:workspace_root, Beamcore.Agent.Tools.PathSafety.workspace_root())
+        |> Beamcore.Agent.Tools.PathSafety.canonical_path()
+      end
 
     {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root)
 
-    screen_type = Keyword.get(opts, :screen_type, :agent)
-
     system_message =
-      if screen_type == :chat do
-        %{
-          role: "system",
-          content: "You are a helpful AI assistant. Answer the user's questions in a clear, concise, and helpful manner. You have access to web tools (like web_get) to retrieve web pages, search results, or APIs when needed."
-        }
+      cond do
+        screen_type == :chat ->
+          %{
+            role: "system",
+            content: """
+            You are **Beamcore.Chat**: a concise, factual, robotic general-purpose AI assistant.
+
+            **Core Rules**:
+            - Respond in a clear, objective, and robotic tone.
+            - Minimize fluff: use structured bullet points, clear facts, and direct answers.
+            - You have access to the `web_get` tool to browse the web, retrieve pages, and run search queries when you need up-to-date facts or information outside your training data.
+            - Avoid assumptions; request clarification or use `web_get` if unsure.
+            """
+          }
+
+        screen_type == :research ->
+          %{
+            role: "system",
+            content: """
+            You are **Beamcore.Research**, a specialized, robotic research agent designed for long, structured research iterations.
+            Your goal is to perform deep dives, gather facts, verify sources, and maintain a detailed, structured set of research notes in the workspace.
+
+            **Workspace Operations**:
+            - You must ONLY produce and modify Markdown (`.md`) files.
+            - You can create files and subdirectories to organize your research.
+            - Avoid creating nested directories or multiple subdirectories endlessly in separate turns. Create what you need and proceed.
+            - Always maintain an index file (e.g., `README.md` or `research_index.md`) listing your active research goals, the structure of your files, outstanding questions, and future digging paths.
+            - CRITICAL: Write your deconstructed plan to `research_index.md` in your very first turn (using `fs` with `touch` and `modify_file`, or writing directly with `modify_file`). Do not stop or wait after planning.
+
+            **Methodology**:
+            1. **Deconstruct & Plan**: Begin by deconstructing the user's research topic into a clear plan. Immediately create and write this plan to your index file (`research_index.md`).
+            2. **Search & Verify**: Once the index is created, immediately proceed to use `web_get` to search the web, fetch pages, and extract factual, high-quality information. Verify facts across multiple sources.
+            3. **Iterative Digging**: Do not stop at surface-level summaries. Recursively research subtopics, follow up on new leads, and write deep-dive notes into dedicated `.md` files.
+            4. **Continuous Feedback**: Review what you have written. Identify missing information, potential biases, or contradictions, and perform further search rounds to resolve them.
+            5. **Progress Logs**: Update your index file at the end of each turn with a summary of new findings and a list of remaining paths to explore.
+
+            **Robotic Behavior**:
+            - Respond in a factual, objective, and robotic tone.
+            - Prefer markdown tables, structured bullet points, and code blocks for organizing data.
+            - Do not make unverified claims. Clearly state if information is missing or conflicting.
+            - Act autonomously. Do not output conversational filler or ask the user for permission between tool calls. Continue using tools until the research objective is achieved.
+
+            **Available Tools**:
+            - `web_get`: retrieve web pages or execute searches.
+            - `modify_file`: write and append to .md research files.
+            - `fs` (mkdir, touch, exist, stat): manage directories and file creation.
+            - `read`, `grep`, `glob`, `tree`: inspect your own workspace files and structure.
+            """
+          }
+
+        true ->
+          %{
+            role: "system",
+            content: Beamcore.Agent.Core.SysPrompt.generate(language, build_system)
+          }
+      end
+
+    policy_override =
+      case screen_type do
+        :chat -> Beamcore.Agent.Chat.ToolPolicy.chat()
+        :research -> Beamcore.Agent.Chat.ToolPolicy.research()
+        _ -> nil
+      end
+
+    roles =
+      if roles_opt = Keyword.get(opts, :roles) do
+        roles_opt
       else
-        %{
-          role: "system",
-          content: Beamcore.Agent.Core.SysPrompt.generate(language, build_system)
+        screen_provider = Beamcore.Config.active_provider(screen_type)
+        screen_model = Beamcore.Config.active_model(screen_type)
+
+        %Beamcore.Provider.Selection{
+          primary: %{provider: screen_provider, model: screen_model, enabled: true},
+          helper: nil,
+          fallback: nil
         }
       end
 
-    %__MODULE__{
-      messages: [system_message],
+    # Check if this is a resumed research session and if index file exists
+    resume_message =
+      if screen_type == :research do
+        index_file = Path.join(workspace_root, "research_index.md")
+
+        if File.exists?(index_file) do
+          case File.read(index_file) do
+            {:ok, content} ->
+              %{
+                role: "system",
+                content: """
+                [RESUMING RESEARCH SESSION]
+                You are resuming a previous research session. Below is the current content of your 'research_index.md' file. Read it carefully to understand the goals, structure, and pending tasks:
+
+                #{content}
+                """
+              }
+
+            _ ->
+              nil
+          end
+        else
+          nil
+        end
+      else
+        nil
+      end
+
+    messages =
+      if resume_message,
+        do: [system_message, resume_message],
+        else: [system_message]
+
+    session = %__MODULE__{
+      messages: messages,
       client: client,
       session_id: session_id,
       log_file: log_file,
@@ -84,16 +189,20 @@ defmodule Beamcore.Agent.Chat.Session do
       needs_compaction: false,
       compaction_count: 0,
       correction_count: 0,
-      policy_override: if(screen_type == :chat, do: Beamcore.Agent.Chat.ToolPolicy.chat(), else: nil),
+      policy_override: policy_override,
       project_policy_bypassed?: false,
       project_nature: {language, build_system},
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
       pending_user_message: nil,
-      roles: Keyword.get(opts, :roles, Beamcore.Provider.Selection.default()),
+      roles: roles,
       screen_type: screen_type
     }
-    |> then(&log(&1, system_message))
+
+    # Log all initial messages to log_file
+    Enum.reduce(messages, session, fn msg, acc ->
+      log(acc, msg)
+    end)
   end
 
   def clear_pending_action(session) do

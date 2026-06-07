@@ -21,7 +21,8 @@ defmodule Beamcore.Agent.Chat.Commands do
     custom_output? = Keyword.has_key?(opts, :output)
 
     case command do
-      "new" -> handle_new(session, output)
+      "new" -> handle_new(session, nil, output)
+      "new " <> arg -> handle_new(session, String.trim(arg), output)
       "confirm" -> handle_confirm(session, output)
       "cancel" -> handle_cancel(session, output)
       "context" -> handle_context(session, output)
@@ -48,14 +49,23 @@ defmodule Beamcore.Agent.Chat.Commands do
     end
   end
 
-  defp handle_new(session, output) do
-    output.("Starting new session...")
+  defp handle_new(session, session_id, output) do
+    if session_id do
+      output.("Resuming session '#{session_id}'...")
+    else
+      output.("Starting new session...")
+    end
+
+    opts = [
+      workspace_root: session.workspace_root,
+      screen_type: session.screen_type,
+      roles: session.roles
+    ]
+
+    opts = if session_id, do: Keyword.put(opts, :session_id, session_id), else: opts
 
     session.client
-    |> Session.new(
-      workspace_root: session.workspace_root,
-      screen_type: session.screen_type
-    )
+    |> Session.new(opts)
   end
 
   defp handle_yolo(session, output) do
@@ -134,9 +144,13 @@ defmodule Beamcore.Agent.Chat.Commands do
     case args do
       ["list"] ->
         providers = Beamcore.Config.list_providers()
-        active = Beamcore.Config.active_provider()
+        active =
+          case session.roles do
+            %{primary: %{provider: provider}} -> provider
+            _ -> Beamcore.Config.active_provider()
+          end
 
-        output.("Configured API Providers (* denotes active):")
+        output.("Configured API Providers (* denotes active in this session):")
 
         if map_size(providers) == 0 do
           output.("  No custom providers configured yet. Active default: #{active}")
@@ -153,7 +167,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
       ["use", provider] ->
         providers = Beamcore.Config.list_providers()
-        Beamcore.Config.set_active_provider(provider)
+        Beamcore.Config.set_active_provider(session.screen_type, provider)
 
         unless Map.has_key?(providers, provider) do
           output.(
@@ -161,8 +175,12 @@ defmodule Beamcore.Agent.Chat.Commands do
           )
         end
 
+        new_session = Session.set_primary_provider(session, provider)
+        new_model = new_session.roles.primary.model
+        Beamcore.Config.set_active_model(session.screen_type, new_model)
+
         output.("Switched active provider to '#{provider}'.")
-        Session.set_primary_provider(session, provider)
+        new_session
 
       ["add", provider, token] ->
         defaults = Map.get(provider_defaults(), provider, %{})
@@ -177,7 +195,8 @@ defmodule Beamcore.Agent.Chat.Commands do
           })
 
           output.("Provider '#{provider}' configured successfully with defaults.")
-          Beamcore.Config.set_active_provider(provider)
+          Beamcore.Config.set_active_provider(session.screen_type, provider)
+          Beamcore.Config.set_active_model(session.screen_type, default_model)
           Session.set_primary_provider(session, provider, default_model)
         else
           output.("Error: Unknown provider '#{provider}'. Please specify base URL and model:")
@@ -196,7 +215,8 @@ defmodule Beamcore.Agent.Chat.Commands do
         })
 
         output.("Provider '#{provider}' configured successfully.")
-        Beamcore.Config.set_active_provider(provider)
+        Beamcore.Config.set_active_provider(session.screen_type, provider)
+        Beamcore.Config.set_active_model(session.screen_type, default_model)
         Session.set_primary_provider(session, provider, default_model)
 
       ["add", provider, token, base_url, default_model] ->
@@ -207,7 +227,8 @@ defmodule Beamcore.Agent.Chat.Commands do
         })
 
         output.("Provider '#{provider}' configured successfully.")
-        Beamcore.Config.set_active_provider(provider)
+        Beamcore.Config.set_active_provider(session.screen_type, provider)
+        Beamcore.Config.set_active_model(session.screen_type, default_model)
         Session.set_primary_provider(session, provider, default_model)
 
       ["delete", provider] ->
@@ -218,16 +239,37 @@ defmodule Beamcore.Agent.Chat.Commands do
           Beamcore.Config.put(:api_configs, Jason.encode!(configs))
           output.("Provider '#{provider}' deleted.")
 
-          if Beamcore.Config.active_provider() == provider do
+          session_provider =
+            case session.roles do
+              %{primary: %{provider: p}} -> p
+              _ -> nil
+            end
+
+          active_provider_before = Beamcore.Config.active_provider()
+
+          session =
+            if session_provider == provider do
+              default_provider = Beamcore.Provider.Registry.default_primary_provider_name()
+              output.("Reset session provider to '#{default_provider}'.")
+              Beamcore.Config.set_active_provider(session.screen_type, default_provider)
+              default_model = Beamcore.Agent.Chat.API.default_model()
+              Beamcore.Config.set_active_model(session.screen_type, default_model)
+              Session.set_primary_provider(session, default_provider)
+            else
+              session
+            end
+
+          if active_provider_before == provider do
             default_provider = Beamcore.Provider.Registry.default_primary_provider_name()
             Beamcore.Config.set_active_provider(default_provider)
             output.("Reset active provider to '#{default_provider}'.")
           end
+
+          session
         else
           output.("Provider '#{provider}' not found.")
+          session
         end
-
-        session
 
       _ ->
         output.("Invalid /api command. Usage:")

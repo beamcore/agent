@@ -223,6 +223,13 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp process_messages(session, messages, pid, depth, policy, opts) do
     tools = Dispatcher.tool_specs(policy)
 
+    opts =
+      case session.screen_type do
+        :research -> Keyword.put_new(opts, :temperature, 0.0)
+        :agent -> Keyword.put_new(opts, :temperature, 0.2)
+        _ -> opts
+      end
+
     api_messages =
       messages
       |> Session.prepare_for_api(session.context, 24)
@@ -231,7 +238,8 @@ defmodule Beamcore.Agent.Chat.Loop do
     case API.execute(session.client, api_messages, tools, :main,
            selection: Beamcore.Provider.Selection.primary(session.roles),
            silent: Keyword.get(opts, :silent, false),
-           retry_config: Keyword.get(opts, :retry_config)
+           retry_config: Keyword.get(opts, :retry_config),
+           temperature: Keyword.get(opts, :temperature)
          ) do
       {:ok, %{message: message, raw_response: raw_response}} ->
         Session.log(session, Session.compact_raw_response(raw_response))

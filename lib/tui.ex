@@ -50,14 +50,16 @@ defmodule Beamcore.TUI do
     # Start periodic ticking for animations (e.g. spinners, mascot)
     :timer.send_interval(100, self(), :tick)
 
-    # Initialize presentational states for both screens
+    # Initialize presentational states for all three screens
     f1_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :agent))
     f2_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :chat))
+    f3_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :research))
 
     state = %MultiScreenState{
       active_screen: :f1,
       f1_state: f1_state,
-      f2_state: f2_state
+      f2_state: f2_state,
+      f3_state: f3_state
     }
 
     {:ok, state}
@@ -90,13 +92,27 @@ defmodule Beamcore.TUI do
           {:noreply, new_state}
         end
 
+      %ExRatatui.Event.Key{code: "f3"} ->
+        if state.active_screen == :f3 do
+          delegate_event(event, state, :f3)
+        else
+          new_state = %{state | active_screen: :f3}
+          new_state = MultiScreenState.update_active(new_state, &State.mark_dirty/1)
+          {:noreply, new_state}
+        end
+
       _ ->
         delegate_event(event, state, state.active_screen)
     end
   end
 
   defp delegate_event(event, state, screen) do
-    screen_state = if screen == :f1, do: state.f1_state, else: state.f2_state
+    screen_state =
+      case screen do
+        :f1 -> state.f1_state
+        :f2 -> state.f2_state
+        :f3 -> state.f3_state
+      end
 
     case Events.handle_event(event, screen_state) do
       {:stop, new_screen_state} ->
@@ -115,13 +131,15 @@ defmodule Beamcore.TUI do
 
   defp put_screen_state(state, :f1, f1_state), do: %{state | f1_state: f1_state}
   defp put_screen_state(state, :f2, f2_state), do: %{state | f2_state: f2_state}
+  defp put_screen_state(state, :f3, f3_state), do: %{state | f3_state: f3_state}
 
   @impl true
   def handle_info(:tick, state) do
     now = System.monotonic_time(:millisecond)
     new_state = %{state |
       f1_state: State.tick(state.f1_state, now),
-      f2_state: State.tick(state.f2_state, now)
+      f2_state: State.tick(state.f2_state, now),
+      f3_state: State.tick(state.f3_state, now)
     }
     {:noreply, new_state}
   end
@@ -131,7 +149,7 @@ defmodule Beamcore.TUI do
     cond do
       worker_pid == self() ->
         active_screen = state.active_screen
-        active_state = if active_screen == :f1, do: state.f1_state, else: state.f2_state
+        active_state = MultiScreenState.get_active(state)
         new_active = Events.handle_runtime_event(event, active_state)
         {:noreply, put_screen_state(state, active_screen, new_active)}
 
@@ -143,9 +161,13 @@ defmodule Beamcore.TUI do
         new_f2 = Events.handle_runtime_event(event, state.f2_state)
         {:noreply, %{state | f2_state: new_f2}}
 
+      state.f3_state.worker == worker_pid ->
+        new_f3 = Events.handle_runtime_event(event, state.f3_state)
+        {:noreply, %{state | f3_state: new_f3}}
+
       true ->
         active_screen = state.active_screen
-        active_state = if active_screen == :f1, do: state.f1_state, else: state.f2_state
+        active_state = MultiScreenState.get_active(state)
         new_active = Events.handle_runtime_event(event, active_state)
         {:noreply, put_screen_state(state, active_screen, new_active)}
     end
@@ -162,9 +184,13 @@ defmodule Beamcore.TUI do
         new_f2 = Events.finish_worker(state.f2_state, session)
         {:noreply, %{state | f2_state: new_f2}}
 
+      state.f3_state.worker == worker_pid ->
+        new_f3 = Events.finish_worker(state.f3_state, session)
+        {:noreply, %{state | f3_state: new_f3}}
+
       true ->
         active_screen = state.active_screen
-        active_state = if active_screen == :f1, do: state.f1_state, else: state.f2_state
+        active_state = MultiScreenState.get_active(state)
         new_active = Events.finish_worker(active_state, session)
         {:noreply, put_screen_state(state, active_screen, new_active)}
     end
