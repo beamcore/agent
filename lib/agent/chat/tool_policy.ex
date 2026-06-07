@@ -19,6 +19,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           | :restricted_write
           | :local_context_helper
           | :invalid_policy
+          | :chat
+          | :research
   @type t :: %{
           mode: mode(),
           allow_task: boolean(),
@@ -91,6 +93,22 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   end
 
   @doc """
+  Policy used for research mode.
+  """
+  @spec research() :: t()
+  def research do
+    %{
+      mode: :research,
+      allow_task: false,
+      allow_network: true,
+      allowed_write_paths: ["**/*.md"],
+      allowed_tools: ~w(read grep glob tree modify_file fs web_get),
+      blocked_tools: @all_tool_names -- ~w(read grep glob tree modify_file fs web_get),
+      project_policy_bypassed?: false
+    }
+  end
+
+  @doc """
   Policy used inside sub-agents. Nested task delegation is always disabled.
   """
   @spec subagent(binary()) :: t()
@@ -155,6 +173,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       local_context_helper?(policy) and name == "git" ->
         allow_read_only_git(args)
 
+      research?(policy) ->
+        allow_research_write(policy, name, args)
+
       true ->
         :ok
     end
@@ -179,6 +200,10 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   @spec local_context_helper?(t()) :: boolean()
   def local_context_helper?(%{mode: :local_context_helper}), do: true
   def local_context_helper?(_policy), do: false
+
+  @spec research?(t()) :: boolean()
+  def research?(%{mode: :research}), do: true
+  def research?(_policy), do: false
 
   @spec project_policy_bypassed?(t()) :: boolean()
   def project_policy_bypassed?(policy), do: Map.get(policy, :project_policy_bypassed?, false)
@@ -329,6 +354,11 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     |> apply_tool_filters(policy)
   end
 
+  defp base_allowed_tool_names(%{mode: :research} = policy) do
+    ~w(read grep glob tree modify_file fs web_get)
+    |> apply_tool_filters(policy)
+  end
+
   defp base_allowed_tool_names(%{mode: :unrestricted} = policy),
     do: apply_tool_filters(@all_tool_names, policy)
 
@@ -384,6 +414,52 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       "grep" -> :ok
       "glob" -> :ok
       _ -> {:error, blocked_message(policy, name)}
+    end
+  end
+
+  defp allow_research_write(policy, name, args) do
+    case name do
+      "modify_file" ->
+        path = Map.get(args, "path") || ""
+        if String.ends_with?(path, ".md") do
+          allow_research_path(path)
+        else
+          {:error, "Tool call blocked: research screen is restricted to modifying only .md files."}
+        end
+
+      "fs" ->
+        operation = Map.get(args, "operation")
+        path = Map.get(args, "path") || ""
+        case operation do
+          "mkdir" ->
+            allow_research_path(path)
+
+          "touch" ->
+            if String.ends_with?(path, ".md") do
+              allow_research_path(path)
+            else
+              {:error, "Tool call blocked: research screen is restricted to creating only .md files."}
+            end
+
+          "exist" -> :ok
+          "stat" -> :ok
+          _ ->
+            {:error, "Tool call blocked: research screen is restricted to mkdir, touch, exist, and stat operations."}
+        end
+
+      "read" -> :ok
+      "grep" -> :ok
+      "glob" -> :ok
+      "tree" -> :ok
+      "web_get" -> :ok
+      _ -> {:error, blocked_message(policy, name)}
+    end
+  end
+
+  defp allow_research_path(path) do
+    case PathSafety.resolve(to_string(path || ""), allow_missing: true) do
+      {:ok, _absolute_path} -> :ok
+      {:error, reason} -> {:error, "Path safety verification failed: #{reason}"}
     end
   end
 

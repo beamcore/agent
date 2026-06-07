@@ -10,7 +10,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
   def widget(state, width) when is_integer(width) do
     usage = State.usage(state.session)
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
-    provider = Beamcore.Config.active_provider()
+    provider = State.provider(state.session)
     model = State.model(state.session)
     provider_model = "#{provider}/#{model}"
 
@@ -27,9 +27,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
       end
 
     # Calculate padding
-    # mascot length + " · F1: Dev · F2: Chat · " is mascot_len + 23
+    # mascot length + " · F1: Dev · F2: Chat · F3: Research · " is mascot_len + 39
     mascot_len = String.length(mascot)
-    left_len = mascot_len + 23
+    left_len = mascot_len + 39
     right_len = String.length(right_text)
 
     # Ensure right_text fits in the remaining space
@@ -51,6 +51,8 @@ defmodule Beamcore.TUI.Components.StatusBar do
       %Span{content: "F1: Dev", style: if(state.screen_type == :agent, do: Theme.style(:status_hot), else: Theme.style(:status))},
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{content: "F2: Chat", style: if(state.screen_type == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))},
+      %Span{content: " · ", style: Theme.style(:status)},
+      %Span{content: "F3: Research", style: if(state.screen_type == :research, do: Theme.style(:status_hot), else: Theme.style(:status))},
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{content: padding, style: Theme.style(:status)},
       %Span{content: right_text, style: Theme.style(:status)}

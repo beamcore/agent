@@ -241,10 +241,18 @@ defmodule Beamcore.TUI.State do
   def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0, needs_compaction: false}
   def usage(session), do: Session.usage(session)
 
-  def model(_session), do: Beamcore.Agent.Chat.API.default_model()
+  def model(session) do
+    case session.roles do
+      %{primary: %{model: model}} -> model
+      _ -> Beamcore.Agent.Chat.API.default_model()
+    end
+  end
 
-  def provider do
-    Beamcore.Config.active_provider()
+  def provider(session) do
+    case session.roles do
+      %{primary: %{provider: provider}} -> provider
+      _ -> Beamcore.Config.active_provider()
+    end
   end
 
   def helper_label(%{roles: roles}) do
@@ -408,11 +416,16 @@ defmodule Beamcore.TUI.State do
   end
 
   def format_provider_item(%{} = provider) do
+    format_provider_item(provider, Beamcore.Config.active_provider())
+  end
+
+  def format_provider_item(%{} = provider, active_provider_name) do
     helper = Beamcore.Config.helper_selection()
+    is_active? = provider.name == active_provider_name
 
     roles =
       [
-        provider.active? && "primary",
+        is_active? && "primary",
         is_map(helper) && helper.provider == provider.name && "helper:#{helper.model}"
       ]
       |> Enum.reject(&(&1 in [nil, false]))
@@ -422,7 +435,7 @@ defmodule Beamcore.TUI.State do
         value -> " [#{value}]"
       end
 
-    prefix = if provider.active?, do: "* ", else: "  "
+    prefix = if is_active?, do: "* ", else: "  "
     state = if provider.configured?, do: "configured", else: "not configured"
     scope = if provider.capabilities.local, do: "local", else: "remote"
     tools = if provider.capabilities.tool_calls, do: "tools", else: "text"
@@ -434,8 +447,8 @@ defmodule Beamcore.TUI.State do
 
   def activate_provider_selector(state) do
     results = load_providers_list()
-    # Find the index of the active provider to highlight it initially
-    active_idx = Enum.find_index(results, fn provider -> provider.active? end) || 0
+    active_provider = provider(state.session)
+    active_idx = Enum.find_index(results, fn provider -> provider.name == active_provider end) || 0
 
     %{
       state

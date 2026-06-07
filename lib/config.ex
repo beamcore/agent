@@ -126,6 +126,41 @@ defmodule Beamcore.Config do
 
   def set_active_provider(name) when is_binary(name), do: put(:active_provider, name)
 
+  def active_provider(screen_type) do
+    screen_type = screen_type || :agent
+    case get(:"active_provider_#{screen_type}") do
+      nil -> default_provider_for_screen(screen_type)
+      value -> value
+    end
+  end
+
+  def set_active_provider(screen_type, name) when is_binary(name) do
+    screen_type = screen_type || :agent
+    put(:"active_provider_#{screen_type}", name)
+    if screen_type == :agent do
+      set_active_provider(name)
+    end
+  end
+
+  def active_model(screen_type) do
+    screen_type = screen_type || :agent
+    case get(:"active_model_#{screen_type}") do
+      nil -> default_model_for_screen(screen_type)
+      value -> value
+    end
+  end
+
+  def set_active_model(screen_type, model) when is_binary(model) do
+    screen_type = screen_type || :agent
+    put(:"active_model_#{screen_type}", model)
+  end
+
+  defp default_provider_for_screen(:research), do: "ollama"
+  defp default_provider_for_screen(_other), do: active_provider()
+
+  defp default_model_for_screen(:research), do: "gemma4:latest"
+  defp default_model_for_screen(_other), do: Beamcore.Agent.Chat.API.default_model()
+
   def helper_selection do
     case get(:helper_selection) do
       value when is_binary(value) ->

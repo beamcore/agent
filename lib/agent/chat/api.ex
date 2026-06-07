@@ -87,19 +87,37 @@ defmodule Beamcore.Agent.Chat.API do
   defp execute_provider_call(client, model, messages, tools, opts) do
     case Keyword.get(opts, :selection) do
       %{provider: _provider} = selection ->
-        Beamcore.Provider.Router.chat(selection, %{
+        request = %{
           model: model,
           messages: messages,
           tools: tools
-        })
+        }
+
+        request =
+          [:temperature, :top_p, :max_tokens]
+          |> Enum.reduce(request, fn key, acc ->
+            case Keyword.get(opts, key) do
+              nil -> acc
+              val -> Map.put(acc, key, val)
+            end
+          end)
+
+        Beamcore.Provider.Router.chat(selection, request)
 
       _ ->
         Beamcore.RateLimiter.wait()
 
-        @completions_module.create(
-          client,
-          %{model: model, messages: messages, tools: tools}
-        )
+        params = %{model: model, messages: messages, tools: tools}
+        params =
+          [:temperature, :top_p, :max_tokens]
+          |> Enum.reduce(params, fn key, acc ->
+            case Keyword.get(opts, key) do
+              nil -> acc
+              val -> Map.put(acc, key, val)
+            end
+          end)
+
+        @completions_module.create(client, params)
     end
   end
 

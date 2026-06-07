@@ -714,7 +714,14 @@ defmodule Beamcore.TUI.Events do
     |> State.activate_provider_selector()
   end
 
-  defp apply_command_result(session, state, "new") do
+  defp apply_command_result(session, state, "new" <> _ = command) do
+    msg =
+      if String.trim(command) == "new" do
+        "Started a fresh session."
+      else
+        "Started session (ID: #{session.session_id})."
+      end
+
     %{
       state
       | session: session,
@@ -723,7 +730,7 @@ defmodule Beamcore.TUI.Events do
         selected_activity: 0,
         activity_scroll_offset: 0
     }
-    |> State.add_message(:system, "Started a fresh session.")
+    |> State.add_message(:system, msg)
   end
 
   defp apply_command_result(session, state, "policy" <> _ = command) do
@@ -771,6 +778,9 @@ defmodule Beamcore.TUI.Events do
     {:ok, pid} =
       start_turn_worker(fn ->
         current_worker_pid = self()
+        if session.workspace_root do
+          Process.put(:workspace_root, session.workspace_root)
+        end
         updated =
           Loop.send_message(session, content, nil, policy,
             silent: true,
@@ -854,13 +864,14 @@ defmodule Beamcore.TUI.Events do
           )
           |> State.mark_dirty()
         else
-          # Just switch active provider
+          Beamcore.Config.set_active_provider(state.screen_type, name)
           Beamcore.Config.set_active_provider(name)
+          new_session = Beamcore.Agent.Chat.Session.set_primary_provider(state.session, name)
+          new_model = new_session.roles.primary.model
+          Beamcore.Config.set_active_model(state.screen_type, new_model)
 
           state
-          |> State.set_session(
-            Beamcore.Agent.Chat.Session.set_primary_provider(state.session, name)
-          )
+          |> State.set_session(new_session)
           |> State.add_message(:system, "Switched active provider to '#{name}'.")
           |> State.mark_dirty()
         end
@@ -887,12 +898,14 @@ defmodule Beamcore.TUI.Events do
       default_model: default_model
     })
 
+    Beamcore.Config.set_active_provider(state.screen_type, provider)
     Beamcore.Config.set_active_provider(provider)
+    Beamcore.Config.set_active_model(state.screen_type, default_model)
+
+    new_session = Beamcore.Agent.Chat.Session.set_primary_provider(state.session, provider, default_model)
 
     state
-    |> State.set_session(
-      Beamcore.Agent.Chat.Session.set_primary_provider(state.session, provider)
-    )
+    |> State.set_session(new_session)
     |> State.add_message(
       :system,
       "Provider '#{provider}' configured successfully and set as active."
