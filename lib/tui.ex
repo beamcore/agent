@@ -5,7 +5,7 @@ defmodule Beamcore.TUI do
 
   use ExRatatui.App
 
-  alias Beamcore.TUI.{Events, Render, State}
+  alias Beamcore.TUI.{Events, MultiScreenState, Render, State}
 
   # --- Client API ---
 
@@ -50,26 +50,62 @@ defmodule Beamcore.TUI do
     # Start periodic ticking for animations (e.g. spinners, mascot)
     :timer.send_interval(100, self(), :tick)
 
-    # Initialize presentational state
-    state = State.new(nil, ExRatatui.textarea_new(), opts)
+    # Initialize presentational states for both screens
+    f1_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :agent))
+    f2_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :chat))
 
-    # Automatically trigger drawing on initial mount
+    state = %MultiScreenState{
+      active_screen: :f1,
+      f1_state: f1_state,
+      f2_state: f2_state
+    }
+
     {:ok, state}
   end
 
   @impl true
   def render(state, frame) do
-    Render.render(state, frame)
+    active_state = MultiScreenState.get_active(state)
+    Render.render(active_state, frame)
   end
 
   @impl true
   def handle_event(event, state) do
-    case Events.handle_event(event, state) do
-      {:stop, new_state} ->
+    case event do
+      %ExRatatui.Event.Key{code: "f1"} ->
+        if state.active_screen == :f1 do
+          delegate_event(event, state, :f1)
+        else
+          new_state = %{state | active_screen: :f1}
+          new_state = MultiScreenState.update_active(new_state, &State.mark_dirty/1)
+          {:noreply, new_state}
+        end
+
+      %ExRatatui.Event.Key{code: "f2"} ->
+        if state.active_screen == :f2 do
+          delegate_event(event, state, :f2)
+        else
+          new_state = %{state | active_screen: :f2}
+          new_state = MultiScreenState.update_active(new_state, &State.mark_dirty/1)
+          {:noreply, new_state}
+        end
+
+      _ ->
+        delegate_event(event, state, state.active_screen)
+    end
+  end
+
+  defp delegate_event(event, state, screen) do
+    screen_state = if screen == :f1, do: state.f1_state, else: state.f2_state
+
+    case Events.handle_event(event, screen_state) do
+      {:stop, new_screen_state} ->
+        new_state = put_screen_state(state, screen, new_screen_state)
         {:stop, new_state}
 
-      {:noreply, new_state} ->
-        if new_state.status == :quit do
+      {:noreply, new_screen_state} ->
+        new_state = put_screen_state(state, screen, new_screen_state)
+        if new_screen_state.status == :quit do
           {:stop, new_state}
         else
           {:noreply, new_state}
@@ -77,22 +113,61 @@ defmodule Beamcore.TUI do
     end
   end
 
+  defp put_screen_state(state, :f1, f1_state), do: %{state | f1_state: f1_state}
+  defp put_screen_state(state, :f2, f2_state), do: %{state | f2_state: f2_state}
+
   @impl true
   def handle_info(:tick, state) do
     now = System.monotonic_time(:millisecond)
-    {:noreply, State.tick(state, now)}
-  end
-
-  @impl true
-  def handle_info({:runtime_event, event}, state) do
-    new_state = Events.handle_runtime_event(event, state)
+    new_state = %{state |
+      f1_state: State.tick(state.f1_state, now),
+      f2_state: State.tick(state.f2_state, now)
+    }
     {:noreply, new_state}
   end
 
   @impl true
-  def handle_info({:agent_done, _pid, session}, state) do
-    new_state = Events.finish_worker(state, session)
-    {:noreply, new_state}
+  def handle_info({:runtime_event, worker_pid, event}, state) do
+    cond do
+      worker_pid == self() ->
+        active_screen = state.active_screen
+        active_state = if active_screen == :f1, do: state.f1_state, else: state.f2_state
+        new_active = Events.handle_runtime_event(event, active_state)
+        {:noreply, put_screen_state(state, active_screen, new_active)}
+
+      state.f1_state.worker == worker_pid ->
+        new_f1 = Events.handle_runtime_event(event, state.f1_state)
+        {:noreply, %{state | f1_state: new_f1}}
+
+      state.f2_state.worker == worker_pid ->
+        new_f2 = Events.handle_runtime_event(event, state.f2_state)
+        {:noreply, %{state | f2_state: new_f2}}
+
+      true ->
+        active_screen = state.active_screen
+        active_state = if active_screen == :f1, do: state.f1_state, else: state.f2_state
+        new_active = Events.handle_runtime_event(event, active_state)
+        {:noreply, put_screen_state(state, active_screen, new_active)}
+    end
+  end
+
+  @impl true
+  def handle_info({:agent_done, worker_pid, session}, state) do
+    cond do
+      state.f1_state.worker == worker_pid ->
+        new_f1 = Events.finish_worker(state.f1_state, session)
+        {:noreply, %{state | f1_state: new_f1}}
+
+      state.f2_state.worker == worker_pid ->
+        new_f2 = Events.finish_worker(state.f2_state, session)
+        {:noreply, %{state | f2_state: new_f2}}
+
+      true ->
+        active_screen = state.active_screen
+        active_state = if active_screen == :f1, do: state.f1_state, else: state.f2_state
+        new_active = Events.finish_worker(active_state, session)
+        {:noreply, put_screen_state(state, active_screen, new_active)}
+    end
   end
 
   @impl true

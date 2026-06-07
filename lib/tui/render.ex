@@ -10,7 +10,7 @@ defmodule Beamcore.TUI.Render do
 
   def render(state, frame) do
     area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
-    areas = Layout.areas(area)
+    areas = Layout.areas(area, state.screen_type)
 
     widgets =
       case areas.mode do
@@ -45,7 +45,7 @@ defmodule Beamcore.TUI.Render do
       {Chat.widget(state, areas.chat), areas.chat},
       {Activity.widget(state, {:sidebar, areas.activity}), areas.activity},
       {Input.widget(state), areas.input},
-      {StatusBar.widget(state, :wide), areas.status}
+      {StatusBar.widget(state, areas.status.width), areas.status}
     ]
   end
 
@@ -54,7 +54,7 @@ defmodule Beamcore.TUI.Render do
       {Chat.widget(state, areas.chat), areas.chat},
       {Activity.widget(state, {:strip, areas.activity}), areas.activity},
       {Input.widget(state), areas.input},
-      {StatusBar.widget(state, :medium), areas.status}
+      {StatusBar.widget(state, areas.status.width), areas.status}
     ]
   end
 
@@ -62,7 +62,7 @@ defmodule Beamcore.TUI.Render do
     [
       {Chat.widget(state, areas.chat), areas.chat},
       {Input.widget(state), areas.input},
-      {StatusBar.widget(state, :narrow), areas.status}
+      {StatusBar.widget(state, areas.status.width), areas.status}
     ]
   end
 

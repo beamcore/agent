@@ -75,6 +75,22 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   def default, do: yolo()
 
   @doc """
+  Policy used for chat-only mode (no tools allowed).
+  """
+  @spec chat() :: t()
+  def chat do
+    %{
+      mode: :chat,
+      allow_task: false,
+      allow_network: true,
+      allowed_write_paths: [],
+      allowed_tools: ["web_get"],
+      blocked_tools: @all_tool_names -- ["web_get"],
+      project_policy_bypassed?: false
+    }
+  end
+
+  @doc """
   Policy used inside sub-agents. Nested task delegation is always disabled.
   """
   @spec subagent(binary()) :: t()
@@ -306,6 +322,11 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     else
       ProjectPolicy.allowed_tool_names(tools, policy, ProjectPolicy.load())
     end
+  end
+
+  defp base_allowed_tool_names(%{mode: :chat} = policy) do
+    ["web_get"]
+    |> apply_tool_filters(policy)
   end
 
   defp base_allowed_tool_names(%{mode: :unrestricted} = policy),

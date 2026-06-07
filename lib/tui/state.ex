@@ -44,13 +44,15 @@ defmodule Beamcore.TUI.State do
             provider_selector_selected: 0,
             pending_provider_key?: false,
             pending_provider_name: nil,
-            notice: nil
+            notice: nil,
+            screen_type: :agent
 
   def new(terminal, textarea, opts \\ []) do
     client = client(opts)
     history = Keyword.get(opts, :history, Beamcore.TUI.History.load())
 
     memory_total = compute_memory_total()
+    screen_type = Keyword.get(opts, :screen_type, :agent)
 
     messages =
       if client,
@@ -73,7 +75,8 @@ defmodule Beamcore.TUI.State do
       history: history,
       history_index: nil,
       history_draft: "",
-      memory_total: memory_total
+      memory_total: memory_total,
+      screen_type: screen_type
     }
   end
 

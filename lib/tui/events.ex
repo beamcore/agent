@@ -672,7 +672,7 @@ defmodule Beamcore.TUI.Events do
   defp run_command(state, command) do
     result =
       Commands.execute(command, state.session,
-        output: fn message -> send(self(), {:runtime_event, {:assistant, message}}) end
+        output: fn message -> send(self(), {:runtime_event, self(), {:assistant, message}}) end
       )
 
     apply_command_result(result, state, command)
@@ -770,10 +770,11 @@ defmodule Beamcore.TUI.Events do
 
     {:ok, pid} =
       start_turn_worker(fn ->
+        current_worker_pid = self()
         updated =
           Loop.send_message(session, content, nil, policy,
             silent: true,
-            event_handler: fn event -> send(parent, {:runtime_event, event}) end
+            event_handler: fn event -> send(parent, {:runtime_event, current_worker_pid, event}) end
           )
 
         send(parent, {:agent_done, self(), updated})
