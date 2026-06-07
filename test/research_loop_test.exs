@@ -44,11 +44,11 @@ defmodule Beamcore.Agent.Chat.ResearchLoopTest do
     assert system_msg.content == "System prompt"
     assert user_msg.content == "Research the history of Elixir language."
 
-    assert String.contains?(harness_msg.content, "[RESEARCH LOOP HARNESS]")
+    assert String.contains?(harness_msg.content, "[DEEP RESEARCH WORKFLOW]")
 
     assert String.contains?(
              harness_msg.content,
-             "Main Research Topic: Research the history of Elixir language."
+             "Research the history of Elixir language."
            )
 
     assert String.contains?(harness_msg.content, "(No research artifacts created yet)")
@@ -113,10 +113,7 @@ defmodule Beamcore.Agent.Chat.ResearchLoopTest do
     messages = Loop.test_inject_research_harness(session.messages, session)
     harness_msg = Enum.at(messages, 1)
 
-    assert String.contains?(
-             harness_msg.content,
-             "Main Research Topic: Persisted request from log"
-           )
+    assert String.contains?(harness_msg.content, "Persisted request from log")
   end
 
   test "maybe_auto_continue triggers next turn if conditions are met", %{session: session} do

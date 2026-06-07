@@ -47,7 +47,7 @@ defmodule Beamcore.Provider.RouterTest do
     parent = self()
 
     Process.put(:mock_completions_create, fn client, params ->
-      send(parent, {:call, client.base_url, client.token, params.model})
+      send(parent, {:call, client.base_url, client.token, client.receive_timeout, params.model})
       {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "local"}}]}}
     end)
 
@@ -57,7 +57,7 @@ defmodule Beamcore.Provider.RouterTest do
                %{messages: [%{role: "user", content: "hi"}], tools: []}
              )
 
-    assert_receive {:call, "http://127.0.0.1:11434/v1", "unused", "gemma4:latest"}
+    assert_receive {:call, "http://127.0.0.1:11434/v1", "unused", 120_000, "gemma4:latest"}
   end
 
   test "routes a custom compatible provider without adding an adapter module" do

@@ -75,11 +75,28 @@ defmodule Beamcore.Provider.Router do
       "default_model" => provider_info.default_model,
       "api_key" => Registry.resolve_api_key(provider_info),
       "name" => provider_info.name,
+      receive_timeout: receive_timeout(provider_info),
       provider_id: provider_info.id,
       auth: provider_info.auth,
       capabilities: provider_info.capabilities
     }
   end
+
+  defp receive_timeout(%{capabilities: %{local: true}}) do
+    case System.get_env("BEAMCORE_LOCAL_PROVIDER_RECEIVE_TIMEOUT_MS") do
+      value when is_binary(value) ->
+        case Integer.parse(value) do
+          {ms, ""} when ms > 0 -> ms
+          _ -> Application.get_env(:agent, :local_provider_receive_timeout_ms, 120_000)
+        end
+
+      _ ->
+        Application.get_env(:agent, :local_provider_receive_timeout_ms, 120_000)
+    end
+  end
+
+  defp receive_timeout(_provider_info),
+    do: Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
 
   defp scheduler_key(provider_info, model, config) do
     account = account_fingerprint(Map.get(config, "api_key"))

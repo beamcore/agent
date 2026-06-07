@@ -39,6 +39,9 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "timeline", description: "Focus timeline details"},
     %Command{name: "timeline last", description: "Open latest timeline item"},
     %Command{name: "timeline clear", description: "Clear visible UI activity only"},
+    %Command{name: "checkpoint rewind ", description: "Rewind to a checkpoint"},
+    %Command{name: "checkpoint fork ", description: "Fork from a checkpoint"},
+    %Command{name: "checkpoint abandon ", description: "Mark a branch abandoned"},
     %Command{name: "yolo", description: "Toggle freedom mode"},
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
@@ -317,6 +320,24 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
+  defp handle_key("r", mods, %{show_activity_details: true} = state) do
+    if ctrl?(mods),
+      do: {:noreply, rewind_selected_checkpoint(state)},
+      else: handle_text_key("r", mods, state)
+  end
+
+  defp handle_key("f", mods, %{show_activity_details: true} = state) do
+    if ctrl?(mods),
+      do: {:noreply, fork_selected_checkpoint(state)},
+      else: handle_text_key("f", mods, state)
+  end
+
+  defp handle_key("a", mods, %{show_activity_details: true} = state) do
+    if ctrl?(mods),
+      do: {:noreply, abandon_selected_branch(state)},
+      else: handle_text_key("a", mods, state)
+  end
+
   defp handle_key("up", mods, state) do
     cond do
       state.show_commands ->
@@ -545,8 +566,16 @@ defmodule Beamcore.TUI.Events do
     |> State.mark_dirty()
   end
 
-  defp submit(%{worker: worker} = state) when not is_nil(worker),
-    do: State.add_message(state, :system, "Agent is still working.")
+  defp submit(%{worker: worker} = state) when not is_nil(worker) do
+    value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
+
+    if value == "/stop" do
+      ExRatatui.textarea_set_value(state.textarea, "")
+      run_command(%{state | show_commands: false}, "stop")
+    else
+      State.add_message(state, :system, "Agent is still working.")
+    end
+  end
 
   defp submit(state) do
     if State.paused?(state) do
@@ -627,7 +656,7 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp select_activity(state, offset) do
-    max_index = max(length(state.activity) - 1, 0)
+    max_index = max(length(State.timeline_items(state)) - 1, 0)
     selected = state.selected_activity + offset
 
     %{state | selected_activity: selected |> max(0) |> min(max_index)}
@@ -662,6 +691,15 @@ defmodule Beamcore.TUI.Events do
   defp run_command(state, "timeline"), do: open_timeline(state)
   defp run_command(state, "timeline last"), do: open_timeline(%{state | selected_activity: 0})
 
+  defp run_command(state, "checkpoint rewind " <> checkpoint_id),
+    do: rewind_checkpoint(state, String.trim(checkpoint_id))
+
+  defp run_command(state, "checkpoint fork " <> checkpoint_id),
+    do: fork_checkpoint(state, String.trim(checkpoint_id))
+
+  defp run_command(state, "checkpoint abandon " <> branch_id),
+    do: abandon_branch(state, String.trim(branch_id))
+
   defp run_command(state, "timeline clear"),
     do:
       state
@@ -678,17 +716,26 @@ defmodule Beamcore.TUI.Events do
 
   defp run_command(state, "stop") do
     if state.worker != nil do
-      State.add_message(
-        state,
-        :system,
-        "Cannot pause while agent is working. Wait for current operation to complete."
-      )
+      Process.exit(state.worker, :kill)
+
+      state
+      |> Map.put(:worker, nil)
+      |> Map.update!(:session, fn
+        nil -> nil
+        session -> Session.interrupt(session, "Execution interrupted by user.")
+      end)
+      |> State.pause()
+      |> State.add_message(:system, "Execution interrupted. Current branch is paused.")
     else
       State.add_message(
         state,
         :system,
         "Session paused. Type your improved direction to resume."
       )
+      |> Map.update!(:session, fn
+        nil -> nil
+        session -> Session.interrupt(session, "Session paused by user.")
+      end)
       |> State.pause()
     end
   end
@@ -775,6 +822,12 @@ defmodule Beamcore.TUI.Events do
     alignment = String.trim(alignment)
     state = State.resume(state)
 
+    state =
+      Map.update!(state, :session, fn
+        nil -> nil
+        session -> Session.resume_interrupted(session, "Session resumed.")
+      end)
+
     cond do
       alignment != "" ->
         state
@@ -796,16 +849,94 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp open_timeline(state) do
-    if state.activity == [] do
+    if State.timeline_items(state) == [] do
       State.add_message(state, :system, "Timeline is empty.")
     else
       %{
         state
         | show_activity_details: true,
-          selected_activity: min(state.selected_activity, length(state.activity) - 1)
+          selected_activity: min(state.selected_activity, length(State.timeline_items(state)) - 1)
       }
       |> State.mark_dirty()
     end
+  end
+
+  defp rewind_selected_checkpoint(state) do
+    case selected_checkpoint_id(state) do
+      nil -> State.add_message(state, :system, "No checkpoint selected.")
+      checkpoint_id -> rewind_checkpoint(state, checkpoint_id)
+    end
+  end
+
+  defp fork_selected_checkpoint(state) do
+    case selected_checkpoint_id(state) do
+      nil -> State.add_message(state, :system, "No checkpoint selected.")
+      checkpoint_id -> fork_checkpoint(state, checkpoint_id)
+    end
+  end
+
+  defp abandon_selected_branch(state) do
+    branch_id =
+      case selected_timeline_event(state) do
+        %{timeline_event: %{branch_id: id}} -> id
+        _ -> state.session && state.session.branch_id
+      end
+
+    if branch_id do
+      abandon_branch(state, branch_id)
+    else
+      State.add_message(state, :system, "No branch selected.")
+    end
+  end
+
+  defp rewind_checkpoint(state, checkpoint_id) do
+    case Session.rewind(state.session, checkpoint_id) do
+      {:ok, session} ->
+        state
+        |> State.set_session(session)
+        |> State.select_checkpoint(checkpoint_id)
+        |> State.add_message(:system, "Rewound to checkpoint #{checkpoint_id}.")
+
+      {:error, reason} ->
+        State.add_message(state, :system, reason)
+    end
+  end
+
+  defp fork_checkpoint(state, checkpoint_id) do
+    case Session.fork(state.session, checkpoint_id) do
+      {:ok, session} ->
+        state
+        |> State.set_session(session)
+        |> State.select_checkpoint(checkpoint_id)
+        |> State.add_message(:system, "Forked from checkpoint #{checkpoint_id}.")
+
+      {:error, reason} ->
+        State.add_message(state, :system, reason)
+    end
+  end
+
+  defp abandon_branch(state, branch_id) do
+    session = Session.abandon_branch(state.session, branch_id, "Branch abandoned by user.")
+
+    state
+    |> State.set_session(session)
+    |> State.add_message(:system, "Marked branch #{branch_id} as abandoned.")
+  end
+
+  defp selected_checkpoint_id(state) do
+    case selected_timeline_event(state) do
+      %{timeline_event: %{checkpoint_id: checkpoint_id}} when is_binary(checkpoint_id) ->
+        checkpoint_id
+
+      _ ->
+        state.selected_checkpoint_id || State.active_checkpoint_id(state.session)
+    end
+  end
+
+  defp selected_timeline_event(state) do
+    state
+    |> State.timeline_items()
+    |> Enum.at(state.selected_activity)
   end
 
   defp apply_command_result({:run_pending, session, content, policy}, state, _command) do
@@ -1061,8 +1192,30 @@ defmodule Beamcore.TUI.Events do
     state.screen_type == :research and
       state.status != :paused and
       state.session != nil and
+      auto_continue_budget_remaining?(state.session) and
       not user_message_last?(state.session.messages) and
       not research_complete?(state.session.messages)
+  end
+
+  defp auto_continue_budget_remaining?(session) do
+    limit =
+      case System.get_env("BEAMCORE_RESEARCH_AUTO_CONTINUE_LIMIT") do
+        value when is_binary(value) ->
+          case Integer.parse(value) do
+            {integer, ""} when integer >= 0 -> integer
+            _ -> 4
+          end
+
+        _ ->
+          4
+      end
+
+    completed =
+      session.timeline
+      |> List.wrap()
+      |> Enum.count(fn event -> (event[:type] || event["type"]) == :completed end)
+
+    completed < limit
   end
 
   defp user_message_last?(messages) do

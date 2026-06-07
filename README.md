@@ -76,6 +76,95 @@ Provider and model choices are stored in session role selections:
 
 Concurrent sessions and sub-agents carry their own immutable role selections.
 
+### Per-mode provider and model selection
+
+Each TUI mode resolves its own primary provider/model before a session starts:
+
+| Mode | Code name | Provider env | Model env | Default |
+|---|---|---|---|---|
+| F1 Dev | `agent` | `BEAMCORE_AGENT_PROVIDER` | `BEAMCORE_AGENT_MODEL` | active provider / provider default |
+| F2 Chat | `chat` | `BEAMCORE_CHAT_PROVIDER` | `BEAMCORE_CHAT_MODEL` | active provider / provider default |
+| F3 Research | `research` | `BEAMCORE_RESEARCH_PROVIDER` | `BEAMCORE_RESEARCH_MODEL` | `ollama` / `gemma4:latest` |
+| Deep Research workflow | `deep_research` | `BEAMCORE_DEEP_RESEARCH_PROVIDER` | `BEAMCORE_DEEP_RESEARCH_MODEL` | `ollama` / `gemma4:latest` |
+
+Stored selections from the provider selector or `/api use` are used when env
+vars are empty. Environment variables take precedence for that process. F3 is
+local-first by default, but it remains provider-neutral; configure any
+OpenAI-compatible local or remote provider through the normal provider config.
+
+Per-mode context budgets can also be set:
+
+```env
+BEAMCORE_AGENT_INPUT_BUDGET=32000
+BEAMCORE_CHAT_INPUT_BUDGET=16000
+BEAMCORE_RESEARCH_INPUT_BUDGET=12000
+BEAMCORE_DEEP_RESEARCH_INPUT_BUDGET=12000
+BEAMCORE_RESEARCH_AUTO_CONTINUE_LIMIT=4
+BEAMCORE_LOCAL_PROVIDER_RECEIVE_TIMEOUT_MS=120000
+```
+
+Budgets are approximate token budgets based on deterministic message size. If a
+turn is over budget, Beamcore keeps system context and the latest user request,
+then trims or compresses older context before the model call.
+
+Local OpenAI-compatible providers such as Ollama use non-streaming chat
+completion calls by default. `BEAMCORE_LOCAL_PROVIDER_RECEIVE_TIMEOUT_MS`
+controls the receive timeout for those local calls; the default is 120 seconds
+because cold model loading and full non-streaming responses can legitimately
+exceed the 30 second remote-provider default.
+
+### F3 and Deep Research
+
+F3 research uses a bounded Deep Research workflow that is designed to work with
+weaker local models:
+
+1. understand the request;
+2. create or update a compact plan in `research_index.md`;
+3. gather only needed context/tools;
+4. compress intermediate findings;
+5. return a checkpoint answer or `RESEARCH_COMPLETE`.
+
+The workflow injects only a compact artifact list and a compressed
+`research_index.md` into the model context. It does not read every research file
+or dump unlimited history. Research auto-continue is capped by
+`BEAMCORE_RESEARCH_AUTO_CONTINUE_LIMIT` so local models cannot spin forever.
+
+### Reversible sessions and timeline
+
+Sessions are persisted under `~/.agent/sessions` as an append-only JSONL log and
+a resumable `*.state.json` snapshot. The state snapshot stores the durable
+session id, mode, provider/model role selection, active messages, usage counters,
+timeline events, checkpoints, branch metadata, and intermediate state.
+
+The TUI Activity panel renders the durable timeline when a session has more than
+the initial start event. The status bar shows the active checkpoint id. Slash
+commands are available as keyboard-friendly timeline controls:
+
+```text
+/stop                         # interrupt current execution and checkpoint
+/resume                       # continue current interrupted branch
+/checkpoint rewind <id>        # move active state back to a checkpoint
+/checkpoint fork <id>          # create a new branch from a checkpoint
+/checkpoint abandon <branch>   # mark a bad branch abandoned
+```
+
+Rewind does not delete history. Later events on the old branch are marked
+abandoned/inactive and remain inspectable. Forking creates a new branch from the
+selected checkpoint, preserving the previous branch. Continuing from the fork
+adds new events to the new branch only.
+
+Current timeline event types include `started`, `decision`, `research_stage`,
+`model_call`, `tool_call`, `file_change`, `compression`, `checkpoint_saved`,
+`interrupted`, `resumed`, `rewound`, `forked`, `completed`, `failed`, and
+`error`.
+
+Checkpoints store messages, mode, branch, workflow state, research/tool state
+placeholders, usage, and changed-file metadata. Full file snapshots are not yet
+captured for release; changed files are stored as patch/snapshot references with
+`snapshot: "not captured"`. The agent can resume safely from checkpointed
+conversation/workflow state, but full filesystem rollback is intentionally
+deferred.
+
 ## Optional local helper
 
 The local helper is **off by default**. Beamcore does not contact Ollama or any
@@ -231,7 +320,10 @@ Optional-helper progress is kept in the status bar instead of chat history.
 | `/login`, `/logout` | Manage the legacy default Mistral login. |
 | `/policy ...` | Inspect or edit deterministic project policy. |
 | `/yolo on`, `/yolo off` | Bypass/restore project policy for this session. |
-| `/timeline` | Inspect tool activity. |
+| `/timeline` | Inspect the durable session timeline. |
+| `/checkpoint rewind <id>` | Rewind active state to a checkpoint without deleting history. |
+| `/checkpoint fork <id>` | Create a new branch from a checkpoint. |
+| `/checkpoint abandon <branch>` | Mark a branch abandoned without deleting it. |
 | `/stop`, `/continue` | Pause/resume a session between turns. |
 | `/help` | Show help. |
 | `/quit`, `/exit`, `/q` | Exit. |

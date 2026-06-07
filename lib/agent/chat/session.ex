@@ -22,7 +22,17 @@ defmodule Beamcore.Agent.Chat.Session do
     :context,
     :pending_user_message,
     :roles,
-    :screen_type
+    :screen_type,
+    :mode_settings,
+    :timeline,
+    :checkpoints,
+    :branches,
+    :branch_id,
+    :active_checkpoint_id,
+    :state_file,
+    :checkpoint_file,
+    :intermediate_state,
+    :interrupted?
   ]
 
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
@@ -49,8 +59,11 @@ defmodule Beamcore.Agent.Chat.Session do
     log_dir = Path.join([System.user_home!(), ".agent", "sessions"])
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
+    state_file = Path.join(log_dir, "#{session_id}.state.json")
+    checkpoint_file = Path.join(log_dir, "#{session_id}.checkpoints.json")
 
     screen_type = Keyword.get(opts, :screen_type, :agent)
+    mode_settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
 
     workspace_root =
       if screen_type == :research do
@@ -97,11 +110,12 @@ defmodule Beamcore.Agent.Chat.Session do
       if roles_opt = Keyword.get(opts, :roles) do
         roles_opt
       else
-        screen_provider = Beamcore.Config.active_provider(screen_type)
-        screen_model = Beamcore.Config.active_model(screen_type)
-
         %Beamcore.Provider.Selection{
-          primary: %{provider: screen_provider, model: screen_model, enabled: true},
+          primary: %{
+            provider: mode_settings.provider,
+            model: mode_settings.model,
+            enabled: true
+          },
           helper: nil,
           fallback: nil
         }
@@ -154,13 +168,50 @@ defmodule Beamcore.Agent.Chat.Session do
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
       pending_user_message: nil,
       roles: roles,
-      screen_type: screen_type
+      screen_type: screen_type,
+      mode_settings: mode_settings,
+      timeline: [],
+      checkpoints: [],
+      branches: Beamcore.Agent.Timeline.initial_branches(),
+      branch_id: Beamcore.Agent.Timeline.initial_branch_id(),
+      active_checkpoint_id: nil,
+      state_file: state_file,
+      checkpoint_file: checkpoint_file,
+      intermediate_state: %{},
+      interrupted?: false
     }
 
     # Log all initial messages to log_file
-    Enum.reduce(messages, session, fn msg, acc ->
-      log(acc, msg)
-    end)
+    session =
+      Enum.reduce(messages, session, fn msg, acc ->
+        log(acc, msg)
+      end)
+
+    session
+    |> append_timeline(:started, "Session started.",
+      role: :system,
+      title: "Session started",
+      metadata: %{
+        mode: mode_settings.mode,
+        provider: mode_settings.provider,
+        model: mode_settings.model
+      }
+    )
+  end
+
+  @doc """
+  Resume a saved session state by id.
+  """
+  def resume(session_id, client, opts \\ []) when is_binary(session_id) do
+    log_dir = Path.join([System.user_home!(), ".agent", "sessions"])
+    state_file = Path.join(log_dir, "#{session_id}.state.json")
+
+    with {:ok, content} <- File.read(state_file),
+         {:ok, data} <- Jason.decode(content) do
+      {:ok, restore(data, client, opts)}
+    else
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   def clear_pending_action(session) do
@@ -175,9 +226,13 @@ defmodule Beamcore.Agent.Chat.Session do
     model = model || provider_default_model(provider) || Beamcore.Agent.Chat.API.default_model()
     roles = session.roles || Beamcore.Provider.Selection.default()
 
+    mode_settings =
+      session.mode_settings || Beamcore.Agent.Chat.ModeSettings.resolve(session.screen_type)
+
     %{
       session
       | roles: Beamcore.Provider.Selection.put_primary(roles, provider, model),
+        mode_settings: %{mode_settings | provider: provider, model: model},
         client: nil
     }
   end
@@ -240,6 +295,141 @@ defmodule Beamcore.Agent.Chat.Session do
     json = Jason.encode!(data)
     File.write!(session.log_file, json <> "\n", [:append])
     session
+  end
+
+  def append_timeline(session, type, summary, attrs \\ []) when is_atom(type) do
+    attrs_map = normalize_event_attrs(attrs)
+
+    event =
+      Beamcore.Agent.Timeline.event(session, %{
+        type: type,
+        role: Map.get(attrs_map, :role),
+        title: Map.get(attrs_map, :title),
+        summary: summary,
+        status: Map.get(attrs_map, :status, :completed),
+        reversible: Map.get(attrs_map, :reversible),
+        metadata: Map.get(attrs_map, :metadata, %{})
+      })
+
+    session = %{session | timeline: (session.timeline || []) ++ [event]}
+
+    session =
+      if important_event?(event) do
+        save_checkpoint(session, event, summary, Map.get(attrs_map, :checkpoint, %{}))
+      else
+        save_state(session)
+      end
+
+    log(session, %{
+      event: "timeline",
+      timeline: Beamcore.Agent.Timeline.to_json_event(event)
+    })
+  end
+
+  defp normalize_event_attrs(attrs) when is_list(attrs), do: Enum.into(attrs, %{})
+
+  defp normalize_event_attrs(attrs) when is_map(attrs) do
+    known = [:role, :title, :status, :reversible, :metadata, :checkpoint]
+
+    if Enum.any?(known, &Map.has_key?(attrs, &1)) do
+      attrs
+    else
+      %{metadata: attrs}
+    end
+  end
+
+  defp normalize_event_attrs(_attrs), do: %{}
+
+  def checkpoint(session, message, data \\ %{}) do
+    event =
+      Beamcore.Agent.Timeline.event(session, %{
+        type: :checkpoint_saved,
+        role: :system,
+        title: "Checkpoint saved",
+        summary: message,
+        status: :completed,
+        reversible: true,
+        metadata: data
+      })
+
+    session = %{session | timeline: (session.timeline || []) ++ [event]}
+    save_checkpoint(session, event, message, data)
+  end
+
+  def interrupt(session, reason \\ "Session interrupted.") do
+    %{session | interrupted?: true}
+    |> append_timeline(:interrupted, reason,
+      role: :user,
+      title: "Session interrupted",
+      reversible: true
+    )
+  end
+
+  def resume_interrupted(session, reason \\ "Session resumed.") do
+    %{session | interrupted?: false}
+    |> append_timeline(:resumed, reason,
+      role: :user,
+      title: "Session resumed",
+      reversible: false
+    )
+  end
+
+  def rewind(session, checkpoint_id) do
+    with {:ok, session} <- Beamcore.Agent.Timeline.rewind(session, checkpoint_id) do
+      {:ok, save_state(session)}
+    end
+  end
+
+  def fork(session, checkpoint_id, title \\ nil) do
+    with {:ok, session} <- Beamcore.Agent.Timeline.fork(session, checkpoint_id, title) do
+      {:ok, save_state(session)}
+    end
+  end
+
+  def abandon_branch(session, branch_id, reason \\ "Branch abandoned.") do
+    session
+    |> Beamcore.Agent.Timeline.abandon_branch(branch_id, reason)
+    |> save_state()
+  end
+
+  def save_state(session) do
+    if session.state_file do
+      Beamcore.Agent.Timeline.write_atomic!(session.state_file, snapshot(session))
+    end
+
+    if session.checkpoint_file do
+      Beamcore.Agent.Timeline.write_atomic!(session.checkpoint_file, %{
+        "schema_version" => Beamcore.Agent.Timeline.schema_version(),
+        "session_id" => session.session_id,
+        "active_checkpoint_id" => session.active_checkpoint_id,
+        "branch_id" => session.branch_id,
+        "branches" => stringify_branches(session.branches || %{}),
+        "checkpoints" =>
+          Enum.map(session.checkpoints || [], &Beamcore.Agent.Timeline.to_json_checkpoint/1)
+      })
+    end
+
+    session
+  end
+
+  defp save_checkpoint(session, event, summary, attrs) do
+    checkpoint = Beamcore.Agent.Timeline.checkpoint(session, event, attrs || %{})
+    checkpoint_event = Beamcore.Agent.Timeline.checkpoint_event(session, checkpoint, summary)
+    checkpoint_event = %{checkpoint_event | parent_event_id: event.id}
+
+    session =
+      %{
+        session
+        | active_checkpoint_id: checkpoint.id,
+          checkpoints: (session.checkpoints || []) ++ [checkpoint],
+          timeline: (session.timeline || []) ++ [checkpoint_event]
+      }
+      |> save_state()
+
+    log(session, %{
+      event: "checkpoint",
+      checkpoint: Beamcore.Agent.Timeline.to_json_checkpoint(checkpoint)
+    })
   end
 
   @doc """
@@ -316,6 +506,12 @@ defmodule Beamcore.Agent.Chat.Session do
     else
       prepared
     end
+  end
+
+  def prepare_for_api(messages, context, limit, budget) do
+    messages
+    |> prepare_for_api(context, limit)
+    |> Beamcore.Agent.Chat.Budget.fit_messages(budget)
   end
 
   defp inject_context_message([system | rest], context) do
@@ -411,6 +607,13 @@ defmodule Beamcore.Agent.Chat.Session do
             context: Beamcore.Agent.Chat.Context.compact(session.context)
         }
 
+        new_session =
+          append_timeline(new_session, :compression, "Session context compacted.", %{
+            compaction_number: new_session.compaction_count,
+            previous_prompt_tokens: session.last_prompt_tokens,
+            previous_total_tokens: session.total_tokens
+          })
+
         log(new_session, %{
           event: "transparent_compaction",
           compaction_number: new_session.compaction_count,
@@ -441,8 +644,180 @@ defmodule Beamcore.Agent.Chat.Session do
             total_tokens: 0,
             context: Beamcore.Agent.Chat.Context.compact(session.context)
         }
+        |> append_timeline(:compression, "Session context compacted with local fallback.")
     end
   end
+
+  defp snapshot(session) do
+    %{
+      "version" => 1,
+      "session_id" => session.session_id,
+      "log_file" => session.log_file,
+      "state_file" => session.state_file,
+      "checkpoint_file" => session.checkpoint_file,
+      "messages" => stringify_messages(session.messages || []),
+      "screen_type" => to_string(session.screen_type || :agent),
+      "roles" => stringify_roles(session.roles),
+      "timeline" => Enum.map(session.timeline || [], &Beamcore.Agent.Timeline.to_json_event/1),
+      "checkpoints" =>
+        Enum.map(session.checkpoints || [], &Beamcore.Agent.Timeline.to_json_checkpoint/1),
+      "branches" => stringify_branches(session.branches || %{}),
+      "branch_id" => session.branch_id,
+      "active_checkpoint_id" => session.active_checkpoint_id,
+      "usage" => %{
+        "total_prompt_tokens" => session.total_prompt_tokens || 0,
+        "total_completion_tokens" => session.total_completion_tokens || 0,
+        "total_tokens" => session.total_tokens || 0,
+        "last_prompt_tokens" => session.last_prompt_tokens || 0,
+        "needs_compaction" => session.needs_compaction || false,
+        "compaction_count" => session.compaction_count || 0,
+        "correction_count" => session.correction_count || 0
+      },
+      "workspace_root" => session.workspace_root,
+      "project_policy_bypassed" => session.project_policy_bypassed? || false,
+      "intermediate_state" => session.intermediate_state || %{},
+      "interrupted" => session.interrupted? || false
+    }
+  end
+
+  defp restore(data, client, opts) do
+    screen_type =
+      data
+      |> Map.get("screen_type", "agent")
+      |> mode_atom()
+
+    mode_settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
+    timeline_state = Beamcore.Agent.Timeline.safe_restore(data)
+    usage = Map.get(data, "usage", %{})
+    workspace_root = Map.get(data, "workspace_root") || Keyword.get(opts, :workspace_root)
+    {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root || ".")
+
+    %__MODULE__{
+      messages: safe_messages(Map.get(data, "messages", [])),
+      client: client,
+      session_id: Map.fetch!(data, "session_id"),
+      log_file: Map.get(data, "log_file"),
+      state_file: Map.get(data, "state_file"),
+      checkpoint_file:
+        Map.get(data, "checkpoint_file") ||
+          Path.join(
+            Path.dirname(Map.get(data, "state_file")),
+            "#{Map.fetch!(data, "session_id")}.checkpoints.json"
+          ),
+      total_prompt_tokens: Map.get(usage, "total_prompt_tokens", 0),
+      total_completion_tokens: Map.get(usage, "total_completion_tokens", 0),
+      total_tokens: Map.get(usage, "total_tokens", 0),
+      last_prompt_tokens: Map.get(usage, "last_prompt_tokens", 0),
+      needs_compaction: Map.get(usage, "needs_compaction", false),
+      compaction_count: Map.get(usage, "compaction_count", 0),
+      correction_count: Map.get(usage, "correction_count", 0),
+      policy_override:
+        if(screen_type == :chat,
+          do: Beamcore.Agent.Chat.ToolPolicy.chat(),
+          else:
+            if(screen_type == :research, do: Beamcore.Agent.Chat.ToolPolicy.research(), else: nil)
+        ),
+      project_policy_bypassed?: Map.get(data, "project_policy_bypassed", false),
+      project_nature: {language, build_system},
+      workspace_root: workspace_root,
+      context: Beamcore.Agent.Chat.Context.new(language, build_system),
+      pending_user_message: nil,
+      roles: restore_roles(Map.get(data, "roles"), mode_settings),
+      screen_type: screen_type,
+      mode_settings: mode_settings,
+      timeline: timeline_state.timeline,
+      checkpoints: timeline_state.checkpoints,
+      branches: timeline_state.branches,
+      branch_id: timeline_state.branch_id,
+      active_checkpoint_id: timeline_state.active_checkpoint_id,
+      intermediate_state: Map.get(data, "intermediate_state", %{}),
+      interrupted?: Map.get(data, "interrupted", false)
+    }
+    |> append_timeline(:resumed, "Session resumed.",
+      role: :system,
+      title: "Session resumed",
+      reversible: false,
+      metadata: %{session_id: Map.get(data, "session_id")}
+    )
+  end
+
+  defp stringify_messages(messages) do
+    Enum.map(messages, fn message ->
+      message
+      |> Enum.map(fn {key, value} -> {to_string(key), value} end)
+      |> Map.new()
+    end)
+  end
+
+  defp safe_messages(messages) do
+    Enum.map(messages, fn message ->
+      Map.new(message, fn {key, value} -> {to_string(key), value} end)
+    end)
+  end
+
+  defp stringify_roles(nil), do: nil
+  defp stringify_roles(%Beamcore.Provider.Selection{} = roles), do: Map.from_struct(roles)
+  defp stringify_roles(roles), do: roles
+
+  defp restore_roles(nil, settings) do
+    %Beamcore.Provider.Selection{
+      primary: %{provider: settings.provider, model: settings.model, enabled: true},
+      helper: nil,
+      fallback: nil
+    }
+  end
+
+  defp restore_roles(
+         %{"primary" => primary, "helper" => helper, "fallback" => fallback},
+         _settings
+       ) do
+    %Beamcore.Provider.Selection{
+      primary: safe_selection(primary),
+      helper: safe_selection(helper),
+      fallback: safe_selection(fallback)
+    }
+  end
+
+  defp restore_roles(roles, _settings), do: roles
+
+  defp safe_selection(nil), do: nil
+
+  defp safe_selection(selection) do
+    %{
+      provider: Map.get(selection, "provider") || Map.get(selection, :provider),
+      model: Map.get(selection, "model") || Map.get(selection, :model),
+      enabled: Map.get(selection, "enabled") || Map.get(selection, :enabled) || false
+    }
+  end
+
+  defp stringify_branches(branches) do
+    Map.new(branches, fn {id, branch} ->
+      {id, Beamcore.Agent.Timeline.to_json_event(branch)}
+    end)
+  end
+
+  defp important_event?(%{type: type}) do
+    type in [
+      :model_call,
+      :tool_call,
+      :file_change,
+      :research_stage,
+      :compression,
+      :decision,
+      :error,
+      :interrupted,
+      :rewound,
+      :forked,
+      :resumed,
+      :completed,
+      :failed
+    ]
+  end
+
+  defp mode_atom("chat"), do: :chat
+  defp mode_atom("research"), do: :research
+  defp mode_atom("deep_research"), do: :deep_research
+  defp mode_atom(_), do: :agent
 
   defp project_policy_block_message?(message) do
     role = message[:role] || message["role"]

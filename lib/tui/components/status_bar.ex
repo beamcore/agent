@@ -13,6 +13,8 @@ defmodule Beamcore.TUI.Components.StatusBar do
     provider = State.provider(state.session)
     model = State.model(state.session)
     provider_model = "#{provider}/#{model}"
+    checkpoint = State.active_checkpoint_id(state.session)
+    checkpoint_label = if checkpoint, do: " · chk #{short_checkpoint(checkpoint)}", else: ""
 
     tokens =
       "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
@@ -23,7 +25,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
           notice
 
         _ ->
-          "#{provider_model} · #{tokens} tok"
+          "#{provider_model} · #{tokens} tok#{checkpoint_label}"
       end
 
     # Calculate padding
@@ -92,5 +94,11 @@ defmodule Beamcore.TUI.Components.StatusBar do
       end
 
     widget(state, width)
+  end
+
+  defp short_checkpoint(checkpoint) when is_binary(checkpoint) do
+    if String.length(checkpoint) > 14,
+      do: String.slice(checkpoint, 0, 14),
+      else: checkpoint
   end
 end

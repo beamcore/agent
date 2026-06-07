@@ -60,10 +60,18 @@ defmodule Beamcore.Agent.Chat.Commands do
       roles: session.roles
     ]
 
-    opts = if session_id, do: Keyword.put(opts, :session_id, session_id), else: opts
+    if session_id do
+      case Session.resume(session_id, session.client, opts) do
+        {:ok, resumed} ->
+          resumed
 
-    session.client
-    |> Session.new(opts)
+        {:error, _reason} ->
+          opts = Keyword.put(opts, :session_id, session_id)
+          Session.new(session.client, opts)
+      end
+    else
+      Session.new(session.client, opts)
+    end
   end
 
   defp handle_yolo(session, output) do
