@@ -313,7 +313,7 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
          %{name: provider, discovery: discovery},
          %{model: model} = selection
        )
-       when is_atom(discovery) do
+       when is_atom(discovery) and not is_nil(discovery) do
     if Beamcore.Provider.Health.model_available?(provider, model),
       do: {:ok, selection},
       else: {:error, :unavailable}

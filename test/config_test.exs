@@ -51,7 +51,6 @@ defmodule Beamcore.ConfigTest do
     refute Config.configured?(:mistral_api_key)
   end
 
-
   test "helper is disabled by default and persists explicit provider/model choice" do
     refute Config.helper_enabled?()
     assert Config.helper_selection() == nil
@@ -59,6 +58,7 @@ defmodule Beamcore.ConfigTest do
     assert :ok = Config.put_helper_selection("ollama", "qwen2.5-coder:latest")
 
     assert Config.helper_enabled?()
+
     assert Config.helper_selection() == %{
              provider: "ollama",
              model: "qwen2.5-coder:latest",

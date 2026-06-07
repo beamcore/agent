@@ -127,7 +127,7 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
       session = Session.set_helper_provider(session, "ollama", selected_model)
 
       # 1. Stub HTTP calls to claim the selected model is available
-      Process.put(:mock_http_request, fn _method, request, _http_opts, _opts ->
+      mock_fun = fn _method, request, _http_opts, _opts ->
         url_chars = elem(request, 0)
         url_str = to_string(url_chars)
 
@@ -147,6 +147,13 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
           true ->
             {:error, :not_found}
         end
+      end
+
+      Application.put_env(:agent, :global_mock_http_request, mock_fun)
+      Process.put(:mock_http_request, mock_fun)
+
+      on_exit(fn ->
+        Application.delete_env(:agent, :global_mock_http_request)
       end)
 
       # 2. Stub Completions call to return a tool call to grep

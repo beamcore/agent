@@ -56,15 +56,17 @@ defmodule Beamcore.OpenAI do
   def auth_diagnostics do
     active = Beamcore.Config.active_provider()
 
-    env_token =
-      env("API_KEY") || env("#{String.upcase(active)}_API_KEY") ||
-        if active == "mistral", do: env("MISTRAL_API_KEY"), else: nil
+    legacy_env = if active == "mistral", do: env("MISTRAL_API_KEY"), else: nil
+    env_token = env("API_KEY") || env("#{String.upcase(active)}_API_KEY") || legacy_env
 
-    config_token =
+    provider_token =
       case Beamcore.Config.get_provider(active) do
         %{"api_key" => key} -> Beamcore.Config.decrypted_api_key(key)
         _ -> nil
-      end || (if active == "mistral", do: Beamcore.Config.mistral_api_key(), else: nil)
+      end
+
+    legacy_token = if active == "mistral", do: Beamcore.Config.mistral_api_key(), else: nil
+    config_token = provider_token || legacy_token
 
     {source, selected_token} = api_key_source_and_value()
     config_path = Beamcore.Config.path() |> Path.expand()

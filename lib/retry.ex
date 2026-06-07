@@ -1,4 +1,6 @@
 defmodule Beamcore.Retry do
+  require Logger
+
   @moduledoc """
   Retry mechanism with exponential backoff and budget for API calls.
   """
@@ -59,7 +61,7 @@ defmodule Beamcore.Retry do
   end
 
   defp execute_with_attempt(func, config, attempt, _backoff) when attempt >= config.max_retries do
-    IO.write("[r:#{config.max_retries}]")
+    Logger.warning("[r:#{config.max_retries}]")
     func.()
   end
 

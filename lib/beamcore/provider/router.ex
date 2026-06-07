@@ -45,7 +45,7 @@ defmodule Beamcore.Provider.Router do
      )}
   end
 
-  defp adapter(%{adapter: module}) when is_atom(module), do: {:ok, module}
+  defp adapter(%{adapter: module}) when is_atom(module) and not is_nil(module), do: {:ok, module}
 
   defp adapter(provider_info) do
     {:error,
