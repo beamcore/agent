@@ -343,7 +343,10 @@ defmodule Beamcore.Agent.Runtime do
 
     task =
       Task.Supervisor.async_nolink(Beamcore.Agent.TaskSupervisor, fn ->
-        API.execute(session.client, api_messages, tools, :main, silent: true)
+        API.execute(session.client, api_messages, tools, :main,
+          silent: true,
+          selection: Beamcore.Provider.Selection.primary(session.roles)
+        )
       end)
 
     {:noreply, %{state | active_ref: task.ref, active_pid: task.pid, active_tool_call: nil}}
@@ -370,7 +373,13 @@ defmodule Beamcore.Agent.Runtime do
     session = state.session
     Session.log(session, Session.compact_raw_response(raw_response))
 
-    emit(state, {:assistant, message["content"]})
+    {cleaned_content, reasoning} = API.extract_reasoning(message)
+
+    if reasoning && reasoning != "" do
+      emit(state, {:thinking, reasoning})
+    end
+
+    emit(state, {:assistant, cleaned_content})
 
     session =
       if usage = raw_response["usage"] do

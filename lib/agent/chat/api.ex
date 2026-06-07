@@ -395,4 +395,34 @@ defmodule Beamcore.Agent.Chat.API do
       end)
     end
   end
+
+  @doc """
+  Extracts reasoning content from a completions message map.
+  Supports both reasoning_content fields and <think>...</think> tags inside content.
+  """
+  def extract_reasoning(message) do
+    reasoning =
+      Map.get(message, "reasoning_content") ||
+        Map.get(message, "reasoning") ||
+        Map.get(message, :reasoning_content) ||
+        Map.get(message, :reasoning)
+
+    content = Map.get(message, "content") || Map.get(message, :content) || ""
+
+    {cleaned_content, reasoning} =
+      if is_binary(content) and (reasoning == nil or reasoning == "") do
+        case Regex.run(~r/<think>(.*?)<\/think>/s, content) do
+          [full_match, think_content] ->
+            cleaned = String.replace(content, full_match, "") |> String.trim()
+            {cleaned, String.trim(think_content)}
+
+          nil ->
+            {content, nil}
+        end
+      else
+        {content, reasoning}
+      end
+
+    {cleaned_content, reasoning}
+  end
 end
