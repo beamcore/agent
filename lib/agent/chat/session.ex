@@ -21,7 +21,8 @@ defmodule Beamcore.Agent.Chat.Session do
     :workspace_root,
     :context,
     :pending_user_message,
-    :roles
+    :roles,
+    :screen_type
   ]
 
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
@@ -56,10 +57,20 @@ defmodule Beamcore.Agent.Chat.Session do
 
     {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root)
 
-    system_message = %{
-      role: "system",
-      content: Beamcore.Agent.Core.SysPrompt.generate(language, build_system)
-    }
+    screen_type = Keyword.get(opts, :screen_type, :agent)
+
+    system_message =
+      if screen_type == :chat do
+        %{
+          role: "system",
+          content: "You are a helpful AI assistant. Answer the user's questions in a clear, concise, and helpful manner. You have access to web tools (like web_get) to retrieve web pages, search results, or APIs when needed."
+        }
+      else
+        %{
+          role: "system",
+          content: Beamcore.Agent.Core.SysPrompt.generate(language, build_system)
+        }
+      end
 
     %__MODULE__{
       messages: [system_message],
@@ -73,13 +84,14 @@ defmodule Beamcore.Agent.Chat.Session do
       needs_compaction: false,
       compaction_count: 0,
       correction_count: 0,
-      policy_override: nil,
+      policy_override: if(screen_type == :chat, do: Beamcore.Agent.Chat.ToolPolicy.chat(), else: nil),
       project_policy_bypassed?: false,
       project_nature: {language, build_system},
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
       pending_user_message: nil,
-      roles: Keyword.get(opts, :roles, Beamcore.Provider.Selection.default())
+      roles: Keyword.get(opts, :roles, Beamcore.Provider.Selection.default()),
+      screen_type: screen_type
     }
     |> then(&log(&1, system_message))
   end

@@ -570,13 +570,13 @@ defmodule Beamcore.Agent.Runtime do
 
   defp emit(%{tui_pid: pid}, {:assistant, content})
        when is_binary(content) and content != "" do
-    send(pid, {:runtime_event, {:assistant, content}})
+    send(pid, {:runtime_event, self(), {:assistant, content}})
   end
 
   defp emit(%{tui_pid: _pid}, {:assistant, _}), do: :ok
 
   defp emit(%{tui_pid: pid}, event) do
-    send(pid, {:runtime_event, event})
+    send(pid, {:runtime_event, self(), event})
   end
 
   defp apply_session_project_policy_bypass(policy, %{project_policy_bypassed?: true}) do

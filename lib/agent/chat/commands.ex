@@ -52,8 +52,10 @@ defmodule Beamcore.Agent.Chat.Commands do
     output.("Starting new session...")
 
     session.client
-    |> Session.new(workspace_root: session.workspace_root)
-    |> then(& &1)
+    |> Session.new(
+      workspace_root: session.workspace_root,
+      screen_type: session.screen_type
+    )
   end
 
   defp handle_yolo(session, output) do

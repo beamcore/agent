@@ -11,10 +11,14 @@ defmodule Beamcore.TUI.Layout do
   def mode(width, _height) when width < 120, do: :medium
   def mode(_width, _height), do: :wide
 
-  def areas(%Rect{} = area) do
+  def areas(%Rect{} = area, screen_type \\ :agent) do
     case mode(area.width, area.height) do
       :tiny ->
         %{mode: :tiny, screen: area}
+
+      _ when screen_type == :chat ->
+        [chat, input, status] = shell(area, 0, input_height(area.height))
+        %{mode: :narrow, chat: chat, input: input, status: status}
 
       :wide ->
         [body, input, status] = shell(area, 0, input_height(area.height))
