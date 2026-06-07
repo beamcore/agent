@@ -46,11 +46,7 @@ defmodule Beamcore.Agent.Chat.CorrectionCatch do
   """
   def correct_and_rollover(session, messages, reason, pid) do
     if session.correction_count >= @max_corrections do
-      Logger.warning(
-        "CorrectionCatch: max corrections (#{@max_corrections}) reached, skipping. " <>
-          "Reason: #{reason}"
-      )
-
+      if pid, do: StatusBar.update_text(pid, " ⚠️ Max corrections reached ")
       session
     else
       do_correct_and_rollover(session, messages, reason, pid)
@@ -129,18 +125,23 @@ defmodule Beamcore.Agent.Chat.CorrectionCatch do
 
     trimmed = Session.trim_and_clean_messages(messages, 30)
 
+    selection = Beamcore.Provider.Selection.primary(session.roles)
+    model = selection.model || API.default_model()
+
     case API.execute(
            session.client,
            trimmed ++ [correction_prompt],
            [],
            :main,
-           model: API.default_model()
+           selection: selection,
+           model: model,
+           silent: true
          ) do
       {:ok, %{message: %{"content" => correction_content}}} ->
         build_corrected_session(session, messages, reason, correction_content, pid)
 
       {:error, reason_err} ->
-        Logger.error("CorrectionCatch API call failed: #{inspect(reason_err)}. Falling back.")
+        if pid, do: StatusBar.update_text(pid, " ⚠️ Correction failed: #{inspect(reason_err)} ")
         Session.summarize_and_rollover(session, messages, pid)
     end
   end

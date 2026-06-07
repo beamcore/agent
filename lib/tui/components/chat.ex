@@ -43,6 +43,9 @@ defmodule Beamcore.TUI.Components.Chat do
       %{role: :assistant, content: content} ->
         bubble("Agent", content, Theme.style(:accent), wrap_width, :markdown)
 
+      %{role: :thinking, content: content} ->
+        bubble("Thinking", content, Theme.style(:subtle), wrap_width, :plain)
+
       %{role: :tool, content: content} ->
         tool_bubble("Modify File", content, wrap_width)
 
@@ -189,6 +192,7 @@ defmodule Beamcore.TUI.Components.Chat do
 
   defp label_prefix("You"), do: ">"
   defp label_prefix("Agent"), do: "*"
+  defp label_prefix("Thinking"), do: "·"
   defp label_prefix("Tool"), do: "»"
   defp label_prefix("Error"), do: "!"
   defp label_prefix("System"), do: "·"

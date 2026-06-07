@@ -122,6 +122,9 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event({:assistant, content}, state),
     do: state |> State.clear_notice() |> State.add_message(:assistant, content)
 
+  def handle_runtime_event({:thinking, content}, state),
+    do: state |> State.add_message(:thinking, content)
+
   def handle_runtime_event({:error, content}, state),
     do: state |> State.clear_notice() |> State.add_message(:error, ErrorFormatter.format(content))
 
@@ -911,6 +914,48 @@ defmodule Beamcore.TUI.Events do
       "Provider '#{provider}' configured successfully and set as active."
     )
     |> State.mark_dirty()
+  end
+
+  @doc """
+  Triggers the next research turn autonomously if the session is not completed or paused.
+  """
+  def maybe_auto_continue(state) do
+    if auto_continue?(state) do
+      prompt = "Continue with the next steps in your research plan. Use tools to gather and analyze information."
+      start_turn(state, prompt, nil)
+    else
+      state
+    end
+  end
+
+  defp auto_continue?(state) do
+    state.screen_type == :research and
+      state.status != :paused and
+      state.session != nil and
+      not user_message_last?(state.session.messages) and
+      not research_complete?(state.session.messages)
+  end
+
+  defp user_message_last?(messages) do
+    case List.last(messages) do
+      nil -> true
+      msg ->
+        role = Map.get(msg, :role) || Map.get(msg, "role")
+        role == "user"
+    end
+  end
+
+  defp research_complete?(messages) do
+    case List.last(messages) do
+      nil -> false
+      msg ->
+        content = Map.get(msg, :content) || Map.get(msg, "content")
+        if is_binary(content) do
+          String.contains?(content, "RESEARCH_COMPLETE")
+        else
+          false
+        end
+    end
   end
 
   defp key_press?(%{kind: kind}), do: kind in [nil, "press", :press]

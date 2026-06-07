@@ -14,23 +14,30 @@ defmodule Beamcore.TUI do
   monitoring it until the TUI exits.
   """
   def start(opts \\ []) do
-    if Process.whereis(Beamcore.TUI.DynamicSupervisor) do
-      case DynamicSupervisor.start_child(Beamcore.TUI.DynamicSupervisor, {__MODULE__, opts}) do
-        {:ok, pid} ->
-          wait_for_termination(pid)
+    old_level = Logger.level()
+    Logger.configure(level: :none)
 
-        {:error, {:already_started, _pid}} ->
-          {:error, :already_running}
-      end
-    else
-      # Standalone/fallback/test execution
-      case start_link(opts) do
-        {:ok, pid} ->
-          wait_for_termination(pid)
+    try do
+      if Process.whereis(Beamcore.TUI.DynamicSupervisor) do
+        case DynamicSupervisor.start_child(Beamcore.TUI.DynamicSupervisor, {__MODULE__, opts}) do
+          {:ok, pid} ->
+            wait_for_termination(pid)
 
-        other ->
-          other
+          {:error, {:already_started, _pid}} ->
+            {:error, :already_running}
+        end
+      else
+        # Standalone/fallback/test execution
+        case start_link(opts) do
+          {:ok, pid} ->
+            wait_for_termination(pid)
+
+          other ->
+            other
+        end
       end
+    after
+      Logger.configure(level: old_level)
     end
   end
 
@@ -186,6 +193,7 @@ defmodule Beamcore.TUI do
 
       state.f3_state.worker == worker_pid ->
         new_f3 = Events.finish_worker(state.f3_state, session)
+        new_f3 = Events.maybe_auto_continue(new_f3)
         {:noreply, %{state | f3_state: new_f3}}
 
       true ->

@@ -76,7 +76,7 @@ defmodule Beamcore.Agent.Chat.Session do
             **Core Rules**:
             - Respond in a clear, objective, and robotic tone.
             - Minimize fluff: use structured bullet points, clear facts, and direct answers.
-            - You have access to the `web_get` tool to browse the web, retrieve pages, and run search queries when you need up-to-date facts or information outside your training data.
+            - You have access to the `web_get` tool to browse the web and retrieve pages. If you need to run search queries, you can do so by constructing a search engine URL (e.g., Yahoo Search: `https://search.yahoo.com/search?p=your+search+query`).
             - Avoid assumptions; request clarification or use `web_get` if unsure.
             """
           }
@@ -107,9 +107,11 @@ defmodule Beamcore.Agent.Chat.Session do
             - Prefer markdown tables, structured bullet points, and code blocks for organizing data.
             - Do not make unverified claims. Clearly state if information is missing or conflicting.
             - Act autonomously. Do not output conversational filler or ask the user for permission between tool calls. Continue using tools until the research objective is achieved.
+            - Be highly resilient. If a search engine blocks your request (e.g., returns 202, 403, or 401) or a URL fails to load, do not stop. Technical or network difficulties must not halt the research. Immediately pivot: try different search queries, use alternative search engines (e.g., Yahoo: `https://search.yahoo.com/search?p=query`, Google: `https://www.google.com/search?q=query`, DuckDuckGo: `https://html.duckduckgo.com/html/?q=query`), or navigate directly to known sites/news domains. The research must be completed.
+            - When all research tasks are completed and the final synthesis is written, output `RESEARCH_COMPLETE` in your final text response.
 
             **Available Tools**:
-            - `web_get`: retrieve web pages or execute searches.
+            - `web_get`: retrieve web pages. If you need to search, you must construct a search URL using a public search engine (e.g., Yahoo Search: `https://search.yahoo.com/search?p=your+search+query`). Do NOT try to call a non-existent search tool.
             - `modify_file`: write and append to .md research files.
             - `fs` (mkdir, touch, exist, stat): manage directories and file creation.
             - `read`, `grep`, `glob`, `tree`: inspect your own workspace files and structure.
@@ -435,7 +437,8 @@ defmodule Beamcore.Agent.Chat.Session do
                Beamcore.Provider.Selection.primary(session.roles),
                :model,
                "mistral-small-2603"
-             )
+             ),
+           silent: true
          ) do
       {:ok, %{message: %{"content" => summary}}} ->
         validated = validate_summary(summary)

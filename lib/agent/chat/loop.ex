@@ -244,12 +244,16 @@ defmodule Beamcore.Agent.Chat.Loop do
       {:ok, %{message: message, raw_response: raw_response}} ->
         Session.log(session, Session.compact_raw_response(raw_response))
 
+        {cleaned_content, reasoning} = API.extract_reasoning(message)
+
         maybe_print(opts, fn ->
-          Pretty.print_assistant(message["content"], :main)
+          if reasoning && reasoning != "", do: Pretty.print_thinking(reasoning, :main)
+          Pretty.print_assistant(cleaned_content, :main)
           Pretty.print_raw_response(raw_response)
         end)
 
-        emit_assistant(opts, message["content"])
+        if reasoning && reasoning != "", do: emit(opts, {:thinking, reasoning})
+        emit_assistant(opts, cleaned_content)
 
         session =
           if usage = raw_response["usage"] do

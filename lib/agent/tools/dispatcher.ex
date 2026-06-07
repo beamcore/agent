@@ -30,6 +30,8 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     start_time = System.monotonic_time(:millisecond)
     {org, repo} = Beamcore.Ledger.detect_org_repo()
 
+    {name, args} = normalize_tool_call(name, args)
+
     case find_tool(name) do
       nil ->
         duration = System.monotonic_time(:millisecond) - start_time
@@ -102,4 +104,28 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
       tool.name() == name
     end)
   end
+
+  @doc false
+  def normalize_tool_call("write_file", args) do
+    path = Map.get(args, "path") || Map.get(args, :path)
+    content = Map.get(args, "content") || Map.get(args, :content)
+
+    new_args = %{
+      "operation" => "create_file",
+      "path" => path,
+      "content" => content,
+      "overwrite" => true
+    }
+
+    {"modify_file", new_args}
+  end
+
+  @doc false
+  def normalize_tool_call("write_to_file", args), do: normalize_tool_call("write_file", args)
+
+  @doc false
+  def normalize_tool_call("read_file", args), do: {"read", args}
+
+  @doc false
+  def normalize_tool_call(name, args), do: {name, args}
 end
