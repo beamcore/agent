@@ -448,7 +448,9 @@ defmodule Beamcore.TUI.State do
   def activate_provider_selector(state) do
     results = load_providers_list()
     active_provider = provider(state.session)
-    active_idx = Enum.find_index(results, fn provider -> provider.name == active_provider end) || 0
+
+    active_idx =
+      Enum.find_index(results, fn provider -> provider.name == active_provider end) || 0
 
     %{
       state

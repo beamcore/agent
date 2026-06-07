@@ -16,45 +16,6 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
 
   @search_tools ["grep", "glob", "tree", "read"]
 
-  @system_prompt """
-  You are a pre-flight search assistant for a coding agent.
-  Your ONLY job is to analyze the user request and determine if search or directory traversal tools are needed to find relevant code or files before the main coding agent answers.
-
-  You have access to the following tools:
-  - `glob` (parameters: `pattern` [required], `path` [optional], `all` [optional]): Find workspace files matching a pattern.
-  - `grep` (parameters: `pattern` [required], `path` [optional], `include` [optional]): Search file contents for a regex pattern.
-  - `tree` (parameters: `path` [optional]): Show a compact directory tree.
-  - `read` (parameters: `filePath` [required], `offset` [optional], `limit` [optional]): Read the content of a file or directory.
-
-  CRITICAL GUIDELINES:
-  1. If the user asks about the existence, location, or structure of files/workflows (e.g. "where are the github actions?", "find the config files", "list files in test/"), call `glob` or `tree`.
-  2. If the user asks to find references, definitions, or code patterns in files (e.g. "where is SearchConductor defined?", "find all mentions of HTTP client"), call `grep`.
-  3. If the user references a specific file to examine or read (e.g. "show me loop.ex", "view search_conductor.ex"), call `read`.
-  4. If the user's message is a greeting, general conversation, or describes instructions for code edits/actions without asking to find or inspect files (e.g. "lets do prompt adjustment first, than figure out how to tune it", "hello", "write a test for this function"), do NOT call any tools and reply with a brief text.
-
-  EXAMPLES:
-
-  Example 1:
-  User: where are the github actions?
-  Tool Call: glob(pattern: ".github/workflows/*")
-
-  Example 2:
-  User: find all references to SearchConductor
-  Tool Call: grep(pattern: "SearchConductor")
-
-  Example 3:
-  User: read the dispatcher.ex file
-  Tool Call: read(filePath: "lib/agent/tools/dispatcher.ex")
-
-  Example 4:
-  User: show me the workspace layout
-  Tool Call: tree(path: ".")
-
-  Example 5:
-  User: lets do prompt adjustment first, than figure out how to tune it
-  Response: Okay, let's proceed with prompt adjustments. No search needed.
-  """
-
   @doc """
   Performs pre-flight workspace search only when a helper role is enabled.
   Returns the updated session with search messages and updated context.
@@ -83,7 +44,7 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
       {messages, session}
     else
       preflight_prompt_messages = [
-        %{role: "system", content: @system_prompt},
+        %{role: "system", content: Beamcore.Agent.Core.Prompts.search_conductor()},
         %{role: "user", content: content}
       ]
 

@@ -108,19 +108,7 @@ defmodule Beamcore.Agent.Chat.CorrectionCatch do
 
     correction_prompt = %{
       role: "user",
-      content: """
-      The agent loop has detected a mechanical loop:
-      → #{reason}
-
-      This is NOT a request to apologize or start over. Analyze WHY this loop happened
-      and provide a concrete different approach. The previous approach demonstrably
-      does not work — do something structurally different.
-
-      Provide:
-      1. Brief summary of current state (key decisions, files touched, work done)
-      2. Why the loop occurred (what assumption is wrong?)
-      3. A structurally different plan of action — not a retry of the same approach
-      """
+      content: Beamcore.Agent.Core.Prompts.loop_diagnosis_request(reason)
     }
 
     trimmed = Session.trim_and_clean_messages(messages, 30)
@@ -152,18 +140,12 @@ defmodule Beamcore.Agent.Chat.CorrectionCatch do
 
     combined_system = %{
       role: "system",
-      content: """
-      #{system_content}
-
-      ⚠️ SYSTEM INTERRUPT: The conversation was interrupted because a mechanical loop was detected:
-      → #{reason}
-
-      The following diagnosis and corrected actions have been formulated:
-
-      #{correction_content}
-
-      You MUST follow the corrected plan. Do NOT repeat the previous approach.
-      """
+      content:
+        Beamcore.Agent.Core.Prompts.loop_correction_system(
+          system_content,
+          reason,
+          correction_content
+        )
     }
 
     new_session = %{

@@ -34,6 +34,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
 
     # Ensure right_text fits in the remaining space
     max_right_len = max(0, width - left_len - 2)
+
     right_text =
       if right_len > max_right_len do
         String.slice(right_text, 0, max(0, max_right_len - 3)) <> "..."
@@ -48,11 +49,29 @@ defmodule Beamcore.TUI.Components.StatusBar do
     spans = [
       %Span{content: mascot, style: Theme.style(:status_hot)},
       %Span{content: " · ", style: Theme.style(:status)},
-      %Span{content: "F1: Dev", style: if(state.screen_type == :agent, do: Theme.style(:status_hot), else: Theme.style(:status))},
+      %Span{
+        content: "F1: Dev",
+        style:
+          if(state.screen_type == :agent,
+            do: Theme.style(:status_hot),
+            else: Theme.style(:status)
+          )
+      },
       %Span{content: " · ", style: Theme.style(:status)},
-      %Span{content: "F2: Chat", style: if(state.screen_type == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))},
+      %Span{
+        content: "F2: Chat",
+        style:
+          if(state.screen_type == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))
+      },
       %Span{content: " · ", style: Theme.style(:status)},
-      %Span{content: "F3: Research", style: if(state.screen_type == :research, do: Theme.style(:status_hot), else: Theme.style(:status))},
+      %Span{
+        content: "F3: Research",
+        style:
+          if(state.screen_type == :research,
+            do: Theme.style(:status_hot),
+            else: Theme.style(:status)
+          )
+      },
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{content: padding, style: Theme.style(:status)},
       %Span{content: right_text, style: Theme.style(:status)}
