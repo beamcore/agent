@@ -152,5 +152,25 @@ defmodule Beamcore.TUI.AutoContinueTest do
 
     assert name3 == "read"
     assert args3 == %{"path" => "c.md"}
+
+    # Test search query redirection
+    {name4, args4} =
+      Beamcore.Agent.Tools.Dispatcher.normalize_tool_call("search", %{"query" => "elixir phoenix"})
+
+    assert name4 == "web_get"
+    assert args4 == %{"url" => "https://search.yahoo.com/search?p=elixir+phoenix"}
+
+    {name5, args5} =
+      Beamcore.Agent.Tools.Dispatcher.normalize_tool_call("google_search", %{"q" => "test query"})
+
+    assert name5 == "web_get"
+    assert args5 == %{"url" => "https://search.yahoo.com/search?p=test+query"}
+
+    # Test web_get with query param
+    {name6, args6} =
+      Beamcore.Agent.Tools.Dispatcher.normalize_tool_call("web_get", %{"query" => "local model"})
+
+    assert name6 == "web_get"
+    assert args6 == %{"url" => "https://search.yahoo.com/search?p=local+model"}
   end
 end

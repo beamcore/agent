@@ -388,6 +388,21 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp finish_turn(session, opts) do
     emit(opts, {:session, session})
     emit(opts, {:status, :idle})
+
+    if session.screen_type == :research do
+      last_message = List.last(session.messages)
+      content = last_message && (last_message[:content] || last_message["content"])
+
+      if is_binary(content) and String.contains?(content, "RESEARCH_COMPLETE") do
+        path = session.workspace_root
+        emit(opts, {:assistant, "Research complete! Folder path: #{path}"})
+
+        unless Keyword.get(opts, :silent, false) do
+          Pretty.print_assistant("Research complete! Folder path: #{path}", :main)
+        end
+      end
+    end
+
     session
   end
 
