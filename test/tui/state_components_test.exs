@@ -107,8 +107,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
 
       assert state.session.client == nil
       assert [%{role: :system, content: content}] = state.messages
-      assert content =~ "Run /login"
-      assert content =~ "MISTRAL_API_KEY"
+      assert content =~ "Beamcore is not configured for the selected primary provider"
+      assert content =~ "Ctrl+O"
     end)
   end
 
@@ -589,7 +589,9 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert git.summary =~ "base: origin/main"
     assert fs.summary =~ "op: move"
     assert fs.summary =~ "target: b"
-    assert task.args["prompt"] == String.duplicate("inspect the repo ", 30)
+
+    assert task.args["prompt"] ==
+             String.slice(String.duplicate("inspect the repo ", 30), 0, 57) <> "..."
   end
 
   test "TUI activity uses shared display labels without Pretty renderer output" do

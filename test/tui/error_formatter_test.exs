@@ -13,7 +13,12 @@ defmodule Beamcore.TUI.ErrorFormatterTest do
   end
 
   test "formats structured errors without dumping unlimited nested data" do
-    output = ErrorFormatter.format(%{message: "provider unavailable", details: List.duplicate(%{x: 1}, 100)})
+    output =
+      ErrorFormatter.format(%{
+        message: "provider unavailable",
+        details: List.duplicate(%{x: 1}, 100)
+      })
+
     assert output == "provider unavailable"
   end
 end

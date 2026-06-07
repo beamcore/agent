@@ -69,10 +69,9 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
             send(self(), {:result, result})
           end)
 
-        assert output =~ "Beamcore is not configured yet."
-        assert output =~ "Run /login"
-        assert output =~ "MISTRAL_API_KEY"
-        assert output =~ "make chat"
+        assert output =~ "Provider 'mistral' is not configured"
+        assert output =~ "/login"
+        assert output =~ "/api add"
         refute output =~ "TUI unavailable"
         refute output =~ "Starting plain emergency fallback"
         refute output =~ "** ("

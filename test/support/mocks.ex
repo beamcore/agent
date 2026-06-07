@@ -23,7 +23,10 @@ end
 
 defmodule Beamcore.Agent.MockHTTPClient do
   def request(method, request, http_opts, opts) do
-    case Process.get(:mock_http_request) do
+    mock_fun =
+      Process.get(:mock_http_request) || Application.get_env(:agent, :global_mock_http_request)
+
+    case mock_fun do
       nil ->
         # Decode the request URL
         url_chars =

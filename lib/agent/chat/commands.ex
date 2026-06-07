@@ -313,7 +313,10 @@ defmodule Beamcore.Agent.Chat.Commands do
   end
 
   defp handle_helper(_args, session, output) do
-    output.("Usage: /helper status | /helper list | /helper models <provider> | /helper use <provider> <model> | /helper off")
+    output.(
+      "Usage: /helper status | /helper list | /helper models <provider> | /helper use <provider> <model> | /helper off"
+    )
+
     session
   end
 

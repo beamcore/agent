@@ -125,7 +125,10 @@ defmodule Beamcore.Provider.Registry do
         "Unknown provider '#{name}'. Open Ctrl+O or run /api list to choose a configured provider."
 
       %{requires_api_key?: true} ->
-        legacy = if name == "mistral", do: " You may also use /login for the legacy Mistral credential flow.", else: ""
+        legacy =
+          if name == "mistral",
+            do: " You may also use /login for the legacy Mistral credential flow.",
+            else: ""
 
         "Provider '#{name}' is not configured. Use Ctrl+O or /api add #{name} <token> [<base_url>] [<model>].#{legacy}"
 
@@ -177,7 +180,7 @@ defmodule Beamcore.Provider.Registry do
       nil ->
         []
 
-      %{discovery: discovery} = provider when is_atom(discovery) ->
+      %{discovery: discovery} = provider when is_atom(discovery) and not is_nil(discovery) ->
         case Beamcore.Provider.Health.list_models(provider_name) do
           {:ok, models} ->
             Enum.map(models, fn model ->
@@ -315,5 +318,4 @@ defmodule Beamcore.Provider.Registry do
 
     "#{normalized}_API_KEY"
   end
-
 end

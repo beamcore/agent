@@ -58,7 +58,10 @@ defmodule Beamcore.Config do
 
   def put(key, value) when is_atom(key) and is_binary(value) do
     value = String.trim(value)
-    if value == "", do: {:error, :empty_value}, else: call({:put, key, value}, {:error, :unavailable})
+
+    if value == "",
+      do: {:error, :empty_value},
+      else: call({:put, key, value}, {:error, :unavailable})
   end
 
   def delete(key) when is_atom(key), do: call({:delete, key}, :ok)
@@ -365,12 +368,17 @@ defmodule Beamcore.Config do
   defp encrypt_secret(plaintext) when is_binary(plaintext) do
     iv = :crypto.strong_rand_bytes(@iv_bytes)
     aad = "beamcore-config"
-    {ciphertext, tag} = :crypto.crypto_one_time_aead(:aes_256_gcm, encryption_key(), iv, plaintext, aad, true)
-    <<@cipher_version, iv::binary-size(@iv_bytes), tag::binary-size(@tag_bytes), ciphertext::binary>>
+
+    {ciphertext, tag} =
+      :crypto.crypto_one_time_aead(:aes_256_gcm, encryption_key(), iv, plaintext, aad, true)
+
+    <<@cipher_version, iv::binary-size(@iv_bytes), tag::binary-size(@tag_bytes),
+      ciphertext::binary>>
   end
 
   defp decrypt_secret(
-         <<@cipher_version, iv::binary-size(@iv_bytes), tag::binary-size(@tag_bytes), ciphertext::binary>>
+         <<@cipher_version, iv::binary-size(@iv_bytes), tag::binary-size(@tag_bytes),
+           ciphertext::binary>>
        ) do
     aad = "beamcore-config"
 
@@ -406,7 +414,9 @@ defmodule Beamcore.Config do
     data
     |> :binary.bin_to_list()
     |> Enum.with_index()
-    |> Enum.map(fn {byte, index} -> Bitwise.bxor(byte, Enum.at(key_bytes, rem(index, length(key_bytes)))) end)
+    |> Enum.map(fn {byte, index} ->
+      Bitwise.bxor(byte, Enum.at(key_bytes, rem(index, length(key_bytes))))
+    end)
     |> :binary.list_to_bin()
   end
 

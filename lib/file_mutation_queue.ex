@@ -30,26 +30,23 @@ defmodule Beamcore.FileMutationQueue do
     end
   end
 
+  @doc """
+  Acquires a lock for the given path. Blocks the calling process until the lock
+  is granted or the timeout is reached.
+  """
   def acquire_lock(path, timeout) do
-    ref = make_ref()
-
     try do
-      GenServer.call(__MODULE__, {:acquire, path, self(), ref}, timeout)
-
-      receive do
-        {:lock_granted, ^ref} ->
-          :ok
-      after
-        timeout ->
-          GenServer.cast(__MODULE__, {:cancel, path, self()})
-          {:error, :timeout}
-      end
+      GenServer.call(__MODULE__, {:acquire, path}, timeout)
     catch
       :exit, {:timeout, _} ->
+        GenServer.cast(__MODULE__, {:cancel, path, self()})
         {:error, :timeout}
     end
   end
 
+  @doc """
+  Releases the lock for the given path.
+  """
   def release_lock(path) do
     GenServer.cast(__MODULE__, {:release, path, self()})
   end
@@ -62,29 +59,21 @@ defmodule Beamcore.FileMutationQueue do
   end
 
   @impl true
-  def handle_call({:acquire, path, pid, ref}, _from, state) do
+  def handle_call({:acquire, path}, {pid, _tag} = from, state) do
     locks = state.locks
-    monitors = state.monitors
+    state = ensure_monitored(state, pid)
 
     case Map.get(locks, path) do
       nil ->
-        send(pid, {:lock_granted, ref})
-
-        new_monitors =
-          if Map.has_key?(monitors, pid) do
-            monitors
-          else
-            m_ref = Process.monitor(pid)
-            Map.put(monitors, pid, m_ref)
-          end
-
-        new_locks = Map.put(locks, path, {pid, ref, []})
-        {:reply, :ok, %{state | locks: new_locks, monitors: new_monitors}}
-
-      {owner, owner_ref, waiters} ->
-        new_waiters = waiters ++ [{pid, ref}]
-        new_locks = Map.put(locks, path, {owner, owner_ref, new_waiters})
+        # Lock is free, grant it immediately
+        new_locks = Map.put(locks, path, {pid, []})
         {:reply, :ok, %{state | locks: new_locks}}
+
+      {owner, waiters} ->
+        # Lock is held, queue the client
+        new_waiters = waiters ++ [from]
+        new_locks = Map.put(locks, path, {owner, new_waiters})
+        {:noreply, %{state | locks: new_locks}}
     end
   end
 
@@ -95,93 +84,110 @@ defmodule Beamcore.FileMutationQueue do
 
   @impl true
   def handle_cast({:cancel, path, pid}, state) do
-    locks = state.locks
-
-    case Map.get(locks, path) do
-      nil ->
-        {:noreply, state}
-
-      {^pid, _ref, []} ->
-        new_locks = Map.delete(locks, path)
-        {:noreply, %{state | locks: new_locks}}
-
-      {^pid, _ref, [{next_pid, next_ref} | rest_waiters]} ->
-        send(next_pid, {:lock_granted, next_ref})
-        new_locks = Map.put(locks, path, {next_pid, next_ref, rest_waiters})
-
-        new_monitors =
-          if Map.has_key?(state.monitors, next_pid) do
-            state.monitors
-          else
-            m_ref = Process.monitor(next_pid)
-            Map.put(state.monitors, next_pid, m_ref)
-          end
-
-        {:noreply, %{state | locks: new_locks, monitors: new_monitors}}
-
-      {owner, owner_ref, waiters} ->
-        new_waiters = Enum.reject(waiters, fn {w_pid, _w_ref} -> w_pid == pid end)
-        new_locks = Map.put(locks, path, {owner, owner_ref, new_waiters})
-        {:noreply, %{state | locks: new_locks}}
-    end
+    {:noreply, do_cancel(state, path, pid)}
   end
 
   @impl true
   def handle_info({:DOWN, _ref, :process, pid, _reason}, state) do
-    new_monitors = Map.delete(state.monitors, pid)
+    # Remove monitor registration
+    state = %{state | monitors: Map.delete(state.monitors, pid)}
 
+    # Release any locks held by the crashed process, and remove it from any waiter lists
     new_locks =
-      Enum.reduce(state.locks, state.locks, fn {path, {owner, _owner_ref, _waiters}}, acc ->
-        if owner == pid do
-          release_locks_for_pid(acc, path, pid)
-        else
-          acc
+      Enum.reduce(state.locks, %{}, fn {path, {owner, waiters}}, acc ->
+        cond do
+          owner == pid ->
+            case waiters do
+              [] ->
+                acc
+
+              [next_from | rest] ->
+                GenServer.reply(next_from, :ok)
+                {next_pid, _} = next_from
+                Map.put(acc, path, {next_pid, rest})
+            end
+
+          true ->
+            new_waiters = Enum.reject(waiters, fn {w_pid, _} -> w_pid == pid end)
+            Map.put(acc, path, {owner, new_waiters})
         end
       end)
 
-    {:noreply, %{state | locks: new_locks, monitors: new_monitors}}
+    {:noreply, gc_monitors(%{state | locks: new_locks})}
   end
 
   # Helpers
+
+  defp ensure_monitored(state, pid) do
+    if Map.has_key?(state.monitors, pid) do
+      state
+    else
+      ref = Process.monitor(pid)
+      %{state | monitors: Map.put(state.monitors, pid, ref)}
+    end
+  end
 
   defp do_release(state, path, pid) do
     locks = state.locks
 
     case Map.get(locks, path) do
-      {^pid, _ref, []} ->
+      {^pid, []} ->
         new_locks = Map.delete(locks, path)
-        %{state | locks: new_locks}
+        gc_monitors(%{state | locks: new_locks})
 
-      {^pid, _ref, [{next_pid, next_ref} | rest_waiters]} ->
-        send(next_pid, {:lock_granted, next_ref})
-        new_locks = Map.put(locks, path, {next_pid, next_ref, rest_waiters})
-
-        new_monitors =
-          if Map.has_key?(state.monitors, next_pid) do
-            state.monitors
-          else
-            m_ref = Process.monitor(next_pid)
-            Map.put(state.monitors, next_pid, m_ref)
-          end
-
-        %{state | locks: new_locks, monitors: new_monitors}
+      {^pid, [next_from | rest]} ->
+        GenServer.reply(next_from, :ok)
+        {next_pid, _} = next_from
+        new_locks = Map.put(locks, path, {next_pid, rest})
+        gc_monitors(%{state | locks: new_locks})
 
       _ ->
         state
     end
   end
 
-  defp release_locks_for_pid(locks, path, pid) do
+  defp do_cancel(state, path, pid) do
+    locks = state.locks
+
     case Map.get(locks, path) do
-      {^pid, _ref, []} ->
-        Map.delete(locks, path)
+      nil ->
+        state
 
-      {^pid, _ref, [{next_pid, next_ref} | rest_waiters]} ->
-        send(next_pid, {:lock_granted, next_ref})
-        Map.put(locks, path, {next_pid, next_ref, rest_waiters})
+      {^pid, []} ->
+        new_locks = Map.delete(locks, path)
+        gc_monitors(%{state | locks: new_locks})
 
-      _ ->
-        locks
+      {^pid, [next_from | rest]} ->
+        GenServer.reply(next_from, :ok)
+        {next_pid, _} = next_from
+        new_locks = Map.put(locks, path, {next_pid, rest})
+        gc_monitors(%{state | locks: new_locks})
+
+      {owner, waiters} ->
+        new_waiters = Enum.reject(waiters, fn {w_pid, _} -> w_pid == pid end)
+        new_locks = Map.put(locks, path, {owner, new_waiters})
+        gc_monitors(%{state | locks: new_locks})
     end
+  end
+
+  defp gc_monitors(state) do
+    active_pids =
+      Enum.reduce(state.locks, MapSet.new(), fn {_path, {owner, waiters}}, acc ->
+        acc
+        |> MapSet.put(owner)
+        |> MapSet.union(MapSet.new(Enum.map(waiters, fn {w_pid, _} -> w_pid end)))
+      end)
+
+    new_monitors =
+      Enum.reduce(state.monitors, %{}, fn {pid, ref}, acc ->
+        if MapSet.member?(active_pids, pid) do
+          Map.put(acc, pid, ref)
+        else
+          Process.demonitor(ref, [:flush])
+          acc
+        end
+      end)
+
+    %{state | monitors: new_monitors}
   end
 end

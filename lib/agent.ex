@@ -66,15 +66,6 @@ defmodule Beamcore.Agent do
   def client, do: Beamcore.OpenAI.client()
 
   @doc """
-  Makes a legacy Mistral compatibility test call.
-  """
-  def test_api_call do
-    client = Beamcore.OpenAI.client()
-    IO.puts("OpenAI client configured successfully:")
-    IO.inspect(client)
-  end
-
-  @doc """
   Start the primary interactive agent chat experience.
   """
   def chat(mode \\ :auto, opts \\ [])

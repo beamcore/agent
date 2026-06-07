@@ -138,7 +138,8 @@ defmodule Beamcore.Provider.Health do
       nil ->
         {:error, :unknown_provider}
 
-      %{discovery: discovery, base_url: base_url} when is_atom(discovery) ->
+      %{discovery: discovery, base_url: base_url}
+      when is_atom(discovery) and not is_nil(discovery) ->
         discovery.list_models(base_url)
 
       %{default_model: model} when is_binary(model) ->

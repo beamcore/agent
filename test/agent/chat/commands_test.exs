@@ -655,5 +655,4 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     session = Commands.execute("helper off", session, output: output)
     assert session.roles.helper.enabled == false
   end
-
 end
