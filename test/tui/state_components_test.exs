@@ -112,6 +112,27 @@ defmodule Beamcore.TUI.StateComponentsTest do
     end)
   end
 
+  test "state does not warn when selected research provider is configured locally" do
+    Beamcore.Agent.TestEnv.with_env(
+      %{
+        "BEAMCORE_RESEARCH_PROVIDER" => "ollama",
+        "BEAMCORE_RESEARCH_MODEL" => "gemma4:latest",
+        "MISTRAL_API_KEY" => nil
+      },
+      fn ->
+        state = State.new(nil, ExRatatui.textarea_new(), history: [], screen_type: :research)
+
+        assert State.provider(state.session) == "ollama"
+        assert State.model(state.session) == "gemma4:latest"
+
+        refute Enum.any?(
+                 state.messages,
+                 &String.contains?(&1.content, "Beamcore is not configured")
+               )
+      end
+    )
+  end
+
   test "slash command suggestions filter yolo commands" do
     state = input_state("") |> type_text("/yo")
 

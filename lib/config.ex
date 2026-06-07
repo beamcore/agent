@@ -158,10 +158,29 @@ defmodule Beamcore.Config do
     put(:"active_model_#{screen_type}", model)
   end
 
+  def mode_selection(screen_type) do
+    settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
+    %{provider: settings.provider, model: settings.model, mode: settings.mode}
+  end
+
+  def mode_budget(screen_type) do
+    settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
+
+    %{
+      input_budget: settings.input_budget,
+      output_budget: settings.output_budget,
+      history_limit: settings.history_limit,
+      tool_depth_limit: settings.tool_depth_limit,
+      retry_limit: settings.retry_limit
+    }
+  end
+
   defp default_provider_for_screen(:research), do: "ollama"
+  defp default_provider_for_screen(:deep_research), do: "ollama"
   defp default_provider_for_screen(_other), do: active_provider()
 
   defp default_model_for_screen(:research), do: "gemma4:latest"
+  defp default_model_for_screen(:deep_research), do: "gemma4:latest"
   defp default_model_for_screen(_other), do: Beamcore.Agent.Chat.API.default_model()
 
   def helper_selection do

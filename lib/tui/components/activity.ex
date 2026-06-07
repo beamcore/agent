@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.Components.Activity do
   @moduledoc false
 
-  alias Beamcore.TUI.{Theme, Wrap}
+  alias Beamcore.TUI.{State, Theme, Wrap}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, Paragraph, Popup, WidgetList}
 
@@ -22,7 +22,8 @@ defmodule Beamcore.TUI.Components.Activity do
       end
 
     items =
-      state.activity
+      state
+      |> State.timeline_items()
       |> Enum.reverse()
       |> Enum.flat_map(&event_items(&1, variant, wrap_width, state.spinner_step))
 
@@ -59,10 +60,11 @@ defmodule Beamcore.TUI.Components.Activity do
     content_width = max(popup_width - 2, 10)
     content_height = max(popup_height - 2, 2)
 
-    selected = Enum.at(state.activity, state.selected_activity) || List.first(state.activity)
+    timeline_items = State.timeline_items(state)
+    selected = Enum.at(timeline_items, state.selected_activity) || List.first(timeline_items)
 
     lines =
-      details_lines(selected, state.selected_activity, length(state.activity), content_width)
+      details_lines(selected, state.selected_activity, length(timeline_items), content_width)
 
     items =
       Enum.map(lines, fn line ->
@@ -180,8 +182,10 @@ defmodule Beamcore.TUI.Components.Activity do
       "",
       "time: #{timestamp(event)}",
       "tool: #{event.name}",
+      "type: #{event.name}",
       "state: #{event.status}",
       "target: #{event.target || "none"}",
+      "branch/checkpoints: #{format_tool_args(event.args || %{})}",
       "summary: #{event.summary || "none"}",
       "arguments:\n#{args_str}",
       "output:\n#{to_string(event.result || "none")}"

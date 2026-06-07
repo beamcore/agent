@@ -44,6 +44,7 @@ defmodule Beamcore.TUI.State do
             provider_selector_selected: 0,
             pending_provider_key?: false,
             pending_provider_name: nil,
+            selected_checkpoint_id: nil,
             notice: nil,
             screen_type: :agent
 
@@ -54,8 +55,10 @@ defmodule Beamcore.TUI.State do
     memory_total = compute_memory_total()
     screen_type = Keyword.get(opts, :screen_type, :agent)
 
+    provider_ready? = primary_provider_ready?(screen_type)
+
     messages =
-      if client,
+      if client || provider_ready?,
         do: [],
         else: [
           %{
@@ -84,6 +87,15 @@ defmodule Beamcore.TUI.State do
     case Keyword.fetch(opts, :client) do
       {:ok, client} -> client
       :error -> nil
+    end
+  end
+
+  defp primary_provider_ready?(screen_type) do
+    settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
+
+    case Beamcore.Provider.Registry.validate_selection(settings.provider) do
+      {:ok, _provider} -> true
+      _ -> false
     end
   end
 
@@ -126,7 +138,10 @@ defmodule Beamcore.TUI.State do
 
   def set_session(state, session) do
     status = if pending_action(session), do: :waiting_for_confirmation, else: state.status
-    %{state | session: session, status: status} |> mark_dirty()
+    selected_checkpoint_id = state.selected_checkpoint_id || active_checkpoint_id(session)
+
+    %{state | session: session, status: status, selected_checkpoint_id: selected_checkpoint_id}
+    |> mark_dirty()
   end
 
   def start_worker(state, pid), do: %{state | worker: pid, status: :thinking} |> mark_dirty()
@@ -316,6 +331,95 @@ defmodule Beamcore.TUI.State do
       args: compact_args(args)
     }
   end
+
+  def timeline_items(%{session: %{timeline: timeline}} = state)
+      when is_list(timeline) and length(timeline) > 1 do
+    timeline
+    |> Enum.reject(&(&1.type == :checkpoint_saved))
+    |> Enum.map(&timeline_event_to_activity(&1, state.session))
+  end
+
+  def timeline_items(state), do: state.activity
+
+  def active_checkpoint_id(%{active_checkpoint_id: checkpoint_id}), do: checkpoint_id
+  def active_checkpoint_id(_session), do: nil
+
+  def select_checkpoint(state, checkpoint_id) when is_binary(checkpoint_id) do
+    %{state | selected_checkpoint_id: checkpoint_id} |> mark_dirty()
+  end
+
+  def selected_checkpoint(state) do
+    checkpoint_id = state.selected_checkpoint_id || active_checkpoint_id(state.session)
+
+    Enum.find(state.session.checkpoints || [], fn checkpoint ->
+      checkpoint.id == checkpoint_id
+    end)
+  end
+
+  def branch_summary(%{session: %{branches: branches, branch_id: active_branch}})
+      when is_map(branches) do
+    branches
+    |> Enum.map(fn {id, branch} ->
+      marker = if id == active_branch, do: "*", else: " "
+      "#{marker} #{branch.title || id} (#{branch.status})"
+    end)
+    |> Enum.join(" · ")
+  end
+
+  def branch_summary(_state), do: "no branches"
+
+  defp timeline_event_to_activity(event, session) do
+    active? = event.checkpoint_id == active_checkpoint_id(session)
+    branch = Map.get(session.branches || %{}, event.branch_id, %{})
+    branch_status = branch[:status] || branch["status"] || :started
+
+    args =
+      %{
+        role: event.role,
+        branch: event.branch_id,
+        checkpoint: event.checkpoint_id
+      }
+      |> maybe_put_reversible(event.reversible)
+
+    %{
+      id: event.id,
+      timestamp: event.timestamp,
+      timestamp_ms: timeline_timestamp_ms(event.timestamp),
+      name: to_string(event.type),
+      target: event.checkpoint_id || event.branch_id,
+      status: timeline_status(event, active?, branch_status),
+      label: timeline_label(event, active?),
+      summary: event.summary,
+      result: inspect(event.metadata || %{}, pretty: true),
+      args: args,
+      timeline_event: event
+    }
+  end
+
+  defp maybe_put_reversible(args, value) when is_boolean(value),
+    do: Map.put(args, :reversible, value)
+
+  defp maybe_put_reversible(args, _value), do: args
+
+  defp timeline_label(event, active?) do
+    active = if active?, do: "[active] ", else: ""
+    "#{active}[#{event.role}] #{event.title}"
+  end
+
+  defp timeline_status(%{status: :abandoned}, _active?, _branch_status), do: :blocked
+  defp timeline_status(%{status: :failed}, _active?, _branch_status), do: :error
+  defp timeline_status(_event, true, _branch_status), do: :running
+  defp timeline_status(_event, _active?, :abandoned), do: :blocked
+  defp timeline_status(_event, _active?, _branch_status), do: :done
+
+  defp timeline_timestamp_ms(timestamp) when is_binary(timestamp) do
+    case DateTime.from_iso8601(timestamp) do
+      {:ok, datetime, _offset} -> DateTime.to_unix(datetime, :millisecond)
+      _ -> System.system_time(:millisecond)
+    end
+  end
+
+  defp timeline_timestamp_ms(_), do: System.system_time(:millisecond)
 
   def compact_args(args) when is_map(args) do
     args

@@ -8,6 +8,7 @@ defmodule Beamcore.Agent.Chat.Loop do
     Commands,
     Context,
     CorrectionCatch,
+    ModeSettings,
     MultilineInput,
     Session,
     ToolPolicy
@@ -18,7 +19,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   require Logger
 
-  @max_tool_depth 100
   @event_content_limit 1_200
   @event_content_head 420
   @event_content_tail 260
@@ -210,18 +210,34 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp apply_session_project_policy_bypass(policy, _session), do: policy
 
-  defp process_messages(session, messages, _pid, depth, _policy, opts)
-       when depth >= @max_tool_depth do
-    warning = "Tool loop depth limit (#{@max_tool_depth}) reached. Stopping."
+  defp process_messages(session, messages, pid, depth, policy, opts)
+       when depth >= 0 do
+    max_depth = tool_depth_limit(session)
+
+    if depth >= max_depth do
+      stop_for_depth_limit(session, messages, opts, max_depth)
+    else
+      do_process_messages(session, messages, pid, depth, policy, opts)
+    end
+  end
+
+  defp stop_for_depth_limit(session, messages, opts, max_depth) do
+    warning = "Tool loop depth limit (#{max_depth}) reached. Stopping."
     maybe_print(opts, fn -> Pretty.print_warning(warning) end)
     emit(opts, {:error, warning})
 
-    session = %{session | messages: Session.compact_history(messages)}
+    session =
+      session
+      |> Map.put(:messages, Session.compact_history(messages))
+      |> Session.append_timeline(:interrupted, warning)
+      |> Session.checkpoint("Stopped after tool depth limit.", %{tool_depth_limit: max_depth})
+
     finish_turn(session, opts)
   end
 
-  defp process_messages(session, messages, pid, depth, policy, opts) do
+  defp do_process_messages(session, messages, pid, depth, policy, opts) do
     tools = Dispatcher.tool_specs(policy)
+    settings = mode_settings(session)
 
     opts =
       case session.screen_type do
@@ -230,18 +246,39 @@ defmodule Beamcore.Agent.Chat.Loop do
         _ -> opts
       end
 
-    api_messages =
-      messages
-      |> Session.prepare_for_api(session.context, 24)
-      |> inject_research_harness(session)
-      |> inject_policy_message(policy, tools)
+    session = maybe_research_stage(session, :researcher, "Researcher prepared bounded context.")
 
-    case API.execute(session.client, api_messages, tools, :main,
-           selection: Beamcore.Provider.Selection.primary(session.roles),
-           silent: Keyword.get(opts, :silent, false),
-           retry_config: Keyword.get(opts, :retry_config),
-           temperature: Keyword.get(opts, :temperature)
-         ) do
+    api_messages =
+      prepare_api_messages(session, messages, policy, tools, settings)
+
+    session = maybe_research_stage(session, :synthesizer, "Synthesizer reviewed bounded context.")
+
+    session =
+      Session.append_timeline(session, :model_call, model_call_summary(session), %{
+        role: model_call_role(session),
+        title: model_call_title(session),
+        metadata: %{
+          provider: provider_name(session),
+          model: model_name(session),
+          depth: depth,
+          approximate_input_tokens: Beamcore.Agent.Chat.Budget.estimate_tokens(api_messages)
+        }
+      })
+
+    call_started = System.monotonic_time(:millisecond)
+
+    api_result =
+      API.execute(session.client, api_messages, tools, :main,
+        selection: Beamcore.Provider.Selection.primary(session.roles),
+        model: model_name(session),
+        silent: Keyword.get(opts, :silent, false),
+        retry_config: Keyword.get(opts, :retry_config) || retry_config(settings),
+        temperature: Keyword.get(opts, :temperature)
+      )
+
+    call_elapsed = System.monotonic_time(:millisecond) - call_started
+
+    case api_result do
       {:ok, %{message: message, raw_response: raw_response}} ->
         Session.log(session, Session.compact_raw_response(raw_response))
 
@@ -262,6 +299,8 @@ defmodule Beamcore.Agent.Chat.Loop do
           else
             session
           end
+
+        session = Session.append_timeline(session, :checkpoint_saved, "Model response received.")
 
         if pid, do: StatusBar.update(pid, session)
         emit(opts, {:session, session})
@@ -309,7 +348,19 @@ defmodule Beamcore.Agent.Chat.Loop do
                     maybe_print(opts, fn -> print_tool_execution(name, args, content) end)
                     event_content = compact_event_content(content)
                     emit(opts, {:tool_finished, name, args, event_content})
-                    session = update_context(session, name, args, content)
+
+                    session =
+                      session
+                      |> update_context(name, args, content)
+                      |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
+                        role: tool_role(session),
+                        title: "Tool call: #{name}",
+                        metadata: %{
+                          tool: name,
+                          result: event_content
+                        }
+                      })
+
                     emit(opts, {:session, session})
 
                     {
@@ -352,40 +403,170 @@ defmodule Beamcore.Agent.Chat.Loop do
         maybe_print(opts, fn -> Pretty.print_rate_limit_error(error) end)
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
-        session
+        Session.append_timeline(session, :failed, message)
 
       {:error, %OpenaiEx.Error{kind: :api_timeout_error}} ->
-        maybe_print(opts, &Pretty.print_timeout_error/0)
-        emit(opts, {:error, "API request timed out. Retrying with longer timeout..."})
+        message = timeout_message(session, settings, call_elapsed)
+        maybe_print(opts, fn -> Pretty.print_error(message) end)
+        emit(opts, {:error, message})
         emit(opts, {:status, :error})
-        session
+
+        Session.append_timeline(session, :failed, message,
+          role: model_call_role(session),
+          title: "Provider timeout",
+          metadata: timeout_metadata(session, settings, call_elapsed)
+        )
 
       {:error, %Beamcore.Provider.Error{} = error} ->
         maybe_print(opts, fn -> Pretty.print_error(error.message) end)
         emit(opts, {:error, error.message})
         emit(opts, {:status, :error})
-        session
+        Session.append_timeline(session, :failed, error.message)
 
       {:error, %OpenaiEx.Error{} = error} ->
         maybe_print(opts, fn -> Pretty.print_api_error(error) end)
         emit(opts, {:error, api_error_text(error)})
         emit(opts, {:status, :error})
-        session
+        Session.append_timeline(session, :failed, api_error_text(error))
 
       {:error, reason} ->
         message = "#{inspect(reason)}"
         maybe_print(opts, fn -> Pretty.print_error(message) end)
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
-        session
+        Session.append_timeline(session, :failed, message)
     end
   end
+
+  defp prepare_api_messages(session, messages, policy, tools, settings) do
+    messages
+    |> Session.prepare_for_api(session.context, settings.history_limit, settings.input_budget)
+    |> inject_research_harness(session)
+    |> inject_policy_message(policy, tools)
+    |> Beamcore.Agent.Chat.Budget.fit_messages(settings.input_budget)
+  end
+
+  defp mode_settings(%{mode_settings: %ModeSettings{} = settings}), do: settings
+  defp mode_settings(%{screen_type: screen_type}), do: ModeSettings.resolve(screen_type)
+
+  defp model_name(session) do
+    case Beamcore.Provider.Selection.primary(session.roles) do
+      %{model: model} -> model
+      _ -> mode_settings(session).model
+    end
+  end
+
+  defp provider_name(session) do
+    case Beamcore.Provider.Selection.primary(session.roles) do
+      %{provider: provider} -> provider
+      _ -> mode_settings(session).provider
+    end
+  end
+
+  defp tool_depth_limit(session) do
+    settings = mode_settings(session)
+
+    if ModeSettings.local_provider?(settings) do
+      min(settings.tool_depth_limit, 6)
+    else
+      settings.tool_depth_limit
+    end
+  end
+
+  defp retry_config(settings) do
+    max_retries = if ModeSettings.local_provider?(settings), do: 0, else: settings.retry_limit
+
+    %Beamcore.Retry.Config{
+      max_retries: max_retries,
+      initial_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
+      max_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
+      backoff_multiplier: 1,
+      retryable_errors: [
+        :rate_limit,
+        :api_timeout_error,
+        :api_connection_error,
+        :internal_server_error
+      ]
+    }
+  end
+
+  defp maybe_research_stage(%{screen_type: :research} = session, role, summary) do
+    case role do
+      :researcher ->
+        Beamcore.Agent.Research.DeepResearch.record_researcher_stage(session, summary)
+
+      :synthesizer ->
+        Beamcore.Agent.Research.DeepResearch.record_synthesizer_stage(session, summary)
+    end
+  end
+
+  defp maybe_research_stage(session, _role, _summary), do: session
+
+  defp model_call_role(%{screen_type: :research}), do: :synthesizer
+  defp model_call_role(_session), do: :agent
+
+  defp model_call_title(%{screen_type: :research}), do: "Synthesizer model call"
+  defp model_call_title(%{screen_type: :chat}), do: "Chat model call"
+  defp model_call_title(_session), do: "Agent model call"
+
+  defp model_call_summary(%{screen_type: :research} = session),
+    do: "Synthesizer called #{provider_name(session)}/#{model_name(session)}."
+
+  defp model_call_summary(session),
+    do: "Agent called #{provider_name(session)}/#{model_name(session)}."
+
+  defp tool_role(%{screen_type: :research}), do: :researcher
+  defp tool_role(_session), do: :agent
+
+  defp timeout_message(session, settings, elapsed_ms) do
+    role = model_call_role(session) |> to_string() |> String.capitalize()
+    configured = receive_timeout_ms(settings)
+
+    "#{role} timed out waiting for the complete non-streaming provider response after #{format_ms(elapsed_ms)}. Provider: #{provider_name(session)}. Model: #{model_name(session)}. Configured receive timeout: #{format_ms(configured)}."
+  end
+
+  defp timeout_metadata(session, settings, elapsed_ms) do
+    %{
+      role: model_call_role(session),
+      provider: provider_name(session),
+      model: model_name(session),
+      stage: :model_call,
+      timeout_type: :non_streaming_receive_timeout,
+      configured_duration_ms: receive_timeout_ms(settings),
+      elapsed_duration_ms: elapsed_ms,
+      attempt_number: 1,
+      max_attempts:
+        if(ModeSettings.local_provider?(settings), do: 1, else: settings.retry_limit + 1),
+      stream: false
+    }
+  end
+
+  defp receive_timeout_ms(settings) do
+    if ModeSettings.local_provider?(settings) do
+      case System.get_env("BEAMCORE_LOCAL_PROVIDER_RECEIVE_TIMEOUT_MS") do
+        value when is_binary(value) ->
+          case Integer.parse(value) do
+            {ms, ""} when ms > 0 -> ms
+            _ -> Application.get_env(:agent, :local_provider_receive_timeout_ms, 120_000)
+          end
+
+        _ ->
+          Application.get_env(:agent, :local_provider_receive_timeout_ms, 120_000)
+      end
+    else
+      Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
+    end
+  end
+
+  defp format_ms(ms) when is_integer(ms) and ms >= 1000, do: "#{Float.round(ms / 1000, 1)}s"
+  defp format_ms(ms), do: "#{ms}ms"
 
   defp maybe_print(opts, fun) do
     unless Keyword.get(opts, :silent, false), do: fun.()
   end
 
   defp finish_turn(session, opts) do
+    session = Session.append_timeline(session, :completed, "Turn completed.")
     emit(opts, {:session, session})
     emit(opts, {:status, :idle})
 
@@ -574,123 +755,16 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp inject_research_harness(messages, %{screen_type: :research} = session) do
-    main_topic = get_main_topic(session)
-    files_list = list_research_files(session.workspace_root)
-    index_content = read_research_index(session.workspace_root)
+    settings = mode_settings(session)
 
-    harness_message = %{
-      role: "system",
-      content: Beamcore.Agent.Core.Prompts.research_harness(main_topic, files_list, index_content)
-    }
-
-    case messages do
-      [system, context | rest] when is_map(system) and is_map(context) ->
-        role1 = system[:role] || system["role"]
-        role2 = context[:role] || context["role"]
-        content2 = context[:content] || context["content"] || ""
-
-        if role1 == "system" and role2 == "system" and
-             String.starts_with?(content2, "Known session context:") do
-          [system, context, harness_message | rest]
-        else
-          [system, harness_message, context | rest]
-        end
-
-      [system | rest] when is_map(system) ->
-        [system, harness_message | rest]
-
-      other ->
-        [harness_message | other]
-    end
+    Beamcore.Agent.Research.DeepResearch.prepare_messages(
+      messages,
+      session,
+      settings.input_budget
+    )
   end
 
   defp inject_research_harness(messages, _session), do: messages
-
-  defp get_main_topic(session) do
-    in_memory =
-      Enum.find_value(session.messages, fn msg ->
-        role = msg[:role] || msg["role"]
-        content = msg[:content] || msg["content"]
-
-        if role in [:user, "user"] and is_binary(content) and String.trim(content) != "" do
-          String.trim(content)
-        else
-          nil
-        end
-      end)
-
-    if in_memory do
-      in_memory
-    else
-      if session.log_file && File.exists?(session.log_file) do
-        session.log_file
-        |> File.stream!()
-        |> Enum.find_value(fn line ->
-          case Jason.decode(line) do
-            {:ok, %{"role" => "user", "content" => content}} ->
-              if is_binary(content) and String.trim(content) != "",
-                do: String.trim(content),
-                else: nil
-
-            {:ok, %{role: "user", content: content}} ->
-              if is_binary(content) and String.trim(content) != "",
-                do: String.trim(content),
-                else: nil
-
-            _ ->
-              nil
-          end
-        end)
-      else
-        "Unknown (Main topic not found)"
-      end
-    end
-  end
-
-  defp list_research_files(workspace_root) do
-    if workspace_root && File.dir?(workspace_root) do
-      workspace_root
-      |> Path.join("**/*.md")
-      |> Path.wildcard()
-      |> Enum.map(fn abs_path ->
-        rel_path = Path.relative_to(abs_path, workspace_root)
-
-        size =
-          case File.stat(abs_path) do
-            {:ok, %File.Stat{size: size}} -> size
-            _ -> 0
-          end
-
-        {rel_path, size}
-      end)
-      |> Enum.reject(fn {rel_path, _size} -> rel_path == "research_index.md" end)
-      |> Enum.map(fn {rel_path, size} -> "- #{rel_path} (#{size} bytes)" end)
-      |> Enum.join("\n")
-      |> case do
-        "" -> "(No research artifacts created yet)"
-        list -> list
-      end
-    else
-      "(No research directory)"
-    end
-  end
-
-  defp read_research_index(workspace_root) do
-    if workspace_root do
-      index_file = Path.join(workspace_root, "research_index.md")
-
-      if File.exists?(index_file) do
-        case File.read(index_file) do
-          {:ok, content} -> String.trim(content)
-          _ -> "(Unable to read research_index.md)"
-        end
-      else
-        "(research_index.md does not exist yet)"
-      end
-    else
-      "(No workspace root)"
-    end
-  end
 
   if Code.ensure_loaded?(Mix) and Mix.env() == :test do
     def test_inject_research_harness(messages, session) do
