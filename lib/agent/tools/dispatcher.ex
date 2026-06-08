@@ -129,7 +129,9 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   @doc false
   def normalize_tool_call("web_get", args) do
     url = Map.get(args, "url") || Map.get(args, :url)
-    query = Map.get(args, "query") || Map.get(args, "q") || Map.get(args, :query) || Map.get(args, :q)
+
+    query =
+      Map.get(args, "query") || Map.get(args, "q") || Map.get(args, :query) || Map.get(args, :q)
 
     cond do
       is_binary(url) ->
@@ -145,8 +147,10 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   end
 
   @doc false
-  def normalize_tool_call(name, args) when name in ["search", "google_search", "web_search", "duckduckgo"] do
-    query = Map.get(args, "query") || Map.get(args, "q") || Map.get(args, :query) || Map.get(args, :q)
+  def normalize_tool_call(name, args)
+      when name in ["search", "google_search", "web_search", "duckduckgo"] do
+    query =
+      Map.get(args, "query") || Map.get(args, "q") || Map.get(args, :query) || Map.get(args, :q)
 
     if is_binary(query) do
       url = "https://search.yahoo.com/search?p=#{URI.encode_www_form(query)}"

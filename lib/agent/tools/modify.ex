@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.Tools.Modify do
   """
 
   alias Beamcore.Agent.Policy.ProjectPolicy
+  alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.Tools.PathSafety
 
   @description """
@@ -138,10 +139,12 @@ defmodule Beamcore.Agent.Tools.Modify do
          :ok <- ProjectPolicy.allowed_write_path?(path),
          {:ok, safe_path} <- PathSafety.resolve(path, allow_missing: operation == "create_file"),
          {:ok, original} <- load_original(safe_path, operation),
+         {:ok, mode_before} <- mode_before(safe_path, original),
          :ok <- validate_expected_sha256(original, params.expected_sha256),
          {:ok, plan} <- build_plan(params, safe_path, original),
          :ok <- validate_changed(plan),
          :ok <- verify_plan(plan) do
+      plan = Map.put(plan, :mode_before, mode_before)
       maybe_write(plan, params.dry_run)
     else
       {:error, reason} -> error_result(operation || "unknown", path || "", reason)
@@ -398,8 +401,10 @@ defmodule Beamcore.Agent.Tools.Modify do
   defp maybe_write(plan, false) do
     with :ok <- File.mkdir_p(Path.dirname(plan.path)),
          :ok <- atomic_write(plan.path, plan.content),
+         :ok <- restore_mode(plan.path, plan.mode_before),
          {:ok, reread} <- File.read(plan.path),
-         :ok <- verify_written_content(plan, reread) do
+         :ok <- verify_written_content(plan, reread),
+         :ok <- record_mutation(plan, reread) do
       success_result(plan, "File modified successfully.")
     else
       {:error, reason} ->
@@ -451,6 +456,31 @@ defmodule Beamcore.Agent.Tools.Modify do
       end
     after
       File.rm(tmp)
+    end
+  end
+
+  defp mode_before(_path, nil), do: {:ok, nil}
+
+  defp mode_before(path, _original) do
+    case File.stat(path) do
+      {:ok, stat} -> {:ok, Bitwise.band(stat.mode, 0o777)}
+      {:error, reason} -> {:error, "cannot stat file: #{reason}"}
+    end
+  end
+
+  defp restore_mode(_path, nil), do: :ok
+  defp restore_mode(path, mode), do: File.chmod(path, mode)
+
+  defp record_mutation(plan, reread) do
+    before_bytes = if plan.existed?, do: plan.original, else: nil
+    before_state = FilesystemJournal.file_state_from_bytes(before_bytes, plan.mode_before)
+
+    case FilesystemJournal.record_file_write(plan.path, before_state, reread, tool: name()) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

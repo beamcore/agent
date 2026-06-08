@@ -137,8 +137,11 @@ session id, mode, provider/model role selection, active messages, usage counters
 timeline events, checkpoints, branch metadata, and intermediate state.
 
 The TUI Activity panel renders the durable timeline when a session has more than
-the initial start event. The status bar shows the active checkpoint id. Slash
-commands are available as keyboard-friendly timeline controls:
+the initial start event. F1 Dev creates a startup checkpoint, records accepted
+goals, creates pre-mutation checkpoints before filesystem writes/deletes, and
+records post-mutation checkpoints after successful mutation batches. The status
+bar shows the active checkpoint id. Slash commands are available as
+keyboard-friendly timeline controls:
 
 ```text
 /stop                         # interrupt current execution and checkpoint
@@ -153,17 +156,70 @@ abandoned/inactive and remain inspectable. Forking creates a new branch from the
 selected checkpoint, preserving the previous branch. Continuing from the fork
 adds new events to the new branch only.
 
+Activity is scrollable and navigable. `F6` focuses Activity, `Up`/`k` and
+`Down`/`j` move selection, `PageUp`/`PageDown` page, `Home`/`g` jumps to the
+oldest event, and `End`/`G` jumps to newest and resumes live-follow. When the
+user scrolls away from newest, Activity preserves the selection and counts new
+events instead of force-scrolling.
+
 Current timeline event types include `started`, `decision`, `research_stage`,
 `model_call`, `tool_call`, `file_change`, `compression`, `checkpoint_saved`,
 `interrupted`, `resumed`, `rewound`, `forked`, `completed`, `failed`, and
 `error`.
 
-Checkpoints store messages, mode, branch, workflow state, research/tool state
-placeholders, usage, and changed-file metadata. Full file snapshots are not yet
-captured for release; changed files are stored as patch/snapshot references with
-`snapshot: "not captured"`. The agent can resume safely from checkpointed
-conversation/workflow state, but full filesystem rollback is intentionally
-deferred.
+Checkpoints store messages, mode, branch, workflow state, research/tool state,
+usage, and a filesystem journal boundary. Beamcore records filesystem
+provenance for mutations performed through guarded BeamCore tools, including
+BeamCore-started formatter, validation, generator, and Git commands. If a
+BeamCore-started command or Git hook changes workspace files, those changes are
+recorded as agent-owned command mutations. Rewind and fork undo successful
+agent-owned mutations after the selected checkpoint boundary in reverse order;
+they do not replace the whole workspace with an old snapshot.
+
+Filesystem rollback is selective:
+
+- modified text files use a deterministic inverse line merge when the user made
+  non-overlapping edits after the agent change;
+- overlapping edits become conflicts and the current user-visible file is left
+  in place;
+- binary files, symlinks, and permissions use hash-exact whole-path semantics;
+- agent-created files/directories are removed only when they are still
+  agent-owned;
+- agent-deleted files/directories are restored only when the path has not been
+  recreated externally.
+
+Conflict recovery versions are written under `.beamcore/recovery/<restore-id>/`.
+Snapshot blobs and the mutation journal live under `.beamcore/snapshots/`. These
+internal paths are blocked from normal agent tools and should stay ignored by
+Git. Human/agent merge conflicts are reported separately from operational
+restore failures such as missing or corrupted snapshot blobs.
+
+Restore operations are OTP-owned. `Beamcore.Agent.RestoreCoordinator` runs under
+`Beamcore.Agent.RestoreSupervisor`, and
+`Beamcore.Agent.FilesystemJournal.Server` serializes journal appends and restore
+application per workspace. A restore persists internal states such as
+`planned`, `preflighted`, `safety_revision_saved`, `applying`, `verifying`,
+`completed`, `completed_with_conflicts`, `failed_recovered`, and
+`failed_recovery_required` under `.beamcore/snapshots/restores/`. If an
+operational failure occurs after application starts, Beamcore attempts to recover
+the changed paths to the pre-restore safety revision automatically.
+
+Snapshot safety limits can be configured:
+
+```text
+BEAMCORE_SNAPSHOT_MAX_FILE_BYTES=5242880
+BEAMCORE_SNAPSHOT_MAX_OPERATION_BYTES=20971520
+BEAMCORE_SNAPSHOT_MAX_DIRECTORY_FILES=1000
+BEAMCORE_SNAPSHOT_MAX_COMMAND_SCAN_FILES=20000
+BEAMCORE_SNAPSHOT_MAX_TOTAL_BYTES=104857600
+```
+
+When a destructive mutation cannot be snapshotted within policy limits, the tool
+returns an error and leaves the filesystem unchanged.
+Command attribution scans exclude BeamCore internals, `.git`, and common
+disposable build/dependency directories such as `_build`, `deps`, and
+`node_modules`; source files, untracked files, and ignored files inside the
+workspace remain attributable when changed by BeamCore-started commands.
 
 ## Optional local helper
 
@@ -345,7 +401,7 @@ explicitly requested.
 | `tree` | Show a compact workspace tree. |
 | `modify_file` | Create or modify files through guarded transactional operations. |
 | `fs` | Limited filesystem operations with explicit destructive guards. |
-| `git` | Bounded repository operations. |
+| `git` | Bounded repository operations. Allowed Git commands run inside a command mutation scope so hook-written workspace files are journaled. `git clone` and `git restore` remain disabled until they have journal-aware implementations. |
 | `test_tool` | Detect and run the project test/build system. |
 | `task` | Delegate bounded work to sub-agents. |
 | `memory` | Store and recall repository-scoped knowledge. |

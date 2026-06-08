@@ -68,6 +68,20 @@ defmodule Beamcore.TUI.TimelineControlTest do
     assert text =~ "reversible: true"
   end
 
+  test "timeline details show filesystem revision metadata", %{state: state} do
+    session =
+      state.session
+      |> Session.append_timeline(:decision, "Checkpoint A.")
+
+    state = %{state | session: session}
+    item = State.timeline_items(state) |> Enum.find(&(&1.name == "decision"))
+    text = Activity.details_lines(item, 0, 1, 120) |> Enum.join("\n")
+
+    assert text =~ "filesystem_revision:"
+    assert text =~ "filesystem_paths:"
+    assert text =~ "filesystem_bytes:"
+  end
+
   test "TUI can trigger interrupt", %{state: state} do
     {:ok, worker} = Task.start(fn -> Process.sleep(:infinity) end)
     state = %{state | worker: worker, status: :thinking}
@@ -98,10 +112,38 @@ defmodule Beamcore.TUI.TimelineControlTest do
     state = %{state | session: session}
 
     rewound = submit_command(state, "/checkpoint rewind #{checkpoint_a}")
+    assert rewound.status == :restoring
+    assert_receive {:restore_progress, _restore_id, %{phase: "requested"}}
+    assert_receive {:restore_progress, _restore_id, %{phase: "planned"}}
+
+    assert_receive {:restore_completed, _restore_id, :rewind, ^checkpoint_a,
+                    {:ok, session, filesystem_result}}
+
+    rewound =
+      Events.handle_restore_completed(
+        :rewind,
+        checkpoint_a,
+        {:ok, session, filesystem_result},
+        rewound
+      )
+
     assert rewound.session.active_checkpoint_id == checkpoint_a
     assert Enum.any?(rewound.session.timeline, &(&1.type == :rewound))
 
     forked = submit_command(rewound, "/checkpoint fork #{checkpoint_a}")
+    assert forked.status == :restoring
+
+    assert_receive {:restore_completed, _restore_id, :fork, ^checkpoint_a,
+                    {:ok, session, filesystem_result}}
+
+    forked =
+      Events.handle_restore_completed(
+        :fork,
+        checkpoint_a,
+        {:ok, session, filesystem_result},
+        forked
+      )
+
     assert forked.session.branch_id != rewound.session.branch_id
     assert Enum.any?(forked.session.timeline, &(&1.type == :forked))
   end
@@ -114,6 +156,179 @@ defmodule Beamcore.TUI.TimelineControlTest do
     assert state.session.branches[branch_id].status == :abandoned
   end
 
+  test "Activity keyboard navigation changes selected event", %{state: state} do
+    state = %{state | session: timeline_session(state.session, 5)}
+
+    {:noreply, state} = Events.handle_event(key("f6"), state)
+    assert state.activity_focused?
+
+    {:noreply, state} = Events.handle_event(key("end"), state)
+    newest = state.selected_activity
+    assert newest == length(State.timeline_items(state)) - 1
+
+    {:noreply, state} = Events.handle_event(key("k"), state)
+    assert state.selected_activity == newest - 1
+
+    {:noreply, state} = Events.handle_event(key("j"), state)
+    assert state.selected_activity == newest
+  end
+
+  test "Ctrl+A does not globally steal input focus for Activity", %{state: state} do
+    {:noreply, state} = Events.handle_event(key("a", ["ctrl"]), state)
+
+    refute state.activity_focused?
+
+    {:noreply, state} = Events.handle_event(key("f6"), state)
+    assert state.activity_focused?
+  end
+
+  test "Ctrl+L is not a global Activity focus binding", %{state: state} do
+    {:noreply, state} = Events.handle_event(key("l", ["ctrl"]), state)
+    refute state.activity_focused?
+  end
+
+  test "Activity page, home, and end navigation", %{state: state} do
+    state =
+      %{state | session: timeline_session(state.session, 12)}
+      |> State.set_activity_viewport_height(4)
+      |> State.activity_end()
+
+    newest = state.selected_activity
+    {:noreply, state} = Events.handle_event(key("page_up"), state)
+    assert state.selected_activity <= newest - 2
+
+    {:noreply, state} = Events.handle_event(key("home"), state)
+    assert state.selected_activity == 0
+    refute state.activity_follow_tail?
+
+    {:noreply, state} = Events.handle_event(key("G"), state)
+    assert state.selected_activity == length(State.timeline_items(state)) - 1
+    assert state.activity_follow_tail?
+    assert state.activity_unseen_count == 0
+  end
+
+  test "Activity live follow pauses when user scrolls upward", %{state: state} do
+    state =
+      %{state | session: timeline_session(state.session, 3)}
+      |> State.activity_end()
+
+    state = State.scroll_activity_up(state, 3)
+    refute state.activity_follow_tail?
+
+    session = Session.append_timeline(state.session, :decision, "New event.")
+    state = State.set_session(state, session)
+
+    assert state.activity_unseen_count > 0
+
+    state = State.activity_end(state)
+    assert state.activity_follow_tail?
+    assert state.activity_unseen_count == 0
+  end
+
+  test "Activity visible items slices long timeline", %{state: state} do
+    state =
+      %{state | session: timeline_session(state.session, 80)}
+      |> State.set_activity_viewport_height(6)
+      |> State.activity_end()
+
+    visible = State.visible_timeline_items(state, 6)
+
+    assert length(visible) < length(State.timeline_items(state))
+    assert List.last(visible).id == List.last(State.timeline_items(state)).id
+  end
+
+  test "Activity viewport rendering remains bounded for large timelines", %{state: state} do
+    state =
+      %{state | session: in_memory_timeline_session(state.session, 5_000)}
+      |> State.set_activity_viewport_height(14)
+      |> State.activity_end()
+
+    {micros, visible} = :timer.tc(fn -> State.visible_timeline_items(state, 14) end)
+
+    assert length(visible) <= 18
+    assert micros < 100_000
+  end
+
+  test "Activity viewport rendering remains bounded for very large timelines", %{state: state} do
+    state =
+      %{state | session: in_memory_timeline_session(state.session, 50_000)}
+      |> State.set_activity_viewport_height(14)
+      |> State.activity_end()
+
+    {micros, visible} = :timer.tc(fn -> State.visible_timeline_items(state, 14) end)
+
+    assert length(visible) <= 18
+    assert micros < 750_000
+  end
+
+  test "selected checkpoint opens detail view", %{state: state} do
+    session = Session.append_timeline(state.session, :decision, "Checkpoint A.")
+    state = %{state | session: session} |> State.activity_end() |> State.focus_activity()
+
+    {:noreply, state} = Events.handle_event(key("enter"), state)
+
+    assert state.show_activity_details
+    assert State.selected_checkpoint(state).id == session.active_checkpoint_id
+  end
+
+  test "Activity rewind and fork actions call shared session services", %{state: state} do
+    session = Session.append_timeline(state.session, :decision, "Checkpoint A.")
+    checkpoint_id = session.active_checkpoint_id
+    session = Session.append_timeline(session, :decision, "Checkpoint B.")
+
+    state =
+      %{state | session: session}
+      |> State.focus_activity()
+      |> State.select_checkpoint(checkpoint_id)
+
+    {:noreply, rewound} =
+      Events.handle_event(key("r", ["ctrl"]), %{state | show_activity_details: true})
+
+    assert rewound.status == :restoring
+    assert_receive {:restore_progress, _restore_id, %{phase: "requested"}}
+
+    assert_receive {:restore_completed, _restore_id, :rewind, ^checkpoint_id,
+                    {:ok, session, filesystem_result}}
+
+    rewound =
+      Events.handle_restore_completed(
+        :rewind,
+        checkpoint_id,
+        {:ok, session, filesystem_result},
+        rewound
+      )
+
+    assert rewound.session.active_checkpoint_id == checkpoint_id
+
+    {:noreply, forked} =
+      Events.handle_event(key("f", ["ctrl"]), %{rewound | show_activity_details: true})
+
+    assert forked.status == :restoring
+
+    assert_receive {:restore_completed, _restore_id, :fork, ^checkpoint_id,
+                    {:ok, session, filesystem_result}}
+
+    forked =
+      Events.handle_restore_completed(
+        :fork,
+        checkpoint_id,
+        {:ok, session, filesystem_result},
+        forked
+      )
+
+    assert forked.session.branch_id != rewound.session.branch_id
+  end
+
+  test "Activity viewport clamps on very small height", %{state: state} do
+    state =
+      %{state | session: timeline_session(state.session, 4)}
+      |> State.set_activity_viewport_height(0)
+      |> State.activity_page(:up)
+
+    assert state.selected_activity >= 0
+    assert is_list(State.visible_timeline_items(state, 0))
+  end
+
   defp submit_command(state, command) do
     ExRatatui.textarea_set_value(state.textarea, command)
     {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
@@ -122,5 +337,30 @@ defmodule Beamcore.TUI.TimelineControlTest do
 
   defp key(code, mods) do
     %ExRatatui.Event.Key{code: code, modifiers: mods, kind: :press}
+  end
+
+  defp key(code), do: key(code, [])
+
+  defp timeline_session(session, count) do
+    Enum.reduce(1..count, session, fn index, session ->
+      Session.append_timeline(session, :decision, "Timeline event #{index}.",
+        title: "Decision #{index}"
+      )
+    end)
+  end
+
+  defp in_memory_timeline_session(session, count) do
+    timeline =
+      Enum.map(1..count, fn index ->
+        Beamcore.Agent.Timeline.event(session, %{
+          id: "perf-evt-#{index}",
+          type: :decision,
+          title: "Decision #{index}",
+          summary: "Timeline event #{index}.",
+          timestamp: "2026-06-08T00:00:00Z"
+        })
+      end)
+
+    %{session | timeline: timeline}
   end
 end

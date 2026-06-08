@@ -197,6 +197,7 @@ defmodule Beamcore.Agent.Chat.Loop do
     Session.log(session, user_message)
 
     messages = session.messages ++ [user_message]
+    session = maybe_goal_checkpoint(session, content)
 
     {messages, session} =
       Beamcore.Agent.Chat.SearchConductor.preflight(session, messages, content, policy, opts)
@@ -344,7 +345,14 @@ defmodule Beamcore.Agent.Chat.Loop do
                     emit(opts, {:status, :tool_running})
                     emit(opts, {:tool_running, name, args})
 
-                    content = Dispatcher.execute(name, args, policy)
+                    session = maybe_pre_tool_checkpoint(session, name, args)
+
+                    content =
+                      Beamcore.Agent.FilesystemJournal.with_context(
+                        filesystem_context(session),
+                        fn -> Dispatcher.execute(name, args, policy) end
+                      )
+
                     maybe_print(opts, fn -> print_tool_execution(name, args, content) end)
                     event_content = compact_event_content(content)
                     emit(opts, {:tool_finished, name, args, event_content})
@@ -352,6 +360,7 @@ defmodule Beamcore.Agent.Chat.Loop do
                     session =
                       session
                       |> update_context(name, args, content)
+                      |> maybe_post_tool_checkpoint(name, args, content)
                       |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
                         role: tool_role(session),
                         title: "Tool call: #{name}",
@@ -517,6 +526,121 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp tool_role(%{screen_type: :research}), do: :researcher
   defp tool_role(_session), do: :agent
+
+  defp maybe_goal_checkpoint(%{screen_type: :agent} = session, content) do
+    Session.append_timeline(session, :decision, "F1 accepted goal: #{short_text(content)}",
+      role: :user,
+      title: "F1 goal accepted",
+      metadata: %{mode: "F1 Dev"}
+    )
+  end
+
+  defp maybe_goal_checkpoint(session, _content), do: session
+
+  defp maybe_pre_tool_checkpoint(%{screen_type: :agent} = session, name, args)
+       when name in ["modify_file", "fs", "image_generation"] do
+    summary =
+      if destructive_tool_call?(name, args) do
+        "Before destructive filesystem mutation."
+      else
+        "Before filesystem mutation."
+      end
+
+    Session.append_timeline(session, :file_change, summary,
+      role: :agent,
+      title: "F1 filesystem checkpoint",
+      metadata: %{
+        mode: "F1 Dev",
+        tool: name,
+        operation: tool_operation(args),
+        destructive: destructive_tool_call?(name, args),
+        journal_position:
+          Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
+      }
+    )
+  end
+
+  defp maybe_pre_tool_checkpoint(session, _name, _args), do: session
+
+  defp maybe_post_tool_checkpoint(%{screen_type: :agent} = session, name, args, content)
+       when name in ["modify_file", "fs", "image_generation"] do
+    if tool_success?(content) do
+      Session.append_timeline(session, :file_change, "After successful filesystem mutation.",
+        role: :agent,
+        title: "F1 mutation completed",
+        metadata: %{
+          mode: "F1 Dev",
+          tool: name,
+          operation: tool_operation(args),
+          journal_position:
+            Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
+        }
+      )
+    else
+      session
+    end
+  end
+
+  defp maybe_post_tool_checkpoint(%{screen_type: :agent} = session, name, args, content)
+       when name in ["test_tool", "git"] do
+    if validation_tool_call?(name, args) do
+      Session.append_timeline(session, :decision, "After validation.",
+        role: :agent,
+        title: "F1 validation completed",
+        metadata: %{mode: "F1 Dev", tool: name, result: compact_event_content(content)}
+      )
+    else
+      session
+    end
+  end
+
+  defp maybe_post_tool_checkpoint(session, _name, _args, _content), do: session
+
+  defp destructive_tool_call?("fs", args) do
+    operation = tool_operation(args)
+    operation in ["remove", "move"] or (operation == "copy" and Map.get(args, "force", false))
+  end
+
+  defp destructive_tool_call?("modify_file", args) do
+    Map.get(args, "operation") == "create_file" and Map.get(args, "overwrite", false)
+  end
+
+  defp destructive_tool_call?(_name, _args), do: false
+
+  defp validation_tool_call?("test_tool", _args), do: true
+  defp validation_tool_call?("git", args), do: tool_operation(args) in ["status", "diff"]
+  defp validation_tool_call?(_name, _args), do: false
+
+  defp tool_success?(content) when is_binary(content) do
+    not String.starts_with?(String.trim_leading(content), "Error:")
+  end
+
+  defp tool_success?(_), do: true
+
+  defp tool_operation(args) when is_map(args) do
+    Map.get(args, "operation") || Map.get(args, :operation) || Map.get(args, "command") ||
+      Map.get(args, :command) || "unknown"
+  end
+
+  defp tool_operation(_args), do: "unknown"
+
+  defp short_text(content) when is_binary(content) do
+    content
+    |> String.replace(~r/\s+/, " ")
+    |> String.slice(0, 120)
+  end
+
+  defp short_text(_), do: ""
+
+  defp filesystem_context(session) do
+    %{
+      session_id: session.session_id,
+      branch_id: session.branch_id,
+      checkpoint_id: session.active_checkpoint_id,
+      generation_id: "turn-#{System.unique_integer([:positive, :monotonic])}",
+      workspace_root: session.workspace_root
+    }
+  end
 
   defp timeout_message(session, settings, elapsed_ms) do
     role = model_call_role(session) |> to_string() |> String.capitalize()

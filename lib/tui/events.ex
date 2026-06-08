@@ -168,6 +168,45 @@ defmodule Beamcore.TUI.Events do
 
   def handle_runtime_event(_event, state), do: state
 
+  def handle_restore_progress(event, state) do
+    status = if event.status == "failed", do: :failed, else: :completed
+
+    session =
+      Session.append_timeline(state.session, :restore_stage, event.summary,
+        role: :system,
+        title: event.summary,
+        status: status,
+        reversible: false,
+        metadata: event
+      )
+
+    state
+    |> State.set_session(session)
+    |> State.set_status(:restoring)
+  end
+
+  def handle_restore_completed(action, checkpoint_id, {:ok, session, filesystem_result}, state) do
+    session = merge_restore_progress_events(state.session, session, filesystem_result)
+    label = if action == :fork, do: "Forked from", else: "Rewound to"
+
+    state
+    |> interrupt_worker()
+    |> State.set_session(session)
+    |> State.select_checkpoint(checkpoint_id)
+    |> State.set_status(:idle)
+    |> State.add_message(:system, "#{label} checkpoint #{checkpoint_id}.")
+  end
+
+  def handle_restore_completed(_action, _checkpoint_id, {:error, reason}, state) do
+    state
+    |> State.set_status(:idle)
+    |> State.add_message(:system, ErrorFormatter.format(reason))
+  end
+
+  def handle_restore_completed(action, checkpoint_id, {:error, _session_id, reason}, state) do
+    handle_restore_completed(action, checkpoint_id, {:error, reason}, state)
+  end
+
   def finish_worker(state, session), do: State.finish_worker(state, session)
 
   def fail_worker(state, error_msg) do
@@ -189,6 +228,21 @@ defmodule Beamcore.TUI.Events do
 
   defp handle_key("s", mods, state) do
     if ctrl?(mods), do: {:noreply, submit(state)}, else: handle_text_key("s", mods, state)
+  end
+
+  defp handle_key("f6", _mods, state), do: {:noreply, State.focus_activity(state)}
+
+  defp handle_key("a", mods, state) do
+    cond do
+      ctrl?(mods) and state.show_activity_details ->
+        {:noreply, abandon_selected_branch(state)}
+
+      ctrl?(mods) ->
+        handle_text_key("a", mods, state)
+
+      true ->
+        handle_text_key("a", mods, state)
+    end
   end
 
   defp handle_key(code, mods, %{provider_selector_active?: true} = state) do
@@ -248,11 +302,26 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp handle_key("j", mods, state) do
-    if ctrl?(mods), do: {:noreply, insert_newline(state)}, else: handle_text_key("j", mods, state)
+    cond do
+      ctrl?(mods) ->
+        {:noreply, insert_newline(state)}
+
+      state.activity_focused? ->
+        {:noreply, State.move_activity_selection(state, 1)}
+
+      true ->
+        handle_text_key("j", mods, state)
+    end
   end
+
+  defp handle_key("k", _mods, %{activity_focused?: true} = state),
+    do: {:noreply, State.move_activity_selection(state, -1)}
 
   defp handle_key("enter", mods, state) do
     cond do
+      state.activity_focused? and input_blank?(state) ->
+        {:noreply, %{state | show_activity_details: true} |> State.mark_dirty()}
+
       state.show_activity_details and input_blank?(state) ->
         {:noreply, State.mark_dirty(state)}
 
@@ -273,6 +342,13 @@ defmodule Beamcore.TUI.Events do
       |> Map.put(:show_commands, false)
       |> Map.put(:command_matches, [])
       |> Map.put(:history_index, nil)
+
+    state =
+      if state.show_activity_details do
+        %{state | show_activity_details: false}
+      else
+        State.blur_activity(state)
+      end
 
     {:noreply, state |> close_panels() |> State.mark_dirty()}
   end
@@ -343,8 +419,8 @@ defmodule Beamcore.TUI.Events do
       state.show_commands ->
         {:noreply, select_command(state, -1)}
 
-      state.show_activity_details ->
-        {:noreply, select_activity(state, if(shift?(mods), do: -5, else: -1))}
+      state.show_activity_details or state.activity_focused? ->
+        {:noreply, State.move_activity_selection(state, if(shift?(mods), do: -5, else: -1))}
 
       not input_blank?(state) ->
         handle_text_key("up", mods, state)
@@ -363,8 +439,8 @@ defmodule Beamcore.TUI.Events do
       state.show_commands ->
         {:noreply, select_command(state, 1)}
 
-      state.show_activity_details ->
-        {:noreply, select_activity(state, if(shift?(mods), do: 5, else: 1))}
+      state.show_activity_details or state.activity_focused? ->
+        {:noreply, State.move_activity_selection(state, if(shift?(mods), do: 5, else: 1))}
 
       not input_blank?(state) ->
         handle_text_key("down", mods, state)
@@ -380,12 +456,32 @@ defmodule Beamcore.TUI.Events do
 
   defp handle_key(code, _mods, %{show_activity_details: true} = state)
        when code in ["page_up", "pageup", "pgup"] do
-    {:noreply, select_activity(state, -5)}
+    {:noreply, State.activity_page(state, :up)}
   end
 
   defp handle_key(code, _mods, %{show_activity_details: true} = state)
        when code in ["page_down", "pagedown", "pgdown"] do
-    {:noreply, select_activity(state, 5)}
+    {:noreply, State.activity_page(state, :down)}
+  end
+
+  defp handle_key(code, _mods, %{activity_focused?: true} = state)
+       when code in ["page_up", "pageup", "pgup"] do
+    {:noreply, State.activity_page(state, :up)}
+  end
+
+  defp handle_key(code, _mods, %{activity_focused?: true} = state)
+       when code in ["page_down", "pagedown", "pgdown"] do
+    {:noreply, State.activity_page(state, :down)}
+  end
+
+  defp handle_key(code, _mods, %{activity_focused?: true} = state)
+       when code in ["home", "g"] do
+    {:noreply, State.activity_home(state)}
+  end
+
+  defp handle_key(code, _mods, %{activity_focused?: true} = state)
+       when code in ["end", "G"] do
+    {:noreply, State.activity_end(state)}
   end
 
   defp handle_key("o", mods, state) do
@@ -656,11 +752,7 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp select_activity(state, offset) do
-    max_index = max(length(State.timeline_items(state)) - 1, 0)
-    selected = state.selected_activity + offset
-
-    %{state | selected_activity: selected |> max(0) |> min(max_index)}
-    |> State.mark_dirty()
+    State.move_activity_selection(state, offset)
   end
 
   defp record_history(state, value) do
@@ -689,7 +781,7 @@ defmodule Beamcore.TUI.Events do
   defp run_command(%{show_help: true} = state, "help"), do: %{state | show_help: false}
   defp run_command(state, "help"), do: %{state | show_help: true}
   defp run_command(state, "timeline"), do: open_timeline(state)
-  defp run_command(state, "timeline last"), do: open_timeline(%{state | selected_activity: 0})
+  defp run_command(state, "timeline last"), do: open_timeline(State.activity_end(state))
 
   defp run_command(state, "checkpoint rewind " <> checkpoint_id),
     do: rewind_checkpoint(state, String.trim(checkpoint_id))
@@ -875,6 +967,26 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
+  defp merge_restore_progress_events(current_session, restored_session, filesystem_result) do
+    restore_id = filesystem_result["recovery_id"]
+
+    progress_events =
+      current_session.timeline
+      |> Enum.filter(fn event ->
+        event.type == :restore_stage and
+          is_map(event.metadata) and
+          event.metadata.restore_id == restore_id
+      end)
+
+    if progress_events == [] do
+      restored_session
+    else
+      existing_ids = MapSet.new(Enum.map(restored_session.timeline || [], & &1.id))
+      new_events = Enum.reject(progress_events, &MapSet.member?(existing_ids, &1.id))
+      %{restored_session | timeline: (restored_session.timeline || []) ++ new_events}
+    end
+  end
+
   defp abandon_selected_branch(state) do
     branch_id =
       case selected_timeline_event(state) do
@@ -890,29 +1002,45 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp rewind_checkpoint(state, checkpoint_id) do
-    case Session.rewind(state.session, checkpoint_id) do
-      {:ok, session} ->
+    request_restore(state, checkpoint_id, :rewind)
+  end
+
+  defp fork_checkpoint(state, checkpoint_id) do
+    request_restore(state, checkpoint_id, :fork)
+  end
+
+  defp request_restore(%{status: :restoring} = state, _checkpoint_id, _action) do
+    State.add_message(state, :system, "Restore already in progress for this session.")
+  end
+
+  defp request_restore(state, checkpoint_id, action) do
+    state = interrupt_worker(state)
+
+    case Beamcore.Agent.RestoreCoordinator.restore_async(
+           state.session,
+           checkpoint_id,
+           action,
+           self()
+         ) do
+      {:accepted, restore_id} ->
         state
-        |> State.set_session(session)
         |> State.select_checkpoint(checkpoint_id)
-        |> State.add_message(:system, "Rewound to checkpoint #{checkpoint_id}.")
+        |> State.set_status(:restoring)
+        |> State.add_message(
+          :system,
+          "Restore #{restore_id} accepted for checkpoint #{checkpoint_id}."
+        )
 
       {:error, reason} ->
         State.add_message(state, :system, reason)
     end
   end
 
-  defp fork_checkpoint(state, checkpoint_id) do
-    case Session.fork(state.session, checkpoint_id) do
-      {:ok, session} ->
-        state
-        |> State.set_session(session)
-        |> State.select_checkpoint(checkpoint_id)
-        |> State.add_message(:system, "Forked from checkpoint #{checkpoint_id}.")
+  defp interrupt_worker(%{worker: nil} = state), do: state
 
-      {:error, reason} ->
-        State.add_message(state, :system, reason)
-    end
+  defp interrupt_worker(state) do
+    Process.exit(state.worker, :kill)
+    %{state | worker: nil, status: :paused}
   end
 
   defp abandon_branch(state, branch_id) do

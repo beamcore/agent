@@ -28,6 +28,8 @@ defmodule Beamcore.Agent do
       Beamcore.RateLimiter,
       Beamcore.Provider.Scheduler,
       {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
+      Beamcore.Agent.FilesystemJournal.Server,
+      {DynamicSupervisor, strategy: :one_for_one, name: Beamcore.Agent.RestoreSupervisor},
       Beamcore.Provider.Health,
       Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor,

@@ -31,7 +31,8 @@ defmodule Beamcore.Agent.Tools.PathSafety do
       end
 
     with :ok <- reject_absolute(cleaned_path),
-         :ok <- reject_traversal(cleaned_path) do
+         :ok <- reject_traversal(cleaned_path),
+         :ok <- reject_internal_store(cleaned_path) do
       candidate = Path.expand(cleaned_path, root)
 
       with :ok <- ensure_inside_workspace(candidate, root),
@@ -49,7 +50,8 @@ defmodule Beamcore.Agent.Tools.PathSafety do
   @spec validate_pattern(String.t()) :: :ok | {:error, String.t()}
   def validate_pattern(pattern) when is_binary(pattern) do
     with :ok <- reject_absolute(pattern),
-         :ok <- reject_traversal(pattern) do
+         :ok <- reject_traversal(pattern),
+         :ok <- reject_internal_store(pattern) do
       :ok
     end
   end
@@ -109,6 +111,16 @@ defmodule Beamcore.Agent.Tools.PathSafety do
     end
   end
 
+  defp reject_internal_store(path) do
+    normalized = internal_normalize(path)
+
+    if internal_store_path?(normalized) do
+      {:error, "BeamCore internal snapshot paths are not available to agent tools"}
+    else
+      :ok
+    end
+  end
+
   defp ensure_inside_workspace(path, root) do
     if inside?(path, root) do
       :ok
@@ -141,8 +153,10 @@ defmodule Beamcore.Agent.Tools.PathSafety do
           with {:ok, link_target} <- File.read_link(prefix) do
             target_path = resolve_link_target(prefix, link_target)
 
-            case ensure_inside_workspace(target_path, root) do
-              :ok -> {:cont, :ok}
+            with :ok <- ensure_inside_workspace(target_path, root),
+                 :ok <- reject_internal_symlink_target(target_path, root) do
+              {:cont, :ok}
+            else
               {:error, reason} -> {:halt, {:error, reason}}
             end
           else
@@ -182,6 +196,16 @@ defmodule Beamcore.Agent.Tools.PathSafety do
     end
   end
 
+  defp reject_internal_symlink_target(target_path, root) do
+    relative = Path.relative_to(target_path, root)
+
+    if internal_store_path?(internal_normalize(relative)) do
+      {:error, "symlink target points to BeamCore internal snapshot storage"}
+    else
+      :ok
+    end
+  end
+
   defp nearest_existing_parent(path) do
     cond do
       File.exists?(path) ->
@@ -209,8 +233,22 @@ defmodule Beamcore.Agent.Tools.PathSafety do
       "venv",
       "__pycache__",
       ".elixir_ls",
+      ".beamcore/snapshots",
+      ".beamcore/recovery",
       ".DS_Store"
     ])
+  end
+
+  defp internal_store_path?(normalized) do
+    String.starts_with?(normalized, ".beamcore/snapshots") or
+      String.starts_with?(normalized, ".beamcore/recovery")
+  end
+
+  defp internal_normalize(path) do
+    path
+    |> Path.split()
+    |> Enum.join("/")
+    |> String.downcase()
   end
 
   @doc """

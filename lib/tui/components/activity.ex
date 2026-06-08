@@ -21,11 +21,14 @@ defmodule Beamcore.TUI.Components.Activity do
         if variant == :strip, do: 96, else: 72
       end
 
+    viewport_height = if area, do: max(area.height - 2, 1), else: 10
+
     items =
       state
-      |> State.timeline_items()
-      |> Enum.reverse()
-      |> Enum.flat_map(&event_items(&1, variant, wrap_width, state.spinner_step))
+      |> State.visible_timeline_items(viewport_height)
+      |> Enum.flat_map(
+        &event_items(&1, variant, wrap_width, state.spinner_step, state.selected_event_id)
+      )
 
     items =
       if items == [] do
@@ -36,7 +39,7 @@ defmodule Beamcore.TUI.Components.Activity do
 
     scroll_offset =
       if area do
-        scroll_offset(items, max(area.height - 2, 1), state.activity_scroll_offset)
+        scroll_offset(items, viewport_height, state.activity_scroll_offset)
       else
         0
       end
@@ -45,10 +48,11 @@ defmodule Beamcore.TUI.Components.Activity do
       items: items,
       scroll_offset: scroll_offset,
       block: %Block{
-        title: title(variant),
+        title: title(variant, state),
         borders: [:all],
         border_type: :rounded,
-        border_style: Theme.style(:border),
+        border_style:
+          if(state.activity_focused?, do: Theme.style(:border_hot), else: Theme.style(:border)),
         padding: {1, 1, 0, 0}
       }
     }
@@ -102,18 +106,24 @@ defmodule Beamcore.TUI.Components.Activity do
     end
   end
 
-  defp event_items(event, :strip, wrap_width, step) do
+  defp event_items(event, :strip, wrap_width, step, selected_event_id) do
     [
       {%Paragraph{
-         text: Wrap.truncate_line("#{marker(event, step)} #{event.label}", wrap_width),
+         text:
+           Wrap.truncate_line(
+             "#{selection_marker(event, selected_event_id)}#{marker(event, step)} #{event.label}",
+             wrap_width
+           ),
          style: style(event.status),
          wrap: false
        }, 1}
     ]
   end
 
-  defp event_items(event, _variant, wrap_width, step) do
-    label_text = "#{marker(event, step)} #{event.label}"
+  defp event_items(event, _variant, wrap_width, step, selected_event_id) do
+    label_text =
+      "#{selection_marker(event, selected_event_id)}#{marker(event, step)} #{event.label}"
+
     label_lines = Wrap.lines(label_text, wrap_width)
     label_height = length(label_lines)
 
@@ -203,8 +213,20 @@ defmodule Beamcore.TUI.Components.Activity do
 
   defp timestamp(_event), do: "unknown"
 
-  defp title(:strip), do: "Activity · tools"
-  defp title(_variant), do: "Activity · tools"
+  defp title(:strip, state), do: title_text("Activity", state)
+  defp title(_variant, state), do: title_text("Activity · timeline", state)
+
+  defp title_text(base, state) do
+    focus = if state.activity_focused?, do: " focused", else: ""
+    indicator = State.activity_indicator(state)
+
+    if indicator == "" do
+      base <> focus
+    else
+      "#{base} #{focus} · #{indicator}"
+    end
+  end
+
   defp empty_text(:strip), do: "◇ Tools pulse here."
 
   defp empty_text(_variant),
@@ -223,6 +245,8 @@ defmodule Beamcore.TUI.Components.Activity do
   defp marker(%{status: :blocked}, _step), do: "!"
   defp marker(%{status: :error}, _step), do: "×"
   defp marker(_event, _step), do: "·"
+  defp selection_marker(%{id: id}, id), do: "> "
+  defp selection_marker(_event, _selected_id), do: "  "
   defp style(:done), do: Theme.style(:done)
   defp style(:blocked), do: Theme.style(:blocked)
   defp style(:error), do: Theme.style(:error)

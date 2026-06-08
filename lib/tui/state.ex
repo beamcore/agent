@@ -15,6 +15,11 @@ defmodule Beamcore.TUI.State do
             messages: [],
             activity: [],
             selected_activity: 0,
+            selected_event_id: nil,
+            activity_focused?: false,
+            activity_follow_tail?: true,
+            activity_unseen_count: 0,
+            activity_viewport_height: 0,
             status: :idle,
             scroll_offset: 0,
             activity_scroll_offset: 0,
@@ -139,6 +144,7 @@ defmodule Beamcore.TUI.State do
   def set_session(state, session) do
     status = if pending_action(session), do: :waiting_for_confirmation, else: state.status
     selected_checkpoint_id = state.selected_checkpoint_id || active_checkpoint_id(session)
+    state = update_activity_live_follow(state, session)
 
     %{state | session: session, status: status, selected_checkpoint_id: selected_checkpoint_id}
     |> mark_dirty()
@@ -219,14 +225,33 @@ defmodule Beamcore.TUI.State do
   defp auto_scroll_on_new_message(state), do: state
 
   def scroll_activity_up(state, amount \\ 1),
-    do: %{state | activity_scroll_offset: state.activity_scroll_offset + amount} |> mark_dirty()
+    do:
+      state
+      |> Map.put(:activity_follow_tail?, false)
+      |> Map.update!(:activity_scroll_offset, &(&1 + amount))
+      |> Map.put(:activity_focused?, true)
+      |> mark_dirty()
 
   def scroll_activity_down(state, amount \\ 1),
     do:
-      %{state | activity_scroll_offset: max(state.activity_scroll_offset - amount, 0)}
+      state
+      |> Map.update!(:activity_scroll_offset, &max(&1 - amount, 0))
+      |> maybe_resume_activity_follow()
+      |> Map.put(:activity_focused?, true)
       |> mark_dirty()
 
-  def reset_activity_scroll(state), do: %{state | activity_scroll_offset: 0} |> mark_dirty()
+  def reset_activity_scroll(state),
+    do:
+      %{
+        state
+        | activity_scroll_offset: 0,
+          activity_follow_tail?: true,
+          activity_unseen_count: 0,
+          activity_focused?: true,
+          selected_activity: max(length(timeline_items(state)) - 1, 0)
+      }
+      |> put_selected_event_id()
+      |> mark_dirty()
 
   def scroll_details_up(state, amount \\ 1),
     do:
@@ -242,6 +267,86 @@ defmodule Beamcore.TUI.State do
     do: reset_activity_scroll(state)
 
   defp auto_scroll_on_new_activity(state), do: state
+
+  def focus_activity(state) do
+    state
+    |> Map.put(:activity_focused?, true)
+    |> put_selected_event_id()
+    |> mark_dirty()
+  end
+
+  def blur_activity(state), do: %{state | activity_focused?: false} |> mark_dirty()
+
+  def move_activity_selection(state, offset) do
+    items = timeline_items(state)
+    max_index = max(length(items) - 1, 0)
+    selected = clamp(state.selected_activity + offset, 0, max_index)
+
+    %{
+      state
+      | selected_activity: selected,
+        activity_focused?: true,
+        activity_follow_tail?: selected == max_index,
+        activity_unseen_count: if(selected == max_index, do: 0, else: state.activity_unseen_count)
+    }
+    |> ensure_selected_visible()
+    |> put_selected_event_id()
+    |> mark_dirty()
+  end
+
+  def activity_page(state, direction) do
+    amount = max(state.activity_viewport_height - 2, 1)
+    move_activity_selection(state, if(direction == :up, do: -amount, else: amount))
+  end
+
+  def activity_home(state) do
+    %{
+      state
+      | selected_activity: 0,
+        activity_scroll_offset: max(length(timeline_items(state)) - 1, 0),
+        activity_follow_tail?: false,
+        activity_focused?: true
+    }
+    |> put_selected_event_id()
+    |> mark_dirty()
+  end
+
+  def activity_end(state), do: reset_activity_scroll(state)
+
+  def set_activity_viewport_height(state, height) do
+    height = max(height, 0)
+
+    %{state | activity_viewport_height: height}
+    |> clamp_activity_selection()
+    |> ensure_selected_visible()
+    |> mark_dirty()
+  end
+
+  def visible_timeline_items(state, viewport_height, overscan \\ 2) do
+    source = timeline_source(state)
+    count = length(source)
+    height = max(viewport_height, 1)
+
+    start =
+      cond do
+        count == 0 -> 0
+        state.activity_follow_tail? -> max(count - height - overscan, 0)
+        true -> max(state.selected_activity - div(height, 2) - overscan, 0)
+      end
+
+    stop = min(start + height + overscan * 2, count)
+
+    source
+    |> Enum.slice(start, stop - start)
+    |> Enum.map(&timeline_source_to_activity(&1, state))
+  end
+
+  def activity_indicator(%{activity_follow_tail?: true}), do: ""
+
+  def activity_indicator(%{activity_unseen_count: count}) when count > 0,
+    do: "Paused · #{count} new events"
+
+  def activity_indicator(%{activity_follow_tail?: false}), do: "Paused"
 
   def pending_action(%{context: %{pending_action: action}}), do: action
   def pending_action(_session), do: nil
@@ -341,6 +446,18 @@ defmodule Beamcore.TUI.State do
 
   def timeline_items(state), do: state.activity
 
+  defp timeline_source(%{session: %{timeline: timeline}})
+       when is_list(timeline) and length(timeline) > 1 do
+    Enum.reject(timeline, &(&1.type == :checkpoint_saved))
+  end
+
+  defp timeline_source(state), do: state.activity
+
+  defp timeline_source_to_activity(%{type: type} = event, state) when is_atom(type),
+    do: timeline_event_to_activity(event, state.session)
+
+  defp timeline_source_to_activity(item, _state), do: item
+
   def active_checkpoint_id(%{active_checkpoint_id: checkpoint_id}), do: checkpoint_id
   def active_checkpoint_id(_session), do: nil
 
@@ -369,7 +486,9 @@ defmodule Beamcore.TUI.State do
   def branch_summary(_state), do: "no branches"
 
   defp timeline_event_to_activity(event, session) do
-    active? = event.checkpoint_id == active_checkpoint_id(session)
+    checkpoint = checkpoint_for_event(session, event)
+    checkpoint_id = (checkpoint && checkpoint.id) || event.checkpoint_id
+    active? = checkpoint_id == active_checkpoint_id(session)
     branch = Map.get(session.branches || %{}, event.branch_id, %{})
     branch_status = branch[:status] || branch["status"] || :started
 
@@ -377,8 +496,9 @@ defmodule Beamcore.TUI.State do
       %{
         role: event.role,
         branch: event.branch_id,
-        checkpoint: event.checkpoint_id
+        checkpoint: checkpoint_id
       }
+      |> maybe_put_filesystem_revision(checkpoint)
       |> maybe_put_reversible(event.reversible)
 
     %{
@@ -386,7 +506,7 @@ defmodule Beamcore.TUI.State do
       timestamp: event.timestamp,
       timestamp_ms: timeline_timestamp_ms(event.timestamp),
       name: to_string(event.type),
-      target: event.checkpoint_id || event.branch_id,
+      target: checkpoint_id || event.branch_id,
       status: timeline_status(event, active?, branch_status),
       label: timeline_label(event, active?),
       summary: event.summary,
@@ -400,6 +520,25 @@ defmodule Beamcore.TUI.State do
     do: Map.put(args, :reversible, value)
 
   defp maybe_put_reversible(args, _value), do: args
+
+  defp maybe_put_filesystem_revision(args, checkpoint) do
+    case checkpoint && checkpoint[:filesystem_revision] do
+      %{"revision_id" => revision_id} = revision ->
+        args
+        |> Map.put(:filesystem_revision, revision_id)
+        |> Map.put(:filesystem_paths, revision["changed_path_count"] || 0)
+        |> Map.put(:filesystem_bytes, revision["stored_bytes"] || 0)
+
+      _ ->
+        args
+    end
+  end
+
+  defp checkpoint_for_event(session, event) do
+    Enum.find(session.checkpoints || [], fn checkpoint ->
+      checkpoint.id == event.checkpoint_id or checkpoint.event_id == event.id
+    end)
+  end
 
   defp timeline_label(event, active?) do
     active = if active?, do: "[active] ", else: ""
@@ -458,6 +597,58 @@ defmodule Beamcore.TUI.State do
   end
 
   def compact_args(args), do: args
+
+  defp update_activity_live_follow(state, session) do
+    old_count = length(timeline_items(state))
+    next_state = %{state | session: session}
+    new_count = length(timeline_items(next_state))
+    delta = max(new_count - old_count, 0)
+
+    cond do
+      state.activity_follow_tail? ->
+        %{state | activity_unseen_count: 0, selected_activity: max(new_count - 1, 0)}
+        |> put_selected_event_id(%{state | session: session})
+
+      delta > 0 ->
+        %{state | activity_unseen_count: state.activity_unseen_count + delta}
+
+      true ->
+        state
+    end
+  end
+
+  defp maybe_resume_activity_follow(%{activity_scroll_offset: 0} = state),
+    do: %{state | activity_follow_tail?: true, activity_unseen_count: 0}
+
+  defp maybe_resume_activity_follow(state), do: state
+
+  defp ensure_selected_visible(state) do
+    max_index = max(length(timeline_items(state)) - 1, 0)
+    distance_from_tail = max(max_index - state.selected_activity, 0)
+    %{state | activity_scroll_offset: distance_from_tail}
+  end
+
+  defp clamp_activity_selection(state) do
+    max_index = max(length(timeline_items(state)) - 1, 0)
+    %{state | selected_activity: clamp(state.selected_activity, 0, max_index)}
+  end
+
+  defp put_selected_event_id(state), do: put_selected_event_id(state, state)
+
+  defp put_selected_event_id(state, item_state) do
+    event_id =
+      item_state
+      |> timeline_items()
+      |> Enum.at(state.selected_activity)
+      |> case do
+        %{id: id} -> id
+        _ -> nil
+      end
+
+    %{state | selected_event_id: event_id}
+  end
+
+  defp clamp(value, min_value, max_value), do: value |> max(min_value) |> min(max_value)
 
   defp compact_activity_result(nil), do: nil
 

@@ -53,7 +53,10 @@ defmodule Beamcore.TUI.Components.Help do
     Ctrl+O           Toggle interactive API provider selector
     Tab              Complete highlighted command suggestion
     Tab              Toggle timeline/tool details when suggestions are closed
-    Timeline open: Up/Down choose item, Shift+Up/Down or PageUp/PageDown jump
+    F6               Focus Activity timeline
+    Activity: Up/k previous, Down/j next, PageUp/PageDown page
+    Activity: Home/g oldest, End/G newest and resume live-follow
+    Activity: Enter details, Ctrl+R rewind, Ctrl+F fork, Ctrl+A abandon in details
     Esc              Close suggestions, help, or details
     q                Close this panel
     Ctrl+C           Exit
