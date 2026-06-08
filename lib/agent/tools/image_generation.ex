@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.Tools.ImageGeneration do
   """
 
   alias Beamcore.Agent.Providers
+  alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.Tools.PathSafety
 
@@ -91,7 +92,9 @@ defmodule Beamcore.Agent.Tools.ImageGeneration do
 
       with {:ok, bytes} <- image_bytes_from_file(file),
            :ok <- validate_image_bytes(bytes, file),
-           :ok <- File.write(path, bytes) do
+           {:ok, before_state} <- FilesystemJournal.snapshot_state(path),
+           :ok <- File.write(path, bytes),
+           :ok <- FilesystemJournal.record_file_write(path, before_state, bytes, tool: name()) do
         relative = Path.relative_to(path, PathSafety.workspace_root())
         {:cont, {:ok, paths ++ [relative]}}
       else

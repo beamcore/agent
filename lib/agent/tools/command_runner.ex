@@ -7,6 +7,7 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
   """
 
   alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.FilesystemJournal
 
   @default_timeout 120_000
   @default_max_output 10_000
@@ -113,15 +114,36 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
 
     started = System.monotonic_time(:millisecond)
 
+    mutation_scope =
+      case FilesystemJournal.begin_command_scope(tool, command, safe_workdir, opts) do
+        {:ok, scope} -> scope
+        {:error, _reason} -> nil
+      end
+
     try do
       task = async_command(fn -> runner_func.(executable, args, run_opts) end)
 
       case Task.yield(task, timeout) || Task.shutdown(task, :brutal_kill) do
         {:ok, {output, exit_code}} ->
           duration = System.monotonic_time(:millisecond) - started
-          result(tool, command, executable, args, safe_workdir, output, exit_code, duration, opts)
+          changes = complete_command_scope(mutation_scope)
+
+          result(
+            tool,
+            command,
+            executable,
+            args,
+            safe_workdir,
+            output,
+            exit_code,
+            duration,
+            opts,
+            changes
+          )
 
         nil ->
+          complete_command_scope(mutation_scope)
+
           error_result(
             tool,
             command,
@@ -129,6 +151,8 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
           )
 
         {:exit, reason} ->
+          complete_command_scope(mutation_scope)
+
           error_result(
             tool,
             command,
@@ -137,6 +161,8 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
       end
     rescue
       error in ErlangError ->
+        complete_command_scope(mutation_scope)
+
         error_result(
           tool,
           command,
@@ -144,11 +170,23 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
         )
 
       error ->
+        complete_command_scope(mutation_scope)
         error_result(tool, command, "Unexpected execution failure: #{Exception.message(error)}")
     end
   end
 
-  defp result(tool, command, executable, args, safe_workdir, output, exit_code, duration, opts) do
+  defp result(
+         tool,
+         command,
+         executable,
+         args,
+         safe_workdir,
+         output,
+         exit_code,
+         duration,
+         opts,
+         filesystem_changes
+       ) do
     output = to_string(output)
     max_output = Keyword.get(opts, :max_output, @default_max_output)
     tail_lines = Keyword.get(opts, :tail_lines, @default_tail_lines)
@@ -169,10 +207,21 @@ defmodule Beamcore.Agent.Tools.CommandRunner do
         "stdout" => truncated_output,
         "stderr" => "",
         "summary" => summary(tool, command, ok, exit_code),
-        "classification" => Keyword.get(opts, :classification, [])
+        "classification" => Keyword.get(opts, :classification, []),
+        "filesystem_changes" => filesystem_changes || %{"changed_path_count" => 0}
       },
       diagnostic
     )
+  end
+
+  defp complete_command_scope(scope) do
+    case FilesystemJournal.complete_command_scope(scope) do
+      {:ok, changes} ->
+        changes
+
+      {:error, reason} ->
+        %{"changed_path_count" => 0, "error" => reason}
+    end
   end
 
   defp error_result(tool, command, reason) do

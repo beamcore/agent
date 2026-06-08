@@ -46,16 +46,16 @@ defmodule Beamcore.Agent.Tools.GitTest do
     assert output =~ "revision cannot start with '-'"
   end
 
-  test "restore operation requires path" do
+  test "restore operation is disabled because it bypasses filesystem journal" do
     params = %{"operation" => "restore"}
     output = Git.execute(params)
-    assert output == "Error: path is required for restore operation."
+    assert output =~ "git restore is disabled"
   end
 
-  test "clone operation requires url" do
+  test "clone operation is disabled because it bypasses filesystem journal" do
     params = %{"operation" => "clone"}
     output = Git.execute(params)
-    assert output == "Error: url is required for clone operation."
+    assert output =~ "git clone is disabled"
   end
 
   test "commit operation requires message" do

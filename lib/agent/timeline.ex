@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.Timeline do
 
   @event_types ~w(
     started model_call tool_call file_change research_stage compression decision
-    error interrupted rewound forked resumed completed checkpoint_saved failed
+    restore_stage error interrupted rewound forked resumed completed checkpoint_saved failed
   )a
 
   @roles ~w(agent researcher synthesizer system user)a
@@ -56,8 +56,10 @@ defmodule Beamcore.Agent.Timeline do
   end
 
   def checkpoint(session, event, attrs \\ %{}) do
+    checkpoint_id = Map.get(attrs, :id) || unique_id("chk")
+
     %{
-      id: Map.get(attrs, :id) || unique_id("chk"),
+      id: checkpoint_id,
       schema_version: @schema_version,
       session_id: session.session_id,
       branch_id: session.branch_id || initial_branch_id(),
@@ -69,7 +71,20 @@ defmodule Beamcore.Agent.Timeline do
       messages: normalize_messages(session.messages || []),
       workflow_state: Map.get(attrs, :workflow_state, session.intermediate_state || %{}),
       research_state: Map.get(attrs, :research_state, %{}),
-      tool_state: Map.get(attrs, :tool_state, %{}),
+      tool_state:
+        Map.get(attrs, :tool_state, %{})
+        |> Map.put_new(
+          "filesystem_journal_position",
+          Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
+        ),
+      filesystem_revision:
+        Map.get(attrs, :filesystem_revision) ||
+          Beamcore.Agent.FilesystemJournal.revision_summary(
+            session.workspace_root,
+            checkpoint_id,
+            session.branch_id || initial_branch_id(),
+            active_filesystem_revision_id(session)
+          ),
       changed_files_snapshot_or_patch_refs:
         Map.get(attrs, :changed_files_snapshot_or_patch_refs, changed_files(session)),
       usage: usage(session),
@@ -249,6 +264,10 @@ defmodule Beamcore.Agent.Timeline do
       workflow_state: safe_metadata(Map.get(checkpoint, "workflow_state", %{})),
       research_state: safe_metadata(Map.get(checkpoint, "research_state", %{})),
       tool_state: safe_metadata(Map.get(checkpoint, "tool_state", %{})),
+      filesystem_revision:
+        Beamcore.Agent.FilesystemJournal.safe_restore(
+          Map.get(checkpoint, "filesystem_revision", %{})
+        ),
       changed_files_snapshot_or_patch_refs:
         safe_list(Map.get(checkpoint, "changed_files_snapshot_or_patch_refs", [])),
       usage: safe_metadata(Map.get(checkpoint, "usage", %{})),
@@ -382,6 +401,19 @@ defmodule Beamcore.Agent.Timeline do
   end
 
   defp changed_files(_), do: []
+
+  defp active_filesystem_revision_id(session) do
+    session.checkpoints
+    |> List.wrap()
+    |> Enum.reverse()
+    |> Enum.find_value(fn checkpoint ->
+      case Map.get(checkpoint, :filesystem_revision) do
+        %{"revision_id" => id} when is_binary(id) -> id
+        %{revision_id: id} when is_binary(id) -> id
+        _ -> nil
+      end
+    end)
+  end
 
   defp usage(session) do
     %{

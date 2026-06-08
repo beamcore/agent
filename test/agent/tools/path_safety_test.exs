@@ -73,6 +73,40 @@ defmodule Beamcore.Agent.Tools.PathSafetyTest do
     end
   end
 
+  test "rejects direct and case-variant BeamCore internal snapshot paths" do
+    assert {:error, reason} = PathSafety.resolve(".beamcore/snapshots/journal.json")
+    assert reason =~ "internal snapshot"
+
+    assert {:error, reason} = PathSafety.resolve(".BEAMCORE/SNAPSHOTS/journal.json")
+    assert reason =~ "internal snapshot"
+
+    assert {:error, reason} = PathSafety.validate_pattern(".beamcore/recovery/**/*")
+    assert reason =~ "internal snapshot"
+  end
+
+  test "rejects symlink aliases into BeamCore internal snapshot storage" do
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_internal_alias_#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(Path.join(root, ".beamcore/snapshots/blobs"))
+    File.write!(Path.join(root, ".beamcore/snapshots/blobs/secret"), "internal\n")
+    File.ln_s!(".beamcore/snapshots", Path.join(root, "alias_snapshots"))
+    previous = PathSafety.configure_workspace_root(root)
+
+    try do
+      assert {:error, reason} =
+               PathSafety.resolve("alias_snapshots/blobs/secret")
+
+      assert reason =~ "internal snapshot"
+    after
+      PathSafety.restore_workspace_root(previous)
+      File.rm_rf!(root)
+    end
+  end
+
   test "gitignores_for_path and ignored? work correctly" do
     dir = "test/tmp_path_safety_test"
     File.rm_rf!(dir)

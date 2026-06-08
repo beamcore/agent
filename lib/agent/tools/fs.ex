@@ -12,6 +12,7 @@ defmodule Beamcore.Agent.Tools.Fs do
   A safe programmatic alternative to using shell commands for manipulating files.
   """
   alias Beamcore.Agent.Policy.ProjectPolicy
+  alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.Tools.PathSafety
 
   @doc """
@@ -161,8 +162,16 @@ defmodule Beamcore.Agent.Tools.Fs do
         "Error: Target path already exists: #{target}. Use force=true to overwrite."
 
       true ->
-        case File.rename(source, target) do
-          :ok -> "Successfully moved '#{source}' to '#{target}'"
+        with {:ok, source_mutation} <- FilesystemJournal.record_remove(source, tool: name()),
+             {:ok, target_before} <- FilesystemJournal.snapshot_state(target),
+             :ok <- File.rename(source, target),
+             :ok <- FilesystemJournal.commit_prepared(source_mutation),
+             :ok <-
+               FilesystemJournal.record_file_write(target, target_before, bytes_or_empty(target),
+                 tool: name()
+               ) do
+          "Successfully moved '#{source}' to '#{target}'"
+        else
           {:error, reason} -> "Error moving '#{source}' to '#{target}': #{reason}"
         end
     end
@@ -178,9 +187,16 @@ defmodule Beamcore.Agent.Tools.Fs do
         "Error: Target path already exists: #{target}. Use force=true to overwrite."
 
       true ->
-        case File.cp_r(source, target) do
-          {:ok, _} -> "Successfully copied '#{source}' to '#{target}'"
+        with {:ok, target_before} <- FilesystemJournal.snapshot_state(target),
+             {:ok, _} <- File.cp_r(source, target),
+             :ok <-
+               FilesystemJournal.record_file_write(target, target_before, bytes_or_empty(target),
+                 tool: name()
+               ) do
+          "Successfully copied '#{source}' to '#{target}'"
+        else
           {:error, reason, _} -> "Error copying '#{source}' to '#{target}': #{reason}"
+          {:error, reason} -> "Error copying '#{source}' to '#{target}': #{reason}"
         end
     end
   end
@@ -199,24 +215,46 @@ defmodule Beamcore.Agent.Tools.Fs do
         "Error: Cannot remove directory '#{path}' without recursive=true"
 
       true ->
-        if File.dir?(path) do
-          case File.rm_rf(path) do
-            {:ok, _} -> "Successfully removed: #{path}"
-            {:error, reason, _} -> "Error removing '#{path}': #{reason}"
+        with {:ok, mutation} <- FilesystemJournal.record_remove(path, tool: name()) do
+          if File.dir?(path) do
+            case File.rm_rf(path) do
+              {:ok, _} ->
+                case FilesystemJournal.commit_prepared(mutation) do
+                  :ok -> "Successfully removed: #{path}"
+                  {:error, reason} -> "Error recording removal '#{path}': #{reason}"
+                end
+
+              {:error, reason, _} ->
+                "Error removing '#{path}': #{reason}"
+            end
+          else
+            case File.rm(path) do
+              :ok ->
+                case FilesystemJournal.commit_prepared(mutation) do
+                  :ok -> "Successfully removed: #{path}"
+                  {:error, reason} -> "Error recording removal '#{path}': #{reason}"
+                end
+
+              {:error, reason} ->
+                "Error removing '#{path}': #{reason}"
+            end
           end
         else
-          case File.rm(path) do
-            :ok -> "Successfully removed: #{path}"
-            {:error, reason} -> "Error removing '#{path}': #{reason}"
-          end
+          {:error, reason} -> "Error removing '#{path}': #{reason}"
         end
     end
   end
 
   # Touch operation
   defp touch_file(path) do
-    case File.touch(path) do
-      :ok -> "Successfully touched: #{path}"
+    with {:ok, before_state} <- FilesystemJournal.snapshot_state(path),
+         :ok <- File.touch(path),
+         :ok <-
+           FilesystemJournal.record_file_write(path, before_state, bytes_or_empty(path),
+             tool: name()
+           ) do
+      "Successfully touched: #{path}"
+    else
       {:error, reason} -> "Error touching '#{path}': #{reason}"
     end
   end
@@ -254,10 +292,20 @@ defmodule Beamcore.Agent.Tools.Fs do
 
   # Mkdir operation
   defp mkdir_path(path) do
+    existed? = File.exists?(path)
+
     case File.mkdir_p(path) do
-      :ok -> "Successfully created directory: #{path}"
-      {:error, reason} -> "Error creating directory #{path}: #{reason}"
+      :ok ->
+        unless existed?, do: FilesystemJournal.record_mkdir(path, tool: name())
+        "Successfully created directory: #{path}"
+
+      {:error, reason} ->
+        "Error creating directory #{path}: #{reason}"
     end
+  end
+
+  defp bytes_or_empty(path) do
+    if File.regular?(path), do: File.read!(path), else: ""
   end
 
   # Helper functions

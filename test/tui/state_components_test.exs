@@ -222,7 +222,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert state.status == :thinking
     assert ExRatatui.textarea_get_value(state.textarea) == ""
 
-    assert_receive {:agent_done, pid, session}, 1_000
+    {pid, session} = receive_agent_done()
     assert pid == state.worker
 
     state = Events.finish_worker(state, session)
@@ -240,7 +240,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert state.status == :thinking
     assert ExRatatui.textarea_get_value(state.textarea) == ""
 
-    assert_receive {:agent_done, pid, session}, 1_000
+    {pid, session} = receive_agent_done()
     assert pid == state.worker
 
     state = Events.finish_worker(state, session)
@@ -397,16 +397,22 @@ defmodule Beamcore.TUI.StateComponentsTest do
   end
 
   test "timeline selection moves up and down while details are open" do
-    state = %{timeline_state() | show_activity_details: true}
+    session =
+      Enum.reduce(1..2, input_state("").session, fn index, session ->
+        Session.append_timeline(session, :decision, "Timeline #{index}.")
+      end)
+
+    state = %{input_state("") | session: session, show_activity_details: true}
+    initial = state.selected_activity
 
     {:noreply, state} = Events.handle_event(key("down"), state)
-    assert state.selected_activity == 1
+    assert state.selected_activity == initial + 1
 
     {:noreply, state} = Events.handle_event(key("up"), state)
-    assert state.selected_activity == 0
+    assert state.selected_activity == initial
 
     {:noreply, state} = Events.handle_event(key("down", ["shift"]), state)
-    assert state.selected_activity == 1
+    assert state.selected_activity > initial
   end
 
   test "tab behavior still prioritizes command autocomplete over timeline details" do
@@ -883,6 +889,15 @@ defmodule Beamcore.TUI.StateComponentsTest do
       long_result
     )
     |> Map.put(:selected_activity, 0)
+  end
+
+  defp receive_agent_done do
+    receive do
+      {:agent_done, pid, session} -> {pid, session}
+      {:runtime_event, _pid, _event} -> receive_agent_done()
+    after
+      1_000 -> flunk("expected agent_done")
+    end
   end
 
   test "Chat.widget renders modify_file tool outputs as a colorized diff" do

@@ -143,6 +143,24 @@ defmodule Beamcore.TUI do
   defp put_screen_state(state, :f2, f2_state), do: %{state | f2_state: f2_state}
   defp put_screen_state(state, :f3, f3_state), do: %{state | f3_state: f3_state}
 
+  defp update_screen_by_session(state, session_id, fun) when is_binary(session_id) do
+    cond do
+      state.f1_state.session.session_id == session_id ->
+        {:noreply, %{state | f1_state: fun.(state.f1_state)}}
+
+      state.f2_state.session.session_id == session_id ->
+        {:noreply, %{state | f2_state: fun.(state.f2_state)}}
+
+      state.f3_state.session.session_id == session_id ->
+        {:noreply, %{state | f3_state: fun.(state.f3_state)}}
+
+      true ->
+        {:noreply, state}
+    end
+  end
+
+  defp update_screen_by_session(state, _session_id, _fun), do: {:noreply, state}
+
   @impl true
   def handle_info(:tick, state) do
     now = System.monotonic_time(:millisecond)
@@ -179,10 +197,7 @@ defmodule Beamcore.TUI do
         {:noreply, %{state | f3_state: new_f3}}
 
       true ->
-        active_screen = state.active_screen
-        active_state = MultiScreenState.get_active(state)
-        new_active = Events.handle_runtime_event(event, active_state)
-        {:noreply, put_screen_state(state, active_screen, new_active)}
+        {:noreply, state}
     end
   end
 
@@ -203,10 +218,7 @@ defmodule Beamcore.TUI do
         {:noreply, %{state | f3_state: new_f3}}
 
       true ->
-        active_screen = state.active_screen
-        active_state = MultiScreenState.get_active(state)
-        new_active = Events.finish_worker(active_state, session)
-        {:noreply, put_screen_state(state, active_screen, new_active)}
+        {:noreply, state}
     end
   end
 
@@ -228,11 +240,29 @@ defmodule Beamcore.TUI do
         {:noreply, %{state | f3_state: new_f3}}
 
       true ->
-        active_screen = state.active_screen
-        active_state = MultiScreenState.get_active(state)
-        new_active = Events.fail_worker(active_state, formatted_error)
-        {:noreply, put_screen_state(state, active_screen, new_active)}
+        {:noreply, state}
     end
+  end
+
+  @impl true
+  def handle_info({:restore_progress, _restore_id, event}, state) do
+    update_screen_by_session(state, event.session_id, fn screen_state ->
+      Events.handle_restore_progress(event, screen_state)
+    end)
+  end
+
+  @impl true
+  def handle_info({:restore_completed, _restore_id, action, checkpoint_id, result}, state) do
+    session_id =
+      case result do
+        {:ok, session, _filesystem_result} -> session.session_id
+        {:error, session_id, _reason} -> session_id
+        _ -> nil
+      end
+
+    update_screen_by_session(state, session_id, fn screen_state ->
+      Events.handle_restore_completed(action, checkpoint_id, result, screen_state)
+    end)
   end
 
   @impl true

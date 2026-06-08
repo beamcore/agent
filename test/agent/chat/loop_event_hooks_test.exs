@@ -467,6 +467,84 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     assert updated.project_policy_bypassed?
   end
 
+  test "F1 creates initial, goal, pre-mutation, and post-mutation checkpoints", %{
+    session: session
+  } do
+    File.rm_rf!("scratch")
+    on_exit(fn -> File.rm_rf!("scratch") end)
+
+    args = %{
+      "operation" => "create_file",
+      "path" => "scratch/f1_checkpoint.ex",
+      "content" => "defmodule Scratch.F1Checkpoint, do: :ok\n"
+    }
+
+    Process.put(:mock_completions_calls, 0)
+
+    Process.put(:mock_completions_create, fn _client, _params ->
+      call = Process.get(:mock_completions_calls, 0) + 1
+      Process.put(:mock_completions_calls, call)
+
+      case call do
+        1 ->
+          {:ok,
+           %{
+             "choices" => [
+               %{
+                 "message" => %{
+                   "role" => "assistant",
+                   "content" => "Writing file.",
+                   "tool_calls" => [tool_call("call_write", "modify_file", args)]
+                 }
+               }
+             ]
+           }}
+
+        2 ->
+          {:ok,
+           %{
+             "choices" => [
+               %{"message" => %{"role" => "assistant", "content" => "Done."}}
+             ]
+           }}
+      end
+    end)
+
+    updated = Loop.send_message(session, "create the checkpoint file", nil, nil, silent: true)
+
+    assert File.exists?("scratch/f1_checkpoint.ex")
+    assert Enum.any?(updated.checkpoints, &(&1.workflow_stage == "session_started"))
+    assert Enum.any?(updated.timeline, &(&1.title == "F1 goal accepted"))
+    assert Enum.any?(updated.timeline, &(&1.title == "F1 filesystem checkpoint"))
+    assert Enum.any?(updated.timeline, &(&1.title == "F1 mutation completed"))
+
+    filesystem_checkpoint =
+      Enum.find(updated.checkpoints, fn checkpoint ->
+        checkpoint.workflow_stage == "file_change" and
+          is_integer(checkpoint.filesystem_revision["journal_position"])
+      end)
+
+    assert filesystem_checkpoint
+  end
+
+  test "F2 chat does not create F1 filesystem checkpoints" do
+    chat_session = Beamcore.OpenAI.client() |> Session.new(screen_type: :chat)
+
+    Process.put(:mock_completions_create, fn _client, _params ->
+      {:ok,
+       %{
+         "choices" => [
+           %{"message" => %{"role" => "assistant", "content" => "Chat only."}}
+         ]
+       }}
+    end)
+
+    updated = Loop.send_message(chat_session, "hello", nil, nil, silent: true)
+
+    refute Enum.any?(updated.timeline, &(&1.title == "F1 goal accepted"))
+    refute Enum.any?(updated.timeline, &(&1.title == "F1 filesystem checkpoint"))
+  end
+
   defp tool_call(id, name, args) do
     %{
       "id" => id,

@@ -187,16 +187,25 @@ defmodule Beamcore.Agent.Chat.Session do
         log(acc, msg)
       end)
 
-    session
-    |> append_timeline(:started, "Session started.",
-      role: :system,
-      title: "Session started",
-      metadata: %{
-        mode: mode_settings.mode,
-        provider: mode_settings.provider,
-        model: mode_settings.model
-      }
-    )
+    session =
+      append_timeline(session, :started, "Session started.",
+        role: :system,
+        title: "Session started",
+        metadata: %{
+          mode: mode_settings.mode,
+          provider: mode_settings.provider,
+          model: mode_settings.model
+        }
+      )
+
+    if screen_type == :agent do
+      checkpoint(session, "F1 Dev session started.", %{
+        workflow_stage: "session_started",
+        mode: "F1 Dev"
+      })
+    else
+      session
+    end
   end
 
   @doc """
@@ -375,14 +384,38 @@ defmodule Beamcore.Agent.Chat.Session do
   end
 
   def rewind(session, checkpoint_id) do
-    with {:ok, session} <- Beamcore.Agent.Timeline.rewind(session, checkpoint_id) do
-      {:ok, save_state(session)}
+    with checkpoint when not is_nil(checkpoint) <-
+           Beamcore.Agent.Timeline.find_checkpoint(session, checkpoint_id),
+         {:ok, filesystem_result} <-
+           Beamcore.Agent.RestoreCoordinator.restore(session, checkpoint),
+         {:ok, session} <- Beamcore.Agent.Timeline.rewind(session, checkpoint_id) do
+      session =
+        session
+        |> annotate_latest_timeline_event(filesystem_result)
+        |> save_state()
+
+      {:ok, session}
+    else
+      nil -> {:error, "Checkpoint '#{checkpoint_id}' was not found."}
+      {:error, reason} -> {:error, reason}
     end
   end
 
   def fork(session, checkpoint_id, title \\ nil) do
-    with {:ok, session} <- Beamcore.Agent.Timeline.fork(session, checkpoint_id, title) do
-      {:ok, save_state(session)}
+    with checkpoint when not is_nil(checkpoint) <-
+           Beamcore.Agent.Timeline.find_checkpoint(session, checkpoint_id),
+         {:ok, filesystem_result} <-
+           Beamcore.Agent.RestoreCoordinator.restore(session, checkpoint),
+         {:ok, session} <- Beamcore.Agent.Timeline.fork(session, checkpoint_id, title) do
+      session =
+        session
+        |> annotate_latest_timeline_event(filesystem_result)
+        |> save_state()
+
+      {:ok, session}
+    else
+      nil -> {:error, "Checkpoint '#{checkpoint_id}' was not found."}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -412,6 +445,10 @@ defmodule Beamcore.Agent.Chat.Session do
     session
   end
 
+  def annotate_filesystem_restore(session, filesystem_result) do
+    annotate_latest_timeline_event(session, filesystem_result)
+  end
+
   defp save_checkpoint(session, event, summary, attrs) do
     checkpoint = Beamcore.Agent.Timeline.checkpoint(session, event, attrs || %{})
     checkpoint_event = Beamcore.Agent.Timeline.checkpoint_event(session, checkpoint, summary)
@@ -430,6 +467,38 @@ defmodule Beamcore.Agent.Chat.Session do
       event: "checkpoint",
       checkpoint: Beamcore.Agent.Timeline.to_json_checkpoint(checkpoint)
     })
+  end
+
+  defp annotate_latest_timeline_event(session, filesystem_result) do
+    timeline = session.timeline || []
+
+    case List.pop_at(timeline, -1) do
+      {nil, _events} ->
+        session
+
+      {event, events} ->
+        summary = filesystem_summary(event.summary, filesystem_result)
+
+        event = %{
+          event
+          | summary: summary,
+            metadata:
+              event.metadata
+              |> Kernel.||(%{})
+              |> Map.put(:filesystem_restore, filesystem_result)
+        }
+
+        %{session | timeline: events ++ [event]}
+    end
+  end
+
+  defp filesystem_summary(summary, %{"conflict_count" => conflicts} = result)
+       when conflicts > 0 do
+    "#{summary} Agent changes rewound with #{result["reverted_mutations"]} mutation(s) reverted, #{result["preserved_external_changes"]} external change(s) preserved, and #{conflicts} conflict(s)."
+  end
+
+  defp filesystem_summary(summary, result) do
+    "#{summary} Agent changes rewound with #{result["reverted_mutations"]} mutation(s) reverted. No external changes affected."
   end
 
   @doc """
@@ -690,6 +759,7 @@ defmodule Beamcore.Agent.Chat.Session do
     timeline_state = Beamcore.Agent.Timeline.safe_restore(data)
     usage = Map.get(data, "usage", %{})
     workspace_root = Map.get(data, "workspace_root") || Keyword.get(opts, :workspace_root)
+    Beamcore.Agent.FilesystemJournal.recover_incomplete_restores(workspace_root)
     {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root || ".")
 
     %__MODULE__{

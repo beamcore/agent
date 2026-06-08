@@ -22,7 +22,7 @@ defmodule Beamcore.Agent.Tools.Git do
           properties: %{
             operation: %{
               type: "string",
-              enum: ["clone", "add", "status", "restore", "log", "diff", "commit"],
+              enum: ["add", "status", "log", "diff", "commit"],
               description: "Git operation to run."
             },
             path: %{
@@ -75,21 +75,7 @@ defmodule Beamcore.Agent.Tools.Git do
   defp execute_operation(operation, params, workdir) do
     case operation do
       "clone" ->
-        case Map.get(params, "url") do
-          nil ->
-            "Error: url is required for clone operation."
-
-          url ->
-            path = Map.get(params, "path")
-
-            with :ok <- ProjectPolicy.allowed_write_path?(path || "."),
-                 :ok <- validate_optional_path(path) do
-              args = if path, do: ["clone", url, path], else: ["clone", url]
-              run_git(args, workdir)
-            else
-              {:error, reason} -> PathSafety.error(reason)
-            end
-        end
+        "Error: git clone is disabled because it creates workspace files without filesystem journal provenance."
 
       "add" ->
         path = Map.get(params, "path") || "."
@@ -105,18 +91,7 @@ defmodule Beamcore.Agent.Tools.Git do
         run_git(["status"], workdir)
 
       "restore" ->
-        case Map.get(params, "path") do
-          nil ->
-            "Error: path is required for restore operation."
-
-          path ->
-            with :ok <- ProjectPolicy.allowed_write_path?(path),
-                 :ok <- PathSafety.validate_pattern(path) do
-              run_git(["restore", path], workdir)
-            else
-              {:error, reason} -> PathSafety.error(reason)
-            end
-        end
+        "Error: git restore is disabled because it mutates workspace files outside the filesystem journal."
 
       "log" ->
         limit = Map.get(params, "limit", 5)
@@ -196,35 +171,38 @@ defmodule Beamcore.Agent.Tools.Git do
         "Error: git executable not found in system PATH."
 
       _path ->
-        try do
-          case System.cmd("git", args,
-                 cd: workdir,
-                 stderr_to_stdout: true,
-                 env: CommandRunner.external_env()
-               ) do
-            {output, 0} ->
-              if String.trim(output) == "" do
-                "Success (no output)"
-              else
-                truncate(output)
-              end
+        CommandRunner.run("git", git_command_name(args), "git", args,
+          workdir: workdir,
+          command_kind: "git"
+        )
+        |> format_command_result()
+    end
+  end
 
-            {output, exit_code} ->
-              trimmed = String.trim(output)
+  defp git_command_name(["-c", _key_value, "-c", _key_value2, command | _]), do: command
+  defp git_command_name([command | _]), do: command
+  defp git_command_name(_), do: "git"
 
-              if trimmed == "" do
-                "Error: Command failed with exit code #{exit_code} (no output)"
-              else
-                "Error: #{truncate(trimmed)}"
-              end
-          end
-        rescue
-          e in ErlangError ->
-            "Error: OS error executing git: #{inspect(e.original)}"
+  defp format_command_result(%{"ok" => true, "stdout" => output}) do
+    if String.trim(output || "") == "" do
+      "Success (no output)"
+    else
+      truncate(output)
+    end
+  end
 
-          e ->
-            "Error: Unexpected execution failure: #{Exception.message(e)}"
-        end
+  defp format_command_result(%{"ok" => false, "exit_code" => exit_code, "stdout" => output}) do
+    trimmed = String.trim(output || "")
+
+    cond do
+      is_nil(exit_code) ->
+        "Error: #{trimmed}"
+
+      trimmed == "" ->
+        "Error: Command failed with exit code #{exit_code} (no output)"
+
+      true ->
+        "Error: #{truncate(trimmed)}"
     end
   end
 
