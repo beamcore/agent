@@ -2,7 +2,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.{Git, TestTool, Modify, PathSafety, Read}
+  alias Beamcore.Agent.Tools.{Git, TestTool, Modify, PathSafety, Eeva}
   alias Beamcore.Agent.Chat.Session
 
   setup do
@@ -84,7 +84,10 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
       assert result["path"] == "src/demo.txt"
 
       assert File.read!(Path.join(root, "src/demo.txt")) == "hello\n"
-      assert Read.execute(%{"filePath" => "src/demo.txt"}) =~ "hello"
+
+      assert Eeva.execute(%{"code" => "File.read!(\"#{Path.join(root, "src/demo.txt")}\")"}) =~
+               "hello"
+
       assert {:error, _reason} = PathSafety.resolve("../outside.txt")
     end)
   end

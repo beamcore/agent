@@ -10,11 +10,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert policy.allowed_write_paths == ["**/*"]
     assert "plan" in ToolPolicy.allowed_tool_names(policy)
     assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
-    assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
-    assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
-    assert "fs" in ToolPolicy.allowed_tool_names(policy)
+    assert "eeva" in ToolPolicy.allowed_tool_names(policy)
     assert "task" in ToolPolicy.allowed_tool_names(policy)
-    assert "web_get" in ToolPolicy.allowed_tool_names(policy)
 
     assert "test_tool" in ToolPolicy.allowed_tool_names(policy)
   end
@@ -32,7 +29,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
   test "default autonomous policy allows mutation tools subject to hard guards" do
     policy = ToolPolicy.from_user_message("Create scratch/a.ex.")
 
-    for tool <- ~w(modify_file fs) do
+    for tool <- ~w(modify_file image_generation) do
       assert :ok == ToolPolicy.allow_tool_call(policy, tool, %{})
     end
   end
@@ -42,15 +39,11 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     names = ToolPolicy.allowed_tool_names(policy)
 
     assert policy.mode == :local_context_helper
-    assert "read" in names
+    assert "eeva" in names
     assert "grep" in names
-    assert "glob" in names
-    assert "tree" in names
     assert "git" in names
     refute "modify_file" in names
-    refute "fs" in names
     refute "task" in names
-    refute "web_get" in names
   end
 
   test "local context helper blocks mutation tools even if requested directly" do
@@ -60,14 +53,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
              ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
 
     assert modify_message =~ "local_context_helper"
-
-    assert {:error, fs_message} =
-             ToolPolicy.allow_tool_call(policy, "fs", %{
-               "operation" => "remove",
-               "path" => "scratch/a.ex"
-             })
-
-    assert fs_message =~ "local_context_helper"
   end
 
   test "local context helper allows only read-only git operations" do
@@ -87,12 +72,12 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       Policy:
       mode: read_only
       allowed_tools:
-      - read
+      - eeva
       - test_tool
       """)
 
     assert policy.mode == :read_only
-    assert ToolPolicy.allowed_tool_names(policy) == ["read", "test_tool"]
+    assert ToolPolicy.allowed_tool_names(policy) == ["eeva", "test_tool"]
   end
 
   test "parses Policy mode development" do
@@ -106,7 +91,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert "modify_file" in ToolPolicy.allowed_tool_names(policy)
     assert "test_tool" in ToolPolicy.allowed_tool_names(policy)
     refute "task" in ToolPolicy.allowed_tool_names(policy)
-    refute "web_get" in ToolPolicy.allowed_tool_names(policy)
   end
 
   test "invalid Policy mode fails closed and does not expose mutation tools" do
@@ -118,12 +102,12 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - modify_file
       - modify_file
       - modify_file
-      - fs
+      - image_generation
       """)
 
     assert policy.mode == :invalid_policy
 
-    for tool <- ~w(modify_file fs) do
+    for tool <- ~w(modify_file image_generation) do
       refute tool in ToolPolicy.allowed_tool_names(policy)
     end
   end
@@ -137,7 +121,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - modify_file
       - modify_file
       - modify_file
-      - fs
+      - image_generation
       """)
 
     assert {:error, write_message} =
@@ -152,12 +136,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert {:error, _message} =
              ToolPolicy.allow_tool_call(policy, "modify_file", %{
                "patch_content" => "+++ b/scratch/a.ex"
-             })
-
-    assert {:error, _message} =
-             ToolPolicy.allow_tool_call(policy, "fs", %{
-               "operation" => "mkdir",
-               "path" => "scratch"
              })
   end
 
@@ -174,7 +152,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - test_tool
       blocked_tools:
       - task
-      - web_get
+      - git
       """)
 
     assert policy.mode == :restricted_write
@@ -193,7 +171,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       Policy:
       mode: read_only
       allowed_tools:
-      - read
+      - eeva
 
       Task:
       mode: restricted_write
@@ -203,7 +181,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
 
     assert policy.mode == :read_only
     assert policy.allowed_write_paths == []
-    assert ToolPolicy.allowed_tool_names(policy) == ["read"]
+    assert ToolPolicy.allowed_tool_names(policy) == ["eeva"]
   end
 
   test "restricted_write can target root-level project files" do
@@ -252,7 +230,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       - modify_file
       - modify_file
       - modify_file
-      - fs
       """)
 
     assert :ok == ToolPolicy.allow_tool_call(policy, "modify_file", %{"path" => "scratch/a.ex"})
@@ -264,36 +241,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     assert message =~ "scratch/b.ex is not in allowed_write_paths"
   end
 
-  test "restricted_write allows parent mkdir only for allowed paths" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: restricted_write
-      allowed_write_paths:
-      - scratch/a.ex
-      allowed_tools:
-      - fs
-      """)
-
-    assert :ok ==
-             ToolPolicy.allow_tool_call(policy, "fs", %{
-               "operation" => "mkdir",
-               "path" => "scratch"
-             })
-
-    assert {:error, message} =
-             ToolPolicy.allow_tool_call(policy, "fs", %{"operation" => "mkdir", "path" => "eval"})
-
-    assert message =~ "eval is not in allowed_write_paths"
-  end
-
   test "read_only blocks write even if allowed_tools includes write" do
     policy =
       ToolPolicy.from_user_message("""
       Policy:
       mode: read_only
       allowed_tools:
-      - read
+      - eeva
       - modify_file
       """)
 
@@ -311,13 +265,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
       Policy:
       mode: development
       allowed_tools:
-      - read
+      - eeva
       - test_tool
       blocked_tools:
       - test_tool
       """)
 
-    assert ToolPolicy.allowed_tool_names(policy) == ["read"]
+    assert ToolPolicy.allowed_tool_names(policy) == ["eeva"]
 
     assert {:error, _message} =
              ToolPolicy.allow_tool_call(policy, "test_tool", %{"args" => "test"})
@@ -391,7 +345,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     allowed = ToolPolicy.allowed_tool_names(policy)
     assert "modify_file" in allowed
     assert "task" in allowed
-    assert "web_get" in allowed
+    assert "eeva" in allowed
     assert "git" in allowed
     assert "image_generation" in allowed
 

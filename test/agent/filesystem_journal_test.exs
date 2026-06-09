@@ -4,7 +4,7 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.FilesystemJournal.Server
-  alias Beamcore.Agent.Tools.{CommandRunner, Fs, Git, Modify, PathSafety}
+  alias Beamcore.Agent.Tools.{CommandRunner, Git, Modify, PathSafety}
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{"MISTRAL_API_KEY" => "test-api-key"})
@@ -782,9 +782,58 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
     end)
   end
 
-  defp fs_agent!(session, args) do
+  defp fs_agent!(session, %{"operation" => "mkdir", "path" => path}) do
     FilesystemJournal.with_context(context(session), fn ->
-      Fs.execute(args)
+      full_path = Path.expand(path, session.workspace_root)
+      existed? = File.exists?(full_path)
+
+      case File.mkdir_p(full_path) do
+        :ok ->
+          unless existed?, do: FilesystemJournal.record_mkdir(full_path, tool: "fs")
+          "Successfully created directory: #{full_path}"
+
+        {:error, reason} ->
+          "Error creating directory: #{inspect(reason)}"
+      end
+    end)
+  end
+
+  defp fs_agent!(session, %{"operation" => "remove", "path" => path}) do
+    FilesystemJournal.with_context(context(session), fn ->
+      full_path = Path.expand(path, session.workspace_root)
+
+      case FilesystemJournal.record_remove(full_path, tool: "fs") do
+        {:ok, mutation} ->
+          if File.dir?(full_path) do
+            File.rm_rf(full_path)
+          else
+            File.rm(full_path)
+          end
+
+          FilesystemJournal.commit_prepared(mutation)
+          "Successfully removed: #{full_path}"
+
+        {:error, reason} ->
+          "Error: #{reason}"
+      end
+    end)
+  end
+
+  defp fs_agent!(session, %{"operation" => "move", "path" => path, "target" => target}) do
+    FilesystemJournal.with_context(context(session), fn ->
+      source = Path.expand(path, session.workspace_root)
+      target_path = Path.expand(target, session.workspace_root)
+
+      with {:ok, source_mutation} <- FilesystemJournal.record_remove(source, tool: "fs"),
+           {:ok, target_before} <- FilesystemJournal.snapshot_state(target_path),
+           :ok <- File.rename(source, target_path),
+           :ok <- FilesystemJournal.commit_prepared(source_mutation) do
+        bytes = if File.regular?(target_path), do: File.read!(target_path), else: ""
+        FilesystemJournal.record_file_write(target_path, target_before, bytes, tool: "fs")
+        "Successfully moved"
+      else
+        {:error, reason} -> "Error: #{reason}"
+      end
     end)
   end
 

@@ -409,6 +409,7 @@ explicitly requested.
 | `reflect` | Review current work with bounded context. |
 | `web_get` | Optional explicit HTTP GET. |
 | `image_generation` | Optional image generation provider boundary. |
+| `eeva` | Executes Elixir code under an isolated, temporary supervisor, capturing stdout/stderr and returning exit status. |
 
 `modify_file` rejects missing or ambiguous anchors, invalid ranges, binary
 files, path escapes, no-op changes, and checksum mismatches. It applies edits in

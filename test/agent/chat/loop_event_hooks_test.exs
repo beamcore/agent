@@ -146,12 +146,9 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
   test "tool_finished event compacts large output while model history keeps full content", %{
     session: session
   } do
-    path = "tmp/loop_event_large.txt"
-    args = %{"path" => path, "limit" => 160}
-    File.mkdir_p!("tmp")
-    File.write!(path, Enum.map_join(1..160, "\n", &("line #{&1} " <> String.duplicate("x", 90))))
+    args = %{"code" => "IO.puts(String.duplicate(\"x\", 2000))"}
 
-    expected_tool_content = Beamcore.Agent.Tools.Read.execute(args)
+    expected_tool_content = Beamcore.Agent.Tools.Eeva.execute(args)
     parent = self()
     Process.put(:mock_completions_calls, 0)
 
@@ -167,8 +164,8 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
                %{
                  "message" => %{
                    "role" => "assistant",
-                   "content" => "Reading the file.",
-                   "tool_calls" => [tool_call("call_read", "read", args)]
+                   "content" => "Executing code.",
+                   "tool_calls" => [tool_call("call_eeva", "eeva", args)]
                  }
                }
              ]
@@ -192,12 +189,12 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
     end)
 
     updated =
-      Loop.send_message(session, "read a large file", nil, nil,
+      Loop.send_message(session, "execute large code", nil, nil,
         silent: true,
         event_handler: fn event -> send(parent, {:event, event}) end
       )
 
-    assert_receive {:event, {:tool_finished, "read", ^args, event_content}}
+    assert_receive {:event, {:tool_finished, "eeva", ^args, event_content}}
     assert event_content =~ "[tool output omitted:"
     assert event_content =~ "chars"
     assert event_content =~ "lines"
@@ -211,17 +208,12 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
       end)
 
     assert (tool_message[:content] || tool_message["content"]) == expected_tool_content
-
-    File.rm(path)
   end
 
   test "tool_finished event preserves short output", %{session: session} do
-    path = "tmp/loop_event_small.txt"
-    args = %{"path" => path}
-    File.mkdir_p!("tmp")
-    File.write!(path, "small output\n")
+    args = %{"code" => "1 + 1"}
 
-    expected_tool_content = Beamcore.Agent.Tools.Read.execute(args)
+    expected_tool_content = Beamcore.Agent.Tools.Eeva.execute(args)
     parent = self()
     Process.put(:mock_completions_calls, 0)
 
@@ -237,8 +229,8 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
                %{
                  "message" => %{
                    "role" => "assistant",
-                   "content" => "Reading the file.",
-                   "tool_calls" => [tool_call("call_read", "read", args)]
+                   "content" => "Executing code.",
+                   "tool_calls" => [tool_call("call_eeva", "eeva", args)]
                  }
                }
              ]
@@ -254,15 +246,13 @@ defmodule Beamcore.Agent.Chat.LoopEventHooksTest do
       end
     end)
 
-    Loop.send_message(session, "read a small file", nil, nil,
+    Loop.send_message(session, "execute small code", nil, nil,
       silent: true,
       event_handler: fn event -> send(parent, {:event, event}) end
     )
 
-    assert_receive {:event, {:tool_finished, "read", ^args, ^expected_tool_content}}
+    assert_receive {:event, {:tool_finished, "eeva", ^args, ^expected_tool_content}}
     refute expected_tool_content =~ "[tool output omitted:"
-
-    File.rm(path)
   end
 
   test "hard rollover returns the summarized session from the baseline rollover path", %{

@@ -14,7 +14,7 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
 
   require Logger
 
-  @search_tools ["grep", "glob", "tree", "read"]
+  @search_tools ["grep", "eeva"]
 
   @doc """
   Performs pre-flight workspace search only when a helper role is enabled.

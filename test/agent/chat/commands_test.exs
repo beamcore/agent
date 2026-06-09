@@ -429,15 +429,15 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
       output =
         capture_io(fn ->
           assert Commands.execute("policy deny path secrets/**", session) == session
-          assert Commands.execute("policy tool web_get deny", session) == session
+          assert Commands.execute("policy tool git deny", session) == session
         end)
 
       decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
 
       assert output =~ "policy deny secrets/**"
-      assert output =~ "policy tool web_get deny"
+      assert output =~ "policy tool git deny"
       assert "secrets/**" in decoded["deny_paths"]
-      assert decoded["tool_permissions"]["web_get"] == "deny"
+      assert decoded["tool_permissions"]["git"] == "deny"
     end)
   end
 
@@ -447,13 +447,13 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
 
       capture_io(fn ->
         Commands.execute("policy deny path secrets/**", session)
-        Commands.execute("policy tool web_get deny", session)
+        Commands.execute("policy tool git deny", session)
       end)
 
       blocked =
         capture_io(fn ->
           assert Commands.execute("policy remove deny path secrets/**", session) == session
-          assert Commands.execute("policy tool web_get allow", session) == session
+          assert Commands.execute("policy tool git allow", session) == session
         end)
 
       assert blocked =~ "weakens project policy"
@@ -463,14 +463,14 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
           assert Commands.execute("policy remove deny path secrets/** --confirm", session) ==
                    session
 
-          assert Commands.execute("policy tool web_get allow --confirm", session) == session
+          assert Commands.execute("policy tool git allow --confirm", session) == session
         end)
 
       decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
 
       assert allowed =~ "Project policy updated"
       refute "secrets/**" in decoded["deny_paths"]
-      assert decoded["tool_permissions"]["web_get"] == "allow"
+      assert decoded["tool_permissions"]["git"] == "allow"
     end)
   end
 

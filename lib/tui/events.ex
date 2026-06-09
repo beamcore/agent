@@ -166,6 +166,11 @@ defmodule Beamcore.TUI.Events do
     State.update_activity(state, name, args, result)
   end
 
+  def handle_runtime_event({:eeva_preview, code}, state) do
+    message = "⚡ EEVA — code to execute:\n```elixir\n#{code}\n```"
+    State.add_message(state, :system, message)
+  end
+
   def handle_runtime_event(_event, state), do: state
 
   def handle_restore_progress(event, state) do

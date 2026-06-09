@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
   alias Beamcore.Agent.Chat.ToolPolicy
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.{Dispatcher, Fs, Glob, Grep, Modify, Read, Tree}
+  alias Beamcore.Agent.Tools.{Dispatcher, Grep, Modify}
 
   setup do
     tmp =
@@ -49,7 +49,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     decoded = Jason.decode!(File.read!(".beamcore/policy.json"))
     assert decoded["deny_paths"] == policy.deny_paths
     assert decoded["tool_permissions"]["modify_file"] == "allow"
-    assert decoded["tool_permissions"]["web_get"] == "deny"
+    assert decoded["tool_permissions"]["task"] == "deny"
 
     updated = ProjectPolicy.add_deny_path(policy, "tmp/**")
     assert {:ok, saved} = ProjectPolicy.save(updated)
@@ -99,24 +99,24 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       |> ProjectPolicy.add_deny_path("secrets/**")
       |> ProjectPolicy.add_read_only_path("mix.lock")
       |> ProjectPolicy.add_allow_write_path("lib/**")
-      |> ProjectPolicy.set_tool_permission("web_get", "deny")
+      |> ProjectPolicy.set_tool_permission("task", "deny")
 
     assert "secrets/**" in policy.deny_paths
     assert "mix.lock" in policy.read_only_paths
     assert "lib/**" in policy.allow_write_paths
-    assert policy.tool_permissions["web_get"] == "deny"
+    assert policy.tool_permissions["task"] == "deny"
 
     policy =
       policy
       |> ProjectPolicy.remove_deny_path("secrets/**")
       |> ProjectPolicy.remove_read_only_path("mix.lock")
       |> ProjectPolicy.remove_allow_write_path("lib/**")
-      |> ProjectPolicy.remove_tool_permission("web_get")
+      |> ProjectPolicy.remove_tool_permission("task")
 
     refute "secrets/**" in policy.deny_paths
     refute "mix.lock" in policy.read_only_paths
     refute "lib/**" in policy.allow_write_paths
-    refute Map.has_key?(policy.tool_permissions, "web_get")
+    refute Map.has_key?(policy.tool_permissions, "task")
   end
 
   test "weakening change detection identifies loosened policy" do
@@ -125,7 +125,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       |> ProjectPolicy.add_deny_path("secrets/**")
       |> ProjectPolicy.add_read_only_path("mix.lock")
       |> ProjectPolicy.add_allow_write_path("lib/**")
-      |> ProjectPolicy.set_tool_permission("web_get", "deny")
+      |> ProjectPolicy.set_tool_permission("task", "deny")
 
     assert ProjectPolicy.weakening_change?(old, ProjectPolicy.remove_deny_path(old, "secrets/**"))
 
@@ -141,7 +141,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     assert ProjectPolicy.weakening_change?(
              old,
-             ProjectPolicy.set_tool_permission(old, "web_get", "allow")
+             ProjectPolicy.set_tool_permission(old, "task", "allow")
            )
 
     refute ProjectPolicy.weakening_change?(
@@ -173,7 +173,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
   end
 
   test "denied tools are hidden and blocked at execution" do
-    write_policy!(%{version: 1, tool_permissions: %{task: "deny", web_get: "deny"}})
+    write_policy!(%{version: 1, tool_permissions: %{task: "deny", git: "deny"}})
 
     policy =
       ToolPolicy.from_user_message("""
@@ -181,15 +181,15 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       mode: development
       allowed_tools:
       - task
-      - web_get
-      - read
+      - git
+      - eeva
       """)
 
     names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
     refute "task" in names
-    refute "web_get" in names
-    assert "read" in names
+    refute "git" in names
+    assert "eeva" in names
 
     assert Dispatcher.execute("task", %{"name" => "x", "prompt" => "do it"}, policy) =~
              "project policy"
@@ -199,14 +199,14 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     write_policy!(%{
       version: 1,
       allow_write_paths: ["src/**"],
-      tool_permissions: %{modify_file: "confirm", fs: "confirm", read: "allow"}
+      tool_permissions: %{modify_file: "confirm", git: "confirm", eeva: "allow"}
     })
 
     normal = ToolPolicy.default()
 
     assert "modify_file" in ToolPolicy.allowed_tool_names(normal)
-    assert "fs" in ToolPolicy.allowed_tool_names(normal)
-    assert "read" in ToolPolicy.allowed_tool_names(normal)
+    assert "git" in ToolPolicy.allowed_tool_names(normal)
+    assert "eeva" in ToolPolicy.allowed_tool_names(normal)
 
     assert :ok ==
              ToolPolicy.allow_tool_call(normal, "modify_file", %{
@@ -216,9 +216,8 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
              })
 
     assert :ok ==
-             ToolPolicy.allow_tool_call(normal, "fs", %{
-               "operation" => "mkdir",
-               "path" => "src/datastructures"
+             ToolPolicy.allow_tool_call(normal, "git", %{
+               "operation" => "status"
              })
 
     assert {:error, message} =
@@ -235,7 +234,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     write_policy!(%{
       version: 1,
       allow_write_paths: ["src/**"],
-      tool_permissions: %{modify_file: "confirm", fs: "confirm", read: "allow"}
+      tool_permissions: %{modify_file: "confirm", image_generation: "confirm", eeva: "allow"}
     })
 
     read_only =
@@ -244,18 +243,17 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
       mode: read_only
       allowed_tools:
       - modify_file
-      - fs
-      - read
+      - image_generation
+      - eeva
       """)
 
     refute "modify_file" in ToolPolicy.allowed_tool_names(read_only)
-    refute "fs" in ToolPolicy.allowed_tool_names(read_only)
-    assert "read" in ToolPolicy.allowed_tool_names(read_only)
+    refute "image_generation" in ToolPolicy.allowed_tool_names(read_only)
+    assert "eeva" in ToolPolicy.allowed_tool_names(read_only)
 
     assert {:error, message} =
-             ToolPolicy.allow_tool_call(read_only, "fs", %{
-               "operation" => "mkdir",
-               "path" => "src/datastructures"
+             ToolPolicy.allow_tool_call(read_only, "image_generation", %{
+               "output_path" => "src/datastructures/diagram.png"
              })
 
     assert message =~ "read-only policy"
@@ -277,15 +275,15 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
   end
 
   test "freedom mode bypasses project policy but not hard path safety" do
-    write_policy!(%{version: 1, deny_paths: ["scratch/**"], tool_permissions: %{web_get: "deny"}})
+    write_policy!(%{version: 1, deny_paths: ["scratch/**"], tool_permissions: %{task: "deny"}})
 
     normal_policy = ToolPolicy.yolo()
     freedom_policy = ToolPolicy.yolo(project_policy_bypassed?: true)
     normal_names = Dispatcher.tool_specs(normal_policy) |> Enum.map(& &1.function.name)
     freedom_names = Dispatcher.tool_specs(freedom_policy) |> Enum.map(& &1.function.name)
 
-    refute "web_get" in normal_names
-    assert "web_get" in freedom_names
+    refute "task" in normal_names
+    assert "task" in freedom_names
 
     assert Dispatcher.execute(
              "modify_file",
@@ -349,9 +347,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
              "old" => "{}",
              "new" => "{\"deny_paths\":[]}"
            }) =~ "Project policy can only be changed"
-
-    assert Fs.execute(%{"operation" => "touch", "path" => ".beamcore/policy.json"}) =~
-             "Project policy can only be changed"
   end
 
   test "image generation output path is checked before provider execution" do
@@ -369,7 +364,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     assert message =~ "read-only"
   end
 
-  test "read directory, grep, glob, and tree hide denied paths" do
+  test "grep hides denied paths" do
     File.mkdir_p!("secrets")
     File.write!("secrets/token.txt", "needle secret")
     File.mkdir_p!("lib")
@@ -377,15 +372,9 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
 
     write_policy!(%{version: 1, deny_paths: ["secrets/**"]})
 
-    read_output = Read.execute(%{"path" => "."})
     grep_output = Grep.execute(%{"pattern" => "needle", "path" => ".", "all" => true})
-    glob_output = Glob.execute(%{"pattern" => "**/*.txt", "path" => ".", "all" => true})
-    tree_output = Tree.execute(%{"path" => ".", "all" => true})
 
-    refute read_output =~ "secrets"
     refute grep_output =~ "secrets/token.txt"
-    refute glob_output =~ "secrets/token.txt"
-    refute tree_output =~ "secrets"
     assert grep_output =~ "lib/visible.ex"
   end
 

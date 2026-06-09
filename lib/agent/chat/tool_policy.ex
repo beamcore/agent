@@ -31,12 +31,12 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           project_policy_bypassed?: boolean()
         }
 
-  @read_only_tools ~w(read grep glob tree git test_tool memory reflect)
-  @local_context_helper_tools ~w(read grep glob tree git memory reflect)
-  @unconfirmed_tools ~w(read grep glob tree plan git memory reflect)
-  @restricted_write_tools ~w(read grep glob modify_file fs test_tool memory reflect)
-  @development_tools ~w(read grep glob modify_file tree git fs test_tool memory)
-  @all_tool_names ~w(read grep glob modify_file web_get tree git fs task test_tool plan image_generation memory reflect)
+  @read_only_tools ~w(eeva grep git test_tool memory reflect)
+  @local_context_helper_tools ~w(eeva grep git memory reflect)
+  @unconfirmed_tools ~w(eeva grep plan git memory reflect)
+  @restricted_write_tools ~w(eeva grep modify_file test_tool memory reflect)
+  @development_tools ~w(eeva grep modify_file git test_tool memory)
+  @all_tool_names ~w(eeva grep modify_file git task test_tool plan image_generation memory reflect)
   @mutation_tools ~w(modify_file fs image_generation)
   @read_only_git_operations ~w(status diff log)
   @valid_modes ~w(read_only development restricted_write)
@@ -86,8 +86,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allow_task: false,
       allow_network: true,
       allowed_write_paths: [],
-      allowed_tools: ["web_get"],
-      blocked_tools: @all_tool_names -- ["web_get"],
+      allowed_tools: [],
+      blocked_tools: @all_tool_names,
       project_policy_bypassed?: false
     }
   end
@@ -102,8 +102,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allow_task: false,
       allow_network: true,
       allowed_write_paths: ["**/*.md"],
-      allowed_tools: ~w(read grep glob tree modify_file fs web_get),
-      blocked_tools: @all_tool_names -- ~w(read grep glob tree modify_file fs web_get),
+      allowed_tools: ~w(eeva grep modify_file),
+      blocked_tools: @all_tool_names -- ~w(eeva grep modify_file),
       project_policy_bypassed?: false
     }
   end
@@ -350,12 +350,12 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   end
 
   defp base_allowed_tool_names(%{mode: :chat} = policy) do
-    ["web_get"]
+    []
     |> apply_tool_filters(policy)
   end
 
   defp base_allowed_tool_names(%{mode: :research} = policy) do
-    ~w(read grep glob tree modify_file fs web_get)
+    ~w(eeva grep modify_file)
     |> apply_tool_filters(policy)
   end
 
@@ -407,12 +407,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   defp allow_restricted_write(policy, name, args) do
     case name do
       "modify_file" -> allow_exact_path(policy, Map.get(args, "path"))
-      "fs" -> allow_restricted_fs(policy, args)
       "image_generation" -> allow_exact_path(policy, Map.get(args, "output_path"))
       "test_tool" -> :ok
-      "read" -> :ok
       "grep" -> :ok
-      "glob" -> :ok
       _ -> {:error, blocked_message(policy, name)}
     end
   end
@@ -429,46 +426,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
            "Tool call blocked: research screen is restricted to modifying only .md files."}
         end
 
-      "fs" ->
-        operation = Map.get(args, "operation")
-        path = Map.get(args, "path") || ""
-
-        case operation do
-          "mkdir" ->
-            allow_research_path(path)
-
-          "touch" ->
-            if String.ends_with?(path, ".md") do
-              allow_research_path(path)
-            else
-              {:error,
-               "Tool call blocked: research screen is restricted to creating only .md files."}
-            end
-
-          "exist" ->
-            :ok
-
-          "stat" ->
-            :ok
-
-          _ ->
-            {:error,
-             "Tool call blocked: research screen is restricted to mkdir, touch, exist, and stat operations."}
-        end
-
-      "read" ->
-        :ok
-
       "grep" ->
-        :ok
-
-      "glob" ->
-        :ok
-
-      "tree" ->
-        :ok
-
-      "web_get" ->
         :ok
 
       _ ->
@@ -487,45 +445,6 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
     normalized = normalize_candidate_path(to_string(path || ""))
 
     if normalized in Map.get(policy, :allowed_write_paths, []) do
-      :ok
-    else
-      {:error, restricted_path_message(policy, normalized || path)}
-    end
-  end
-
-  defp allow_restricted_fs(policy, args) do
-    operation = Map.get(args, "operation")
-    path = Map.get(args, "path")
-
-    case operation do
-      "mkdir" ->
-        allow_parent_dir(policy, path)
-
-      "touch" ->
-        allow_exact_path(policy, path)
-
-      "stat" ->
-        :ok
-
-      "exist" ->
-        :ok
-
-      _ ->
-        {:error,
-         "Tool call blocked by restricted-write policy: fs #{inspect(operation)} is not allowed."}
-    end
-  end
-
-  defp allow_parent_dir(policy, path) do
-    normalized = normalize_candidate_path(to_string(path || ""))
-
-    allowed_parents =
-      policy
-      |> Map.get(:allowed_write_paths, [])
-      |> Enum.map(&Path.dirname/1)
-      |> Enum.uniq()
-
-    if normalized in allowed_parents do
       :ok
     else
       {:error, restricted_path_message(policy, normalized || path)}

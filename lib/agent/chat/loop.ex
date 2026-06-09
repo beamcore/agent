@@ -163,6 +163,12 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp ensure_client(session, _opts), do: {:ok, session}
 
   defp do_send_message(session, content, pid, policy_override, opts) do
+    # Make the event handler available to tools (e.g., eeva preview) via process dict.
+    case Keyword.get(opts, :event_handler) do
+      handler when is_function(handler, 1) -> Process.put(:event_handler, handler)
+      _ -> :ok
+    end
+
     session =
       if session.project_policy_bypassed? do
         Session.clear_project_policy_block_history(session)

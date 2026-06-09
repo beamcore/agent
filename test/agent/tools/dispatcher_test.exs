@@ -13,13 +13,11 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     specs = Dispatcher.tool_specs()
     names = Enum.map(specs, fn spec -> spec.function.name end)
 
-    assert "read" in names
+    assert "eeva" in names
     assert "plan" in names
     assert "test_tool" in names
     assert "modify_file" in names
-    assert "fs" in names
     assert "task" in names
-    assert "web_get" in names
     assert "image_generation" in names
   end
 
@@ -38,21 +36,6 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     refute "web_get" in names
   end
 
-  test "tool_specs includes web_get only when policy allows explicit network access" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: development
-      allowed_tools:
-      - web_get
-      """)
-
-    names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
-
-    assert "web_get" in names
-    refute "task" in names
-  end
-
   test "conductor_tool_specs applies read-only policy" do
     policy =
       ToolPolicy.from_user_message("""
@@ -62,7 +45,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
-    assert Enum.sort(names) == Enum.sort(~w(read grep glob tree git test_tool memory reflect))
+    assert Enum.sort(names) == Enum.sort(~w(eeva grep git test_tool memory reflect))
     refute "task" in names
     refute "web_get" in names
     refute "modify_file" in names
@@ -82,7 +65,7 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
 
     assert Enum.sort(names) ==
-             Enum.sort(~w(read grep glob modify_file fs test_tool memory reflect))
+             Enum.sort(~w(eeva grep modify_file test_tool memory reflect))
 
     refute "task" in names
     refute "web_get" in names
@@ -137,23 +120,6 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
     assert Jason.decode!(result)["ok"]
     assert File.read!(path) == "ok"
-  end
-
-  test "execute allows autonomous mkdir by default" do
-    path = "scratch/dispatcher_autonomous_dir"
-    on_exit(fn -> File.rm_rf!(path) end)
-
-    result = Dispatcher.execute("fs", %{"operation" => "mkdir", "path" => path})
-
-    assert result =~ "Successfully created directory"
-    assert File.dir?(path)
-  end
-
-  test "execute allows read tools without confirmation" do
-    result = Dispatcher.execute("read", %{"filePath" => "README.md", "limit" => 1})
-
-    refute result =~ "Mutation requires"
-    refute result =~ "Tool call blocked"
   end
 
   test "execute blocks unlisted writes in restricted-write mode" do
