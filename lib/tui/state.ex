@@ -242,16 +242,21 @@ defmodule Beamcore.TUI.State do
 
   def reset_activity_scroll(state),
     do:
+      state
+      |> follow_activity_tail()
+      |> Map.put(:activity_focused?, true)
+      |> mark_dirty()
+
+  defp follow_activity_tail(state),
+    do:
       %{
         state
         | activity_scroll_offset: 0,
           activity_follow_tail?: true,
           activity_unseen_count: 0,
-          activity_focused?: true,
           selected_activity: max(length(timeline_items(state)) - 1, 0)
       }
       |> put_selected_event_id()
-      |> mark_dirty()
 
   def scroll_details_up(state, amount \\ 1),
     do:
@@ -264,7 +269,7 @@ defmodule Beamcore.TUI.State do
   def reset_details_scroll(state), do: %{state | details_scroll_offset: 0} |> mark_dirty()
 
   defp auto_scroll_on_new_activity(%{activity_scroll_offset: offset} = state) when offset <= 2,
-    do: reset_activity_scroll(state)
+    do: follow_activity_tail(state)
 
   defp auto_scroll_on_new_activity(state), do: state
 

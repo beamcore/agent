@@ -143,6 +143,80 @@ defmodule Beamcore.TUI.StateComponentsTest do
     refute "policy" in names
   end
 
+  test "typing checkpoint command keeps printable keys in input" do
+    state =
+      input_state("")
+      |> State.add_activity("tool", %{"path" => "example.txt"}, :queued)
+
+    refute state.activity_focused?
+
+    state = type_text(state, "/checkpoint")
+
+    assert ExRatatui.textarea_get_value(state.textarea) == "/checkpoint"
+    assert state.show_commands
+    refute state.activity_focused?
+  end
+
+  test "typing checkpoint rewind command does not move Activity selection" do
+    state =
+      input_state("")
+      |> State.set_session(timeline_session(5))
+      |> State.select_checkpoint("missing")
+
+    selected_before = state.selected_activity
+    state = type_text(state, "/checkpoint rewind chk-test")
+
+    assert ExRatatui.textarea_get_value(state.textarea) == "/checkpoint rewind chk-test"
+    assert state.selected_activity == selected_before
+    refute state.activity_focused?
+  end
+
+  test "printable Activity shortcut letters are inserted while input is focused" do
+    state = input_state("") |> type_text("kKjgG")
+
+    assert ExRatatui.textarea_get_value(state.textarea) == "kKjgG"
+    refute state.activity_focused?
+  end
+
+  test "normal prose with shortcut letters is processed exactly once" do
+    text = "check checkpoint worker package fork"
+    state = input_state("") |> type_text(text)
+
+    assert ExRatatui.textarea_get_value(state.textarea) == text
+  end
+
+  test "F6 focuses Activity and Esc returns to input without losing text" do
+    state = input_state("") |> type_text("/checkpoint rewind chk-test")
+
+    {:noreply, state} = Events.handle_event(key("f6"), state)
+    assert state.activity_focused?
+
+    {:noreply, state} = Events.handle_event(key("esc"), state)
+    refute state.activity_focused?
+    assert ExRatatui.textarea_get_value(state.textarea) == "/checkpoint rewind chk-test"
+
+    state = type_text(state, " k")
+    assert ExRatatui.textarea_get_value(state.textarea) == "/checkpoint rewind chk-test k"
+  end
+
+  test "autocomplete closes with Esc without clearing input" do
+    state = input_state("") |> type_text("/checkpoint")
+    assert state.show_commands
+
+    {:noreply, state} = Events.handle_event(key("esc"), state)
+
+    refute state.show_commands
+    assert ExRatatui.textarea_get_value(state.textarea) == "/checkpoint"
+  end
+
+  test "space after checkpoint command preserves input and keeps passive command help" do
+    state = input_state("") |> type_text("/checkpoint ")
+
+    assert ExRatatui.textarea_get_value(state.textarea) == "/checkpoint "
+    assert state.show_commands
+    assert Enum.any?(state.command_matches, &String.starts_with?(&1.name, "checkpoint "))
+  end
+
   test "up down and ctrl navigation move selected command suggestion" do
     state = input_state("") |> type_text("/yo")
 
@@ -864,6 +938,16 @@ defmodule Beamcore.TUI.StateComponentsTest do
     text
     |> String.graphemes()
     |> Enum.reduce(state, fn code, state -> refresh_with_key(state, code) end)
+  end
+
+  defp timeline_session(count) do
+    base = Beamcore.OpenAI.client() |> Session.new()
+
+    Enum.reduce(1..count, base, fn index, session ->
+      Session.append_timeline(session, :decision, "Timeline event #{index}.",
+        title: "Decision #{index}"
+      )
+    end)
   end
 
   defp refresh_with_key(state, code) do
