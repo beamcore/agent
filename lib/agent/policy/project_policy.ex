@@ -13,9 +13,9 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   @example_path ".beamcore/policy.example.json"
   @protected_paths [@config_path]
   @process_bypass_key {__MODULE__, :bypassed}
-  @known_tools ~w(read grep glob modify_file web_get tree git fs task test_tool plan image_generation memory reflect)
-  @write_tools ~w(modify_file fs image_generation)
-  @read_tools ~w(read grep glob tree)
+  @known_tools ~w(eeva grep modify_file git task test_tool plan image_generation memory reflect)
+  @write_tools ~w(modify_file image_generation)
+  @read_tools ~w(grep)
 
   defstruct loaded?: false,
             valid?: true,
@@ -343,19 +343,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     |> allow_all(policy, :write)
   end
 
-  defp allow_tool_paths(policy, "fs", %{"operation" => operation} = args) do
-    case operation do
-      "stat" -> args |> path_values(["path"]) |> allow_all(policy, :read)
-      "exist" -> args |> path_values(["path"]) |> allow_all(policy, :read)
-      "copy" -> allow_copy(policy, args)
-      "move" -> allow_move(policy, args)
-      "remove" -> args |> path_values(["path"]) |> allow_all(policy, :write)
-      "touch" -> args |> path_values(["path"]) |> allow_all(policy, :write)
-      "mkdir" -> args |> path_values(["path"]) |> allow_all(policy, :write)
-      _ -> :ok
-    end
-  end
-
   defp allow_tool_paths(policy, "git", args) do
     args
     |> path_values(["path", "workdir"])
@@ -374,18 +361,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   end
 
   defp allow_tool_paths(_policy, _name, _args), do: :ok
-
-  defp allow_copy(policy, args) do
-    with :ok <- args |> path_values(["path"]) |> allow_all(policy, :read) do
-      args |> path_values(["target"]) |> allow_all(policy, :write)
-    end
-  end
-
-  defp allow_move(policy, args) do
-    with :ok <- args |> path_values(["path"]) |> allow_all(policy, :write) do
-      args |> path_values(["target"]) |> allow_all(policy, :write)
-    end
-  end
 
   defp allow_all(paths, policy, mode) do
     Enum.reduce_while(paths, :ok, fn path, :ok ->
@@ -588,12 +563,9 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
       "read_only_paths" => ["mix.lock", "config/prod.exs"],
       "allow_write_paths" => ["lib/**", "test/**", "README.md", "generated/**"],
       "tool_permissions" => %{
-        "read" => "allow",
+        "eeva" => "allow",
         "grep" => "allow",
-        "glob" => "allow",
-        "tree" => "allow",
         "modify_file" => "allow",
-        "fs" => "allow",
         "git" => "allow",
         "mix" => "allow",
         "memory" => "allow",
@@ -606,8 +578,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
         "ruby" => "allow",
         "bazel" => "allow",
         "image_generation" => "allow",
-        "task" => "deny",
-        "web_get" => "deny"
+        "task" => "deny"
       }
     }
   end

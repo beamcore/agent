@@ -498,8 +498,18 @@ defmodule Beamcore.Agent.Runtime do
 
     policy = state.policy
 
+    tui_pid = state.tui_pid
+
     task =
       Task.Supervisor.async_nolink(Beamcore.Agent.TaskSupervisor, fn ->
+        if tui_pid do
+          parent = self()
+
+          Process.put(:event_handler, fn event ->
+            send(tui_pid, {:runtime_event, parent, event})
+          end)
+        end
+
         content = Dispatcher.execute(name, args, policy)
         {:tool_result, tool_call, content}
       end)

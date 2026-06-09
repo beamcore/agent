@@ -7,14 +7,10 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   alias Beamcore.Agent.Policy.ProjectPolicy
 
   @tools [
+    Beamcore.Agent.Tools.Eeva,
     Beamcore.Agent.Tools.Grep,
-    Beamcore.Agent.Tools.Read,
-    Beamcore.Agent.Tools.Glob,
     Beamcore.Agent.Tools.Modify,
-    Beamcore.Agent.Tools.WebGet,
-    Beamcore.Agent.Tools.Tree,
     Beamcore.Agent.Tools.Git,
-    Beamcore.Agent.Tools.Fs,
     Beamcore.Agent.Tools.Task,
     Beamcore.Agent.Tools.Plan,
     Beamcore.Agent.Tools.ImageGeneration,
@@ -122,43 +118,6 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
 
   @doc false
   def normalize_tool_call("write_to_file", args), do: normalize_tool_call("write_file", args)
-
-  @doc false
-  def normalize_tool_call("read_file", args), do: {"read", args}
-
-  @doc false
-  def normalize_tool_call("web_get", args) do
-    url = Map.get(args, "url") || Map.get(args, :url)
-
-    query =
-      Map.get(args, "query") || Map.get(args, "q") || Map.get(args, :query) || Map.get(args, :q)
-
-    cond do
-      is_binary(url) ->
-        {"web_get", args}
-
-      is_binary(query) ->
-        url = "https://search.yahoo.com/search?p=#{URI.encode_www_form(query)}"
-        {"web_get", %{"url" => url}}
-
-      true ->
-        {"web_get", args}
-    end
-  end
-
-  @doc false
-  def normalize_tool_call(name, args)
-      when name in ["search", "google_search", "web_search", "duckduckgo"] do
-    query =
-      Map.get(args, "query") || Map.get(args, "q") || Map.get(args, :query) || Map.get(args, :q)
-
-    if is_binary(query) do
-      url = "https://search.yahoo.com/search?p=#{URI.encode_www_form(query)}"
-      {"web_get", %{"url" => url}}
-    else
-      {name, args}
-    end
-  end
 
   @doc false
   def normalize_tool_call(name, args), do: {name, args}
