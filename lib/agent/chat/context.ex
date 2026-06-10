@@ -84,12 +84,13 @@ defmodule Beamcore.Agent.Chat.Context do
     |> compact_text(@max_summary_chars)
   end
 
-
   defp record_eeva_inspected_files(context, args) do
     code = Map.get(args, "code") || Map.get(args, :code) || ""
 
     paths =
-      Regex.scan(~r/File\.(?:read|read!|stream!|stat|stat!|lstat|lstat!|exists\?|dir\?|regular\?)\(\s*["']([^"']+)["']/, code,
+      Regex.scan(
+        ~r/File\.(?:read|read!|stream!|stat|stat!|lstat|lstat!|exists\?|dir\?|regular\?)\(\s*["']([^"']+)["']/,
+        code,
         capture: :all_but_first
       )
       |> List.flatten()

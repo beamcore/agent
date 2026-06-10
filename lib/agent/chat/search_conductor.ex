@@ -162,8 +162,10 @@ defmodule Beamcore.Agent.Chat.SearchConductor do
   end
 
   defp normalize_tool_calls(%{"tool_calls" => tool_calls} = message) when is_list(tool_calls) do
+    single_tool_calls = if length(tool_calls) > 1, do: [List.first(tool_calls)], else: tool_calls
+
     fixed =
-      Enum.map(tool_calls, fn tc ->
+      Enum.map(single_tool_calls, fn tc ->
         tc |> Map.put("type", "function") |> Map.delete("index")
       end)
 

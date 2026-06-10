@@ -329,7 +329,6 @@ defmodule Beamcore.TUI.TimelineControlTest do
     assert is_list(State.visible_timeline_items(state, 0))
   end
 
-
   test "checkpoint items are highlighted and include chat orientation", %{state: state} do
     session =
       state.session
@@ -358,7 +357,6 @@ defmodule Beamcore.TUI.TimelineControlTest do
 
     assert length(state.activity) == 500
   end
-
 
   defp submit_command(state, command) do
     ExRatatui.textarea_set_value(state.textarea, command)

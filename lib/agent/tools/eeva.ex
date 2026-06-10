@@ -32,14 +32,16 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, parsing, search, tests, Git commands, data transformations, Beamcore.Helpers introspection, Beamcore.Memory access, and multi-step workflows. Runtime policy checks the parsed program and each computed side effect without confirmation prompts. The runtime returns stdout, the expression result, and journaled workspace changes.",
+          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, and calling workspace APIs like `Beamcore.Helpers` (for introspection), `Beamcore.Memory` (for state), or configuration services. The runtime automatically checks policy, executes autonomously without confirmation prompts, and returns stdout, the expression result, and journaled workspace changes.\n\n" <>
+            "Safety Guidelines:\n" <>
+            "- Check file sizes (e.g., with `File.stat`) before reading large or unknown files/binaries into memory.\n" <>
+            "- Keep results and output sizes concise; filter or truncate huge structures before returning them.",
         parameters: %{
           type: "object",
           properties: %{
             code: %{
               type: "string",
-              description:
-                "Elixir source code to evaluate. Examples: File.read!(\"README.md\"), Path.wildcard(\"lib/**/*.ex\"), System.cmd(\"git\", [\"status\"]), System.cmd(\"mix\", [\"test\"]), or an arbitrary multi-expression Elixir program. A returned zero-arity function is invoked automatically."
+              description: "Elixir source code to evaluate"
             }
           },
           required: ["code"]
@@ -253,7 +255,14 @@ defmodule Beamcore.Agent.Tools.Eeva do
   end
 
   defp emit_preview(code) do
-    send(self(), {:eeva_preview, code})
+    case Process.get(:event_handler) do
+      handler when is_function(handler, 1) ->
+        handler.({:eeva_preview, code})
+
+      _ ->
+        send(self(), {:eeva_preview, code})
+    end
+
     :ok
   end
 

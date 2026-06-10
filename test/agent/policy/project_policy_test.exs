@@ -54,5 +54,4 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
     assert :ok == ProjectPolicy.allowed_write_path?(ProjectPolicy.load(root), "allowed/file.txt")
     assert {:error, _} = ProjectPolicy.allowed_write_path?(ProjectPolicy.load(root), "other.txt")
   end
-
 end
