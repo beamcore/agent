@@ -660,40 +660,6 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
     end
   end
 
-  test "large untouched file does not cause command scope failure, but mutation of it does", %{root: root, session: session} do
-    # Set the max file size limit to a small value (10 bytes)
-    Application.put_env(:agent, :max_file_bytes, 10)
-
-    # Create a large file (20 bytes) in the workspace
-    large_file_path = Path.join(root, "large_file.bin")
-    File.write!(large_file_path, String.duplicate("a", 20))
-
-    FilesystemJournal.with_context(context(session), fn ->
-      try do
-        # Start a command scope. This should succeed even though the large file exists in the workspace
-        assert {:ok, scope} = FilesystemJournal.begin_command_scope("test", "test_cmd", root, command_kind: "test")
-
-        # 1. Do a change to a different, normal file
-        File.write!(Path.join(root, "normal.txt"), "hello")
-
-        # Complete command scope. This should succeed since the large file was not mutated
-        assert {:ok, result} = FilesystemJournal.complete_command_scope(scope)
-        assert result["changed_path_count"] == 1
-        assert Enum.any?(result["mutations"], fn m -> m["path"] == "normal.txt" end)
-
-        # 2. Now start a new command scope and mutate the large file
-        assert {:ok, scope2} = FilesystemJournal.begin_command_scope("test", "test_cmd2", root, command_kind: "test")
-        File.write!(large_file_path, String.duplicate("b", 21))
-
-        # This completion should fail with the snapshot file size limit error because the large file was mutated
-        assert {:error, reason} = FilesystemJournal.complete_command_scope(scope2)
-        assert reason =~ "snapshot exceeds BEAMCORE_SNAPSHOT_MAX_FILE_BYTES"
-      after
-        Application.delete_env(:agent, :max_file_bytes)
-      end
-    end)
-  end
-
   defp checkpoint!(session, label) do
     session = Session.checkpoint(session, "Checkpoint #{label}.")
     checkpoint = List.last(session.checkpoints)

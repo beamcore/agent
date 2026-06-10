@@ -311,10 +311,11 @@ defmodule Beamcore.Agent.Chat.Session do
       })
 
     session = %{session | timeline: (session.timeline || []) ++ [event]}
+    checkpoint_attrs = Map.get(attrs_map, :checkpoint, :auto)
 
     session =
-      if important_event?(event) do
-        save_checkpoint(session, event, summary, Map.get(attrs_map, :checkpoint, %{}))
+      if important_event?(event) and checkpoint_attrs != false do
+        save_checkpoint(session, event, summary, normalize_checkpoint_attrs(checkpoint_attrs))
       else
         save_state(session)
       end
@@ -324,6 +325,9 @@ defmodule Beamcore.Agent.Chat.Session do
       timeline: Beamcore.Agent.Timeline.to_json_event(event)
     })
   end
+
+  defp normalize_checkpoint_attrs(attrs) when is_map(attrs), do: attrs
+  defp normalize_checkpoint_attrs(_attrs), do: %{}
 
   defp normalize_event_attrs(attrs) when is_list(attrs), do: Enum.into(attrs, %{})
 

@@ -157,11 +157,18 @@ defmodule Beamcore.TUI.Events do
     do: State.add_activity(State.set_status(state, :tool_running), name, args, :running)
 
   def handle_runtime_event({:tool_finished, name, args, result}, state) do
-    State.update_activity(state, name, args, result)
+    state = State.update_activity(state, name, args, result)
+
+    if name == "eeva" do
+      State.refresh_memory_total(state)
+    else
+      state
+    end
   end
 
   def handle_runtime_event({:eeva_preview, code}, state) do
-    State.add_message(state, :eeva_preview, code)
+    message = "⚡ EEVA — code to execute:\n```elixir\n#{code}\n```"
+    State.add_message(state, :system, message)
   end
 
   def handle_runtime_event(_event, state), do: state

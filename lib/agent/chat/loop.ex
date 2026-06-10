@@ -177,7 +177,6 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> apply_session_project_policy_bypass(session)
 
     emit(opts, {:status, :thinking})
-
     context =
       if ToolPolicy.project_policy_bypassed?(policy) do
         Context.clear_policy_blocks(session.context)
@@ -256,7 +255,8 @@ defmodule Beamcore.Agent.Chat.Loop do
           model: model_name(session),
           depth: depth,
           approximate_input_tokens: Beamcore.Agent.Chat.Budget.estimate_tokens(api_messages)
-        }
+        },
+        checkpoint: false
       })
 
     call_started = System.monotonic_time(:millisecond)
@@ -360,7 +360,8 @@ defmodule Beamcore.Agent.Chat.Loop do
                         metadata: %{
                           tool: name,
                           result: event_content
-                        }
+                        },
+                        checkpoint: false
                       })
 
                     emit(opts, {:session, session})
@@ -524,24 +525,14 @@ defmodule Beamcore.Agent.Chat.Loop do
     Session.append_timeline(session, :decision, "F1 accepted goal: #{short_text(content)}",
       role: :user,
       title: "F1 goal accepted",
-      metadata: %{mode: "F1 Dev"}
+      metadata: %{mode: "F1 Dev"},
+      checkpoint: false
     )
   end
 
   defp maybe_goal_checkpoint(session, _content), do: session
 
-  defp maybe_pre_tool_checkpoint(%{screen_type: :agent} = session, "eeva", _args) do
-    Session.append_timeline(session, :file_change, "Before Eeva execution.",
-      role: :agent,
-      title: "F1 execution checkpoint",
-      metadata: %{
-        mode: "F1 Dev",
-        tool: "eeva",
-        journal_position:
-          Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
-      }
-    )
-  end
+  defp maybe_pre_tool_checkpoint(%{screen_type: :agent} = session, "eeva", _args), do: session
 
   defp maybe_pre_tool_checkpoint(session, _name, _args), do: session
 
@@ -652,7 +643,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp finish_turn(session, opts) do
-    session = Session.append_timeline(session, :completed, "Turn completed.")
+    session = Session.append_timeline(session, :completed, "Turn completed.", checkpoint: false)
     emit(opts, {:session, session})
     emit(opts, {:status, :idle})
 
@@ -744,10 +735,8 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp normalize_tool_calls(%{"tool_calls" => tool_calls} = message) when is_list(tool_calls) do
-    single_tool_calls = if length(tool_calls) > 1, do: [List.first(tool_calls)], else: tool_calls
-
     fixed_tool_calls =
-      Enum.map(single_tool_calls, fn tool_call ->
+      Enum.map(tool_calls, fn tool_call ->
         tool_call
         |> Map.put("type", "function")
         |> Map.delete("index")

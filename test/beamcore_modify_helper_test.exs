@@ -7,9 +7,7 @@ defmodule Beamcore.Helpers.ModifyTest do
   alias Beamcore.Helpers.Modify
 
   setup do
-    root =
-      Path.join(System.tmp_dir!(), "beamcore_modify_helper_#{System.unique_integer([:positive])}")
-
+    root = Path.join(System.tmp_dir!(), "beamcore_modify_helper_#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
     previous = PathSafety.configure_workspace_root(root)
     Policy.install(ToolPolicy.default(), root)

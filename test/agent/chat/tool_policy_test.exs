@@ -15,10 +15,12 @@ defmodule Beamcore.Agent.Chat.ToolPolicyTest do
     end
   end
 
-  test "chat mode exposes no tools" do
+  test "chat mode exposes eeva for safe memory-only work" do
     policy = ToolPolicy.chat()
-    assert ToolPolicy.allowed_tool_names(policy) == []
-    assert {:error, _} = ToolPolicy.allow_tool_call(policy, "eeva", %{"code" => "1"})
+    assert ToolPolicy.allowed_tool_names(policy) == ["eeva"]
+    assert :ok == ToolPolicy.allow_tool_call(policy, "eeva", %{"code" => "Beamcore.Memory.list(:facts)"})
+    assert policy.allow_memory_write
+    refute policy.allow_network
   end
 
   test "research and helper modes expose eeva" do

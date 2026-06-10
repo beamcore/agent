@@ -127,6 +127,14 @@ defmodule Beamcore.TUI.State do
 
   def set_status(state, status), do: %{state | status: status} |> mark_dirty()
 
+  def refresh_memory_total(state) do
+    %{state | memory_total: compute_memory_total()} |> mark_dirty()
+  rescue
+    _error -> state
+  catch
+    _, _ -> state
+  end
+
   def set_notice(state, content) when is_binary(content) do
     content = Beamcore.TUI.ErrorFormatter.format(content)
     %{state | notice: if(content == "", do: nil, else: content)} |> mark_dirty()

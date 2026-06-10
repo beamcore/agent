@@ -13,8 +13,8 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert Enum.map(specs, & &1.function.name) == ["eeva"]
   end
 
-  test "chat mode exposes no function tools" do
-    assert Dispatcher.tool_specs(ToolPolicy.chat()) == []
+  test "chat mode exposes eeva for safe memory-only work" do
+    assert Enum.map(Dispatcher.tool_specs(ToolPolicy.chat()), & &1.function.name) == ["eeva"]
   end
 
   test "unknown tool calls are rejected" do

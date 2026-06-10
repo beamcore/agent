@@ -275,7 +275,6 @@ defmodule Beamcore.Agent.Runtime do
       |> apply_session_project_policy_bypass(session)
 
     emit(state, {:status, :thinking})
-
     context =
       if ToolPolicy.project_policy_bypassed?(resolved_policy) do
         Context.clear_policy_blocks(session.context)
@@ -610,10 +609,8 @@ defmodule Beamcore.Agent.Runtime do
   defp apply_session_project_policy_bypass(policy, _session), do: policy
 
   defp normalize_tool_calls(%{"tool_calls" => tool_calls} = message) when is_list(tool_calls) do
-    single_tool_calls = if length(tool_calls) > 1, do: [List.first(tool_calls)], else: tool_calls
-
     fixed =
-      Enum.map(single_tool_calls, fn tc ->
+      Enum.map(tool_calls, fn tc ->
         tc
         |> Map.put("type", "function")
         |> Map.delete("index")
