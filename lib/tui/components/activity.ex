@@ -208,9 +208,7 @@ defmodule Beamcore.TUI.Components.Activity do
 
   defp checkpoint_reference(%{checkpoint?: true, args: args}) when is_map(args) do
     message = Map.get(args, :chat_message) || Map.get(args, "chat_message")
-
-    description =
-      Map.get(args, :checkpoint_description) || Map.get(args, "checkpoint_description")
+    description = Map.get(args, :checkpoint_description) || Map.get(args, "checkpoint_description")
 
     cond do
       is_integer(message) and is_binary(description) and description != "" ->

@@ -132,7 +132,7 @@ defmodule Beamcore.Agent.PathSafety do
     normalized = internal_normalize(path)
 
     if internal_store_path?(normalized) do
-      {:error, "BeamCore internal snapshot paths are not available to agent tools"}
+      {:error, "BeamCore internal snapshot, recovery, and memory paths are not available to agent tools"}
     else
       :ok
     end
@@ -218,7 +218,7 @@ defmodule Beamcore.Agent.PathSafety do
 
     cond do
       internal_store_path?(relative) ->
-        {:error, "symlink target points to BeamCore internal snapshot storage"}
+        {:error, "symlink target points to BeamCore internal snapshot, recovery, or memory storage"}
 
       journal_excluded_root?(relative) ->
         {:error, "symlink target points to workspace metadata excluded from rollback"}
@@ -257,6 +257,7 @@ defmodule Beamcore.Agent.PathSafety do
       ".elixir_ls",
       ".beamcore/snapshots",
       ".beamcore/recovery",
+      ".beamcore/memory",
       ".DS_Store"
     ])
   end
@@ -268,7 +269,8 @@ defmodule Beamcore.Agent.PathSafety do
 
   defp internal_store_path?(normalized) do
     String.starts_with?(normalized, ".beamcore/snapshots") or
-      String.starts_with?(normalized, ".beamcore/recovery")
+      String.starts_with?(normalized, ".beamcore/recovery") or
+      String.starts_with?(normalized, ".beamcore/memory")
   end
 
   defp internal_normalize(path) do

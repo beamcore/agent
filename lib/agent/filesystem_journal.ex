@@ -24,12 +24,12 @@ defmodule Beamcore.Agent.FilesystemJournal do
   @max_directory_files 1_000
   @max_total_bytes 100 * 1024 * 1024
   @max_command_scan_files 20_000
-  @command_scan_excludes ~w(.beamcore/snapshots .beamcore/recovery .git _build deps node_modules .elixir_ls)
+  @command_scan_excludes ~w(.beamcore/snapshots .beamcore/recovery .beamcore/memory .git _build deps node_modules)
 
   def schema_version, do: @schema_version
   def restore_id, do: unique_id("restore")
 
-  def internal_relative_paths, do: [".beamcore/snapshots", ".beamcore/recovery"]
+  def internal_relative_paths, do: [".beamcore/snapshots", ".beamcore/recovery", ".beamcore/memory"]
 
   def context do
     Process.get(:beamcore_filesystem_context)
@@ -52,6 +52,26 @@ defmodule Beamcore.Agent.FilesystemJournal do
     workspace_root
     |> read_journal()
     |> Map.get("position", 0)
+  end
+
+
+  def changes_since(start_position) when is_integer(start_position) do
+    changes_since(PathSafety.workspace_root(), start_position)
+  end
+
+  def changes_since(workspace_root, start_position) when is_binary(workspace_root) and is_integer(start_position) do
+    workspace_root = workspace_root || PathSafety.workspace_root()
+
+    mutations =
+      workspace_root
+      |> read_journal()
+      |> Map.get("mutations", [])
+      |> Enum.filter(fn mutation -> integer(Map.get(mutation, "position"), 0) > start_position end)
+
+    %{
+      "changed_path_count" => length(mutations),
+      "mutations" => Enum.map(mutations, &Map.take(&1, ["operation", "path", "target_path"]))
+    }
   end
 
   def file_state_from_bytes(nil, _mode), do: %{"type" => "absent"}
@@ -1087,35 +1107,19 @@ defmodule Beamcore.Agent.FilesystemJournal do
   end
 
   defp snapshot_file(path) do
-    with {:ok, stat} <- File.stat(path, time: :posix) do
-      max_bytes = limit(:max_file_bytes, @max_file_bytes)
-
-      if stat.size > max_bytes do
-        {:ok,
-         %{
-           "type" => "file",
-           "mode" => mode_bits(stat.mode),
-           "content_hash" => sha256("large_file:#{path}:#{stat.size}:#{inspect(stat.mtime)}"),
-           "blob_hash" => nil,
-           "bytes" => nil,
-           "byte_size" => stat.size,
-           "text" => false,
-           "too_large" => true
-         }}
-      else
-        with {:ok, bytes} <- File.read(path) do
-          {:ok,
-           %{
-             "type" => "file",
-             "content_hash" => sha256(bytes),
-             "blob_hash" => sha256(bytes),
-             "bytes" => bytes,
-             "byte_size" => byte_size(bytes),
-             "mode" => mode_bits(stat.mode),
-             "text" => text_bytes?(bytes)
-           }}
-        end
-      end
+    with {:ok, bytes} <- File.read(path),
+         :ok <- validate_file_size(bytes),
+         {:ok, stat} <- File.stat(path, time: :posix) do
+      {:ok,
+       %{
+         "type" => "file",
+         "content_hash" => sha256(bytes),
+         "blob_hash" => sha256(bytes),
+         "bytes" => bytes,
+         "byte_size" => byte_size(bytes),
+         "mode" => mode_bits(stat.mode),
+         "text" => text_bytes?(bytes)
+       }}
     end
   end
 
@@ -1499,10 +1503,15 @@ defmodule Beamcore.Agent.FilesystemJournal do
       checkpoint_id: text(context[:checkpoint_id] || context["checkpoint_id"]),
       generation_id: text(context[:generation_id] || context["generation_id"]),
       workspace_root:
-        text(context[:workspace_root] || context["workspace_root"]) ||
-          PathSafety.workspace_root()
+        context
+        |> Map.get(:workspace_root, Map.get(context, "workspace_root"))
+        |> text()
+        |> canonical_workspace_root()
     }
   end
+
+  defp canonical_workspace_root(nil), do: PathSafety.workspace_root()
+  defp canonical_workspace_root(root) when is_binary(root), do: PathSafety.canonical_path(root)
 
   defp context_enabled?(%{session_id: session_id, branch_id: branch_id, workspace_root: root})
        when is_binary(session_id) and is_binary(branch_id) and is_binary(root),
@@ -1537,31 +1546,19 @@ defmodule Beamcore.Agent.FilesystemJournal do
   defp validate_destructive_state(_), do: :ok
 
   defp validate_size(before_state, after_state) do
+    total = state_size(before_state) + state_size(after_state)
+
     cond do
-      too_large?(before_state) or too_large?(after_state) ->
-        {:error, "snapshot exceeds BEAMCORE_SNAPSHOT_MAX_FILE_BYTES"}
+      total > limit(:max_operation_bytes, @max_operation_bytes) ->
+        {:error, "snapshot operation exceeds BEAMCORE_SNAPSHOT_MAX_OPERATION_BYTES"}
+
+      total > limit(:max_total_bytes, @max_total_bytes) ->
+        {:error, "snapshot operation exceeds BEAMCORE_SNAPSHOT_MAX_TOTAL_BYTES"}
 
       true ->
-        total = state_size(before_state) + state_size(after_state)
-
-        cond do
-          total > limit(:max_operation_bytes, @max_operation_bytes) ->
-            {:error, "snapshot operation exceeds BEAMCORE_SNAPSHOT_MAX_OPERATION_BYTES"}
-
-          total > limit(:max_total_bytes, @max_total_bytes) ->
-            {:error, "snapshot operation exceeds BEAMCORE_SNAPSHOT_MAX_TOTAL_BYTES"}
-
-          true ->
-            :ok
-        end
+        :ok
     end
   end
-
-  defp too_large?(%{"too_large" => true}), do: true
-  defp too_large?(%{"type" => "directory", "entries" => entries}) do
-    Enum.any?(entries, fn {_rel, entry} -> too_large?(entry) end)
-  end
-  defp too_large?(_), do: false
 
   defp validate_file_state_size(state) do
     if state_size(state) > limit(:max_file_bytes, @max_file_bytes),
@@ -1900,7 +1897,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
 
   defp ensure_not_internal(relative_path) do
     if internal_path?(relative_path),
-      do: {:error, "BeamCore internal snapshot paths are not agent-writable"},
+      do: {:error, "BeamCore internal snapshot, recovery, and memory paths are not agent-writable"},
       else: :ok
   end
 
@@ -1914,7 +1911,8 @@ defmodule Beamcore.Agent.FilesystemJournal do
     normalized = relative_path |> Path.split() |> Enum.join("/")
 
     String.starts_with?(normalized, ".beamcore/snapshots") or
-      String.starts_with?(normalized, ".beamcore/recovery")
+      String.starts_with?(normalized, ".beamcore/recovery") or
+      String.starts_with?(normalized, ".beamcore/memory")
   end
 
   defp journal_path(workspace_root),

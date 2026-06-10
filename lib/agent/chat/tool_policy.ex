@@ -39,6 +39,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           allowed_write_paths: [binary()],
           allowed_tools: [binary()] | nil,
           blocked_tools: [binary()],
+          allow_memory_read: boolean(),
+          allow_memory_write: boolean(),
           project_policy_bypassed?: boolean()
         }
 
@@ -72,6 +74,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allowed_write_paths: ["**/*"],
       allowed_tools: [@tool],
       blocked_tools: [],
+      allow_memory_read: true,
+      allow_memory_write: true,
       project_policy_bypassed?: Keyword.get(opts, :project_policy_bypassed?, false)
     }
   end
@@ -83,17 +87,20 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   def default, do: yolo()
 
   @doc """
-  F2 Chat does not expose Eeva.
+  F2 Chat exposes Eeva only for safe in-process work such as memory access.
+  Filesystem and command access remain blocked by the Eeva runtime policy.
   """
   @spec chat() :: t()
   def chat do
     %{
       mode: :chat,
       allow_task: false,
-      allow_network: true,
+      allow_network: false,
       allowed_write_paths: [],
-      allowed_tools: [],
-      blocked_tools: [@tool],
+      allowed_tools: [@tool],
+      blocked_tools: [],
+      allow_memory_read: true,
+      allow_memory_write: true,
       project_policy_bypassed?: false
     }
   end
@@ -113,6 +120,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allowed_write_paths: ["**/*.md", "research_index.md"],
       allowed_tools: [@tool],
       blocked_tools: [],
+      allow_memory_read: true,
+      allow_memory_write: true,
       project_policy_bypassed?: false
     }
   end
@@ -138,6 +147,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allowed_write_paths: [],
       allowed_tools: [@tool],
       blocked_tools: [],
+      allow_memory_read: true,
+      allow_memory_write: false,
       project_policy_bypassed?: project_policy_bypassed?(parent_policy)
     }
   end
@@ -157,6 +168,8 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allowed_write_paths: normalize_paths(allowed_write_paths),
       allowed_tools: [@tool],
       blocked_tools: [],
+      allow_memory_read: true,
+      allow_memory_write: true,
       project_policy_bypassed?: false
     }
   end
@@ -256,10 +269,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
 
   def write_allowed?(_policy), do: false
 
-  defp runtime_allowed_tool_names(%{mode: mode})
-       when mode in [:chat, :invalid_policy] do
-    []
-  end
+  defp runtime_allowed_tool_names(%{mode: :invalid_policy}), do: []
 
   defp runtime_allowed_tool_names(policy) do
     allowed_tools = Map.get(policy, :allowed_tools)
@@ -304,9 +314,13 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allowed_write_paths: write_paths_for_mode(mode, explicit_write_paths),
       allowed_tools: allowed_tools,
       blocked_tools: blocked_tools,
+      allow_memory_read: true,
+      allow_memory_write: memory_write_for_mode(mode),
       project_policy_bypassed?: false
     }
   end
+
+  defp memory_write_for_mode(mode), do: mode not in [:invalid_policy, :local_context_helper]
 
   defp write_paths_for_mode(:development, []), do: ["**/*"]
   defp write_paths_for_mode(:unrestricted, []), do: ["**/*"]

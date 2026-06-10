@@ -36,9 +36,7 @@ defmodule Beamcore.Helpers do
   def modules(prefix \\ "Beamcore") when is_binary(prefix) do
     :code.all_loaded()
     |> Enum.map(&elem(&1, 0))
-    |> Enum.filter(fn module ->
-      String.starts_with?(Atom.to_string(module), "Elixir." <> prefix)
-    end)
+    |> Enum.filter(fn module -> String.starts_with?(Atom.to_string(module), "Elixir." <> prefix) end)
     |> Enum.sort()
   end
 

@@ -119,12 +119,7 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
   test "read-only policy allows reads and blocks writes", %{root: root} do
     File.write!(Path.join(root, "sample.txt"), "safe")
-
-    policy = %{
-      Beamcore.Agent.Chat.ToolPolicy.default()
-      | mode: :read_only,
-        allowed_write_paths: []
-    }
+    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | mode: :read_only, allowed_write_paths: []}
 
     read = Eeva.execute(%{"code" => "File.read!(\"sample.txt\")"}, policy) |> Jason.decode!()
     assert read["ok"]
@@ -200,7 +195,7 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["result"] =~ "recall: 4"
   end
 
-  test "memory reads remain available and memory writes obey read-only policy" do
+  test "memory reads and writes remain available in read-only filesystem policy" do
     {org, repo} = Beamcore.Memory.detect_org_repo()
     assert :ok == Beamcore.Memory.remember(org, repo, :facts, "eeva-test", "value")
 
@@ -214,24 +209,96 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert read["ok"]
     assert read["result"] =~ "value"
 
-    policy = %{
-      Beamcore.Agent.Chat.ToolPolicy.default()
-      | mode: :read_only,
-        allowed_write_paths: []
-    }
+    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | mode: :read_only, allowed_write_paths: []}
 
-    blocked =
+    written =
       Eeva.execute(
         %{
           "code" =>
-            "{org, repo} = Beamcore.Memory.detect_org_repo(); Beamcore.Memory.remember(org, repo, :facts, \"blocked\", \"no\")"
+            "Beamcore.Memory.remember(:facts, \"read-only-memory-write\", \"yes\"); Beamcore.Memory.recall(:facts, \"read-only-memory-write\")"
         },
         policy
       )
       |> Jason.decode!()
 
-    refute blocked["ok"]
-    assert blocked["stderr"] =~ "Memory mutation is blocked"
+    assert written["ok"]
+    assert written["result"] =~ "yes"
+    assert written["filesystem_changes"]["changed_path_count"] == 0
+  end
+
+  test "memory writes stay concise and clear is model-facing for explicit forget-all requests" do
+    large =
+      Eeva.execute(%{
+        "code" => "Beamcore.Memory.remember(:facts, \"too-large\", String.duplicate(\"x\", 70_000))"
+      })
+      |> Jason.decode!()
+
+    refute large["ok"]
+    assert large["stderr"] =~ "Memory value is too large"
+
+    remembered =
+      Eeva.execute(%{
+        "code" => "Beamcore.Memory.remember(:facts, \"clear-test\", \"value\"); Beamcore.Memory.clear(); Beamcore.Memory.recall(:facts, \"clear-test\")"
+      })
+      |> Jason.decode!()
+
+    assert remembered["ok"]
+    assert remembered["result"] =~ "nil"
+    assert remembered["filesystem_changes"]["changed_path_count"] == 0
+  end
+
+
+  test "memory API tolerates model-style recall and clamps runaway limits" do
+    result =
+      Eeva.execute(%{
+        "code" =>
+          "Beamcore.Memory.clear(); " <>
+            "Beamcore.Memory.remember(:project_description, \"stored description\", 1_000_000); " <>
+            "Beamcore.Memory.recall(:project_description, 1_000_000)"
+      })
+      |> Jason.decode!()
+
+    assert result["ok"]
+    assert result["result"] =~ "stored description"
+    assert result["filesystem_changes"]["changed_path_count"] == 0
+
+    search =
+      Eeva.execute(%{
+        "code" =>
+          "Beamcore.Memory.clear(); " <>
+            "Enum.each(1..60, fn i -> Beamcore.Memory.remember(:facts, \"snap-\#{i}\", \"snapshot policy\") end); " <>
+            "Beamcore.Memory.search(\"snapshot\", 1_000_000) |> length()"
+      })
+      |> Jason.decode!()
+
+    assert search["ok"]
+    assert search["result"] =~ "50"
+  end
+
+  test "chat policy permits memory writes but still blocks files and commands" do
+    policy = Beamcore.Agent.Chat.ToolPolicy.chat()
+
+    remembered =
+      Eeva.execute(
+        %{
+          "code" =>
+            "Beamcore.Memory.remember(:facts, \"chat-memory-write\", \"yes\"); Beamcore.Memory.recall(:facts, \"chat-memory-write\")"
+        },
+        policy
+      )
+      |> Jason.decode!()
+
+    assert remembered["ok"]
+    assert remembered["result"] =~ "yes"
+    assert remembered["filesystem_changes"]["changed_path_count"] == 0
+
+    file = Eeva.execute(%{"code" => "File.read!(\"README.md\")"}, policy) |> Jason.decode!()
+    refute file["ok"]
+    assert file["stderr"] =~ "Filesystem access is unavailable in chat mode"
+
+    command = Eeva.execute(%{"code" => "System.cmd(\"git\", [\"status\"])"}, policy) |> Jason.decode!()
+    refute command["ok"]
+    assert command["stderr"] =~ "Command execution is blocked"
   end
 
   test "execution does not change the VM-global current directory", %{root: root} do

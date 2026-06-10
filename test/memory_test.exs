@@ -67,6 +67,29 @@ defmodule Beamcore.MemoryTest do
     assert nil == Memory.recall(org, repo, :errors, "err_1")
   end
 
+
+  test "model-friendly memory calls survive mistaken limit arguments" do
+    Memory.clear()
+
+    assert :ok == Memory.remember(:project_description, "stored description", 1_000_000)
+    assert "stored description" == Memory.recall(:project_description, 1_000_000)
+    assert "stored description" == Memory.recall("project_description")
+  end
+
+  test "search and overview are capped and discoverable" do
+    Memory.clear()
+
+    Enum.each(1..60, fn index ->
+      assert :ok == Memory.remember(:facts, "snap-#{index}", "snapshot policy")
+    end)
+
+    assert length(Memory.search("snapshot", 1_000_000)) == 50
+
+    overview = Memory.overview()
+    assert overview.total == 60
+    assert Enum.any?(overview.types, &(&1.type == :facts and &1.count == 60))
+  end
+
   test "persists data across restarts using DETS" do
     # Start a dynamic memory process with custom DETS path
     custom_dets = "tmp/another_test_memory.dets"

@@ -11,7 +11,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   alias Beamcore.Agent.Chat.ToolPolicy
   alias Beamcore.Agent.FilesystemJournal
-  alias Beamcore.Agent.FilesystemJournal.Server, as: JournalServer
   alias Beamcore.Agent.Tools.Eeva.{Sandbox, Supervisor, Worker}
   alias Beamcore.Agent.PathSafety
 
@@ -32,16 +31,14 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, and calling workspace APIs like `Beamcore.Helpers` (for introspection), `Beamcore.Memory` (for state), or configuration services. The runtime automatically checks policy, executes autonomously without confirmation prompts, and returns stdout, the expression result, and journaled workspace changes.\n\n" <>
-            "Safety Guidelines:\n" <>
-            "- Check file sizes (e.g., with `File.stat`) before reading large or unknown files/binaries into memory.\n" <>
-            "- Keep results and output sizes concise; filter or truncate huge structures before returning them.",
+          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, parsing, search, tests, Git commands, data transformations, Beamcore.Helpers introspection, Beamcore.Memory access, and multi-step workflows. Runtime policy checks the parsed program and each computed side effect without confirmation prompts. The runtime returns stdout, the expression result, and journaled workspace changes.",
         parameters: %{
           type: "object",
           properties: %{
             code: %{
               type: "string",
-              description: "Elixir source code to evaluate"
+              description:
+                "Elixir source code to evaluate. Examples: File.read!(\"README.md\"), Path.wildcard(\"lib/**/*.ex\"), System.cmd(\"git\", [\"status\"]), System.cmd(\"mix\", [\"test\"]), or an arbitrary multi-expression Elixir program. A returned zero-arity function is invoked automatically."
             }
           },
           required: ["code"]
@@ -106,28 +103,11 @@ defmodule Beamcore.Agent.Tools.Eeva do
     filesystem_context = FilesystemJournal.context()
     workspace_root = context_workspace_root(filesystem_context)
 
-    execute = fn ->
-      execute_with_scope(code, prepared, policy, owner, workspace_root, filesystem_context)
-    end
+    start_position = FilesystemJournal.journal_position(workspace_root)
+    result = run(prepared.quoted, policy, owner, workspace_root, filesystem_context)
+    filesystem_changes = FilesystemJournal.changes_since(workspace_root, start_position)
 
-    JournalServer.transaction(workspace_root, execute)
-  end
-
-  defp execute_with_scope(code, prepared, policy, owner, workspace_root, filesystem_context) do
-    with {:ok, scope} <-
-           FilesystemJournal.begin_command_scope("eeva", "elixir_eval", workspace_root,
-             context: filesystem_context,
-             command_kind: "eeva"
-           ) do
-      result = run(prepared.quoted, policy, owner, workspace_root, filesystem_context)
-
-      case FilesystemJournal.complete_command_scope(scope) do
-        {:ok, filesystem_changes} -> format_result(result, code, prepared, filesystem_changes)
-        {:error, reason} -> format_journal_failure(result, code, prepared, reason)
-      end
-    else
-      {:error, reason} -> encode_error(reason, "journal_error", code)
-    end
+    format_result(result, code, prepared, filesystem_changes)
   end
 
   defp run(quoted, policy, owner, workspace_root, filesystem_context) do
@@ -151,7 +131,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   end
 
-  defp context_workspace_root(%{workspace_root: root}) when is_binary(root), do: root
+  defp context_workspace_root(%{workspace_root: root}) when is_binary(root), do: PathSafety.canonical_path(root)
   defp context_workspace_root(_context), do: PathSafety.workspace_root()
 
   defp format_result({:ok, %{status: :ok} = result}, code, prepared, filesystem_changes) do
@@ -202,25 +182,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
     |> Jason.encode!()
   end
 
-  defp format_journal_failure(result, code, prepared, reason) do
-    %{
-      "ok" => false,
-      "tool" => name(),
-      "exit_code" => nil,
-      "stdout" => result_output(result),
-      "stderr" => to_string(reason),
-      "result" => nil,
-      "code" => code,
-      "ast_nodes" => prepared.node_count,
-      "filesystem_changes" => %{"changed_path_count" => 0},
-      "summary" => "Eeva completed, but workspace effects could not be journaled: #{reason}"
-    }
-    |> Jason.encode!()
-  end
-
-  defp result_output({:ok, %{output: output}}), do: output
-  defp result_output(_), do: ""
-
   defp success_summary(%{"changed_path_count" => count}) when is_integer(count) and count > 0,
     do: "Eeva completed and journaled #{count} changed workspace path(s)."
 
@@ -260,10 +221,10 @@ defmodule Beamcore.Agent.Tools.Eeva do
         handler.({:eeva_preview, code})
 
       _ ->
-        send(self(), {:eeva_preview, code})
+        :ok
     end
-
-    :ok
+  catch
+    _, _ -> :ok
   end
 
   defp preview_code(code) when byte_size(code) <= @max_preview_bytes, do: code

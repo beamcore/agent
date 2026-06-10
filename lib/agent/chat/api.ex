@@ -94,14 +94,7 @@ defmodule Beamcore.Agent.Chat.API do
         }
 
         request =
-          if is_list(tools) and tools != [] do
-            Map.put(request, :parallel_tool_calls, false)
-          else
-            request
-          end
-
-        request =
-          [:temperature, :top_p, :max_tokens, :parallel_tool_calls]
+          [:temperature, :top_p, :max_tokens]
           |> Enum.reduce(request, fn key, acc ->
             case Keyword.get(opts, key) do
               nil -> acc
@@ -117,14 +110,7 @@ defmodule Beamcore.Agent.Chat.API do
         params = %{model: model, messages: messages, tools: tools}
 
         params =
-          if is_list(tools) and tools != [] do
-            Map.put(params, :parallel_tool_calls, false)
-          else
-            params
-          end
-
-        params =
-          [:temperature, :top_p, :max_tokens, :parallel_tool_calls]
+          [:temperature, :top_p, :max_tokens]
           |> Enum.reduce(params, fn key, acc ->
             case Keyword.get(opts, key) do
               nil -> acc

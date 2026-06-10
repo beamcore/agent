@@ -2,6 +2,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   @moduledoc false
 
   alias Beamcore.Agent.Chat.ToolPolicy
+  alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.PathSafety
   alias Beamcore.Agent.Policy.ProjectPolicy
 
@@ -30,10 +31,15 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     Supervisor,
     Task,
     Task.Supervisor,
+    Beamcore.Agent.Chat.Session,
     Beamcore.Agent.Chat.ToolPolicy,
     Beamcore.Agent.FilesystemJournal,
+    Beamcore.Agent.FilesystemJournal.Server,
     Beamcore.Agent.PathSafety,
     Beamcore.Agent.Policy.ProjectPolicy,
+    Beamcore.Agent.RestoreCoordinator,
+    Beamcore.Agent.Runtime,
+    Beamcore.Agent.Timeline,
     Beamcore.Agent.Tools.Eeva.AtomBudget,
     Beamcore.Agent.Tools.Eeva.IODevice,
     Beamcore.Agent.Tools.Eeva.Supervisor,
@@ -52,6 +58,22 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     :slave
   ]
 
+  @blocked_model_runtime_modules [
+    Beamcore.Agent.Chat.Session,
+    Beamcore.Agent.Chat.ToolPolicy,
+    Beamcore.Agent.FilesystemJournal,
+    Beamcore.Agent.FilesystemJournal.Server,
+    Beamcore.Agent.PathSafety,
+    Beamcore.Agent.Policy.ProjectPolicy,
+    Beamcore.Agent.RestoreCoordinator,
+    Beamcore.Agent.Runtime,
+    Beamcore.Agent.Timeline,
+    Beamcore.Agent.Tools.Eeva.AtomBudget,
+    Beamcore.Agent.Tools.Eeva.IODevice,
+    Beamcore.Agent.Tools.Eeva.Supervisor,
+    Beamcore.Agent.Tools.Eeva.Worker
+  ]
+
   @blocked_system_functions ~w(
     at_exit build_info cmd_env delete_env fetch_env fetch_env! get_env get_pid halt
     no_halt? os_time put_env restart shell stop tmp_dir tmp_dir!
@@ -64,7 +86,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     require send spawn spawn_link spawn_monitor unquote unquote_splicing use
   )a
 
-  @memory_read_functions ~w(__info__ detect_org_repo recall list)a
+  @memory_read_functions ~w(__info__ detect_org_repo recall list search types overview summary)a
   @memory_write_functions ~w(remember forget clear)a
 
   @network_commands ~w(curl wget nc ncat netcat ssh scp sftp rsync ftp telnet)
@@ -80,11 +102,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   end
 
   def install(policy, workspace_root) when is_map(policy) and is_binary(workspace_root) do
-    Process.put(@process_key, %{
-      policy: policy,
-      workspace_root: PathSafety.canonical_path(workspace_root)
-    })
-
+    Process.put(@process_key, %{policy: policy, workspace_root: PathSafety.canonical_path(workspace_root)})
     :ok
   end
 
@@ -113,13 +131,13 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
       {:write, transformed_args} ->
         transformed_args
         |> authorize_file_args(:write, runtime)
-        |> call_file(function)
+        |> call_tracked_file(function, runtime)
 
       {:mixed, transformed_args, read_indexes, write_indexes} ->
         transformed_args
         |> authorize_indexed_file_args(read_indexes, :read, runtime)
         |> authorize_indexed_file_args(write_indexes, :write, runtime)
-        |> call_file(function)
+        |> call_tracked_file(function, runtime)
 
       {:error, reason} ->
         raise ArgumentError, reason
@@ -169,7 +187,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
 
       function in @memory_write_functions ->
         with :ok <- authorize_memory_write(runtime) do
-          apply(Beamcore.Memory, function, args)
+          case apply(Beamcore.Memory, function, args) do
+            {:error, reason} -> raise ArgumentError, "Memory mutation failed: #{inspect(reason)}"
+            other -> other
+          end
         else
           {:error, reason} -> raise ArgumentError, reason
         end
@@ -197,9 +218,18 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     ["#{form}/#{length(args)} is unavailable inside Eeva at line #{line(meta)}." | errors]
   end
 
+  defp validate_node({:__aliases__, meta, parts}, _policy, errors) when is_list(parts) do
+    module = Module.concat(parts)
+
+    if module in @blocked_model_runtime_modules do
+      ["References to #{inspect(module)} are unavailable inside Eeva at line #{line(meta)}." | errors]
+    else
+      errors
+    end
+  end
+
   defp validate_node(
-         {:&, meta,
-          [{:/, _slash_meta, [{{:., _dot_meta, [module_ast, function]}, _call_meta, []}, arity]}]},
+         {:&, meta, [{:/, _slash_meta, [{{:., _dot_meta, [module_ast, function]}, _call_meta, []}, arity]}]},
          _policy,
          errors
        )
@@ -225,22 +255,13 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
         errors
 
       module in @blocked_modules ->
-        [
-          "Calls to #{inspect(module)} are unavailable inside Eeva at line #{line(meta)}."
-          | errors
-        ]
+        ["Calls to #{inspect(module)} are unavailable inside Eeva at line #{line(meta)}." | errors]
 
       module == System and function in @blocked_system_functions ->
-        [
-          "System.#{function}/#{length(args)} is unavailable inside Eeva at line #{line(meta)}."
-          | errors
-        ]
+        ["System.#{function}/#{length(args)} is unavailable inside Eeva at line #{line(meta)}." | errors]
 
       module == File and function in [:cd, :cd!] ->
-        [
-          "File.#{function}/#{length(args)} is unavailable; Eeva already owns the workspace directory."
-          | errors
-        ]
+        ["File.#{function}/#{length(args)} is unavailable; Eeva already owns the workspace directory." | errors]
 
       network_module?(module) and not Map.get(policy, :allow_network, false) ->
         ["Network access through #{inspect(module)} is blocked by the active policy." | errors]
@@ -249,10 +270,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
         ["Direct access to Eeva policy internals is unavailable." | errors]
 
       is_nil(module) and not (args == [] and Keyword.get(call_meta, :no_parens, false)) ->
-        [
-          "Dynamic module invocation is unavailable because it would bypass Eeva policy checks."
-          | errors
-        ]
+        ["Dynamic module invocation is unavailable because it would bypass Eeva policy checks." | errors]
 
       true ->
         errors
@@ -301,7 +319,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     modes = Enum.at(args, 1, [])
 
     if write_modes?(modes) do
-      {:write, args}
+      {:error,
+       "File.#{function} write modes are unavailable inside Eeva because streaming writes cannot be journaled precisely. Use File.write!/2 or File.write/3 instead."}
     else
       {:read, args}
     end
@@ -317,7 +336,6 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     do: {:error, "File.#{function} is not supported inside the Eeva workspace boundary."}
 
   defp authorize_file_args([], _mode, _runtime), do: []
-
   defp authorize_file_args([path | rest], mode, runtime) do
     case authorize_path(path, mode, runtime) do
       {:ok, absolute} -> [absolute | rest]
@@ -342,6 +360,168 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
 
   defp call_file(args, function), do: apply(File, function, args)
 
+  defp call_tracked_file(args, function, runtime) when function in [:write, :write!] do
+    [path | _rest] = args
+    before_state = snapshot_before!(path, runtime)
+    result = apply(File, function, args)
+
+    if successful_file_result?(result) do
+      after_bytes = read_after_bytes!(path)
+      journal_or_raise(FilesystemJournal.record_file_write(path, before_state, after_bytes, tool: "eeva"))
+    end
+
+    result
+  end
+
+  defp call_tracked_file(args, function, runtime)
+       when function in [:mkdir, :mkdir!, :mkdir_p, :mkdir_p!] do
+    [path | _rest] = args
+    before_state = snapshot_before!(path, runtime)
+
+    missing_dirs =
+      if function in [:mkdir_p, :mkdir_p!], do: missing_directory_chain(path, runtime), else: []
+
+    result = apply(File, function, args)
+
+    if successful_file_result?(result) do
+      dirs =
+        if missing_dirs == [] do
+          if not state_exists?(before_state), do: [path], else: []
+        else
+          missing_dirs
+        end
+
+      Enum.each(dirs, fn dir ->
+        journal_or_raise(FilesystemJournal.record_mkdir(dir, tool: "eeva"))
+      end)
+    end
+
+    result
+  end
+
+  defp call_tracked_file(args, function, _runtime)
+       when function in [:rm, :rm!, :rm_rf, :rm_rf!] do
+    [path | _rest] = args
+    prepared = prepare_remove(path)
+    result = apply(File, function, args)
+
+    if match?({:ok, _prepared}, prepared) and successful_file_result?(result) do
+      {:ok, prepared} = prepared
+      journal_or_raise(FilesystemJournal.commit_prepared(prepared))
+    end
+
+    result
+  end
+
+  defp call_tracked_file(args, function, runtime) when function in [:rename, :rename!] do
+    [source, target | _rest] = args
+    prepared_source = prepare_remove!(source)
+    target_before = snapshot_before!(target, runtime)
+    result = apply(File, function, args)
+
+    if successful_file_result?(result) do
+      journal_or_raise(FilesystemJournal.commit_prepared(prepared_source))
+      after_bytes = read_after_bytes!(target)
+      journal_or_raise(FilesystemJournal.record_file_write(target, target_before, after_bytes, tool: "eeva"))
+    end
+
+    result
+  end
+
+  defp call_tracked_file(args, function, runtime) when function in [:cp, :cp!, :cp_r, :cp_r!] do
+    [_source, target | _rest] = args
+    target_before = snapshot_before!(target, runtime)
+    result = apply(File, function, args)
+
+    if successful_file_result?(result) do
+      after_bytes = read_after_bytes!(target)
+      journal_or_raise(FilesystemJournal.record_file_write(target, target_before, after_bytes, tool: "eeva"))
+    end
+
+    result
+  end
+
+  defp call_tracked_file(args, function, runtime) when function in [:touch, :touch!, :chmod, :chmod!] do
+    [path | _rest] = args
+    before_state = snapshot_before!(path, runtime)
+    result = apply(File, function, args)
+
+    if successful_file_result?(result) do
+      after_bytes = read_after_bytes!(path)
+      journal_or_raise(FilesystemJournal.record_file_write(path, before_state, after_bytes, tool: "eeva"))
+    end
+
+    result
+  end
+
+  defp call_tracked_file(args, function, runtime) when function in [:ln_s, :ln_s!] do
+    [_source, target | _rest] = args
+    target_before = snapshot_before!(target, runtime)
+    result = apply(File, function, args)
+
+    if successful_file_result?(result) do
+      journal_or_raise(FilesystemJournal.record_file_write(target, target_before, "", tool: "eeva"))
+    end
+
+    result
+  end
+
+  defp call_tracked_file(args, function, _runtime), do: apply(File, function, args)
+
+  defp snapshot_before!(path, runtime) do
+    case FilesystemJournal.snapshot_state(path, runtime.workspace_root) do
+      {:ok, state} -> state
+      {:error, reason} -> raise ArgumentError, reason
+    end
+  end
+
+  defp prepare_remove!(path) do
+    case FilesystemJournal.record_remove(path, tool: "eeva") do
+      {:ok, prepared} -> prepared
+      {:error, reason} -> raise ArgumentError, reason
+    end
+  end
+
+  defp prepare_remove(path), do: FilesystemJournal.record_remove(path, tool: "eeva")
+
+  defp journal_or_raise(:ok), do: :ok
+  defp journal_or_raise({:error, reason}), do: raise(ArgumentError, reason)
+
+  defp successful_file_result?(:ok), do: true
+  defp successful_file_result?({:ok, _}), do: true
+  defp successful_file_result?({:ok, _paths, []}), do: true
+  defp successful_file_result?(paths) when is_list(paths), do: true
+  defp successful_file_result?(_), do: false
+
+  defp state_exists?(%{"type" => "absent"}), do: false
+  defp state_exists?(_state), do: true
+
+  defp missing_directory_chain(path, runtime) do
+    workspace_root = runtime.workspace_root
+
+    path
+    |> Path.expand()
+    |> Path.relative_to(workspace_root)
+    |> Path.split()
+    |> Enum.reduce({workspace_root, []}, fn part, {parent, missing} ->
+      current = Path.join(parent, part)
+
+      if File.exists?(current) do
+        {current, missing}
+      else
+        {current, missing ++ [current]}
+      end
+    end)
+    |> elem(1)
+  end
+
+  defp read_after_bytes!(path) do
+    cond do
+      File.regular?(path) -> File.read!(path)
+      true -> ""
+    end
+  end
+
   defp authorize_path(path, mode, runtime) do
     path = to_string(path)
     allow_missing = mode == :write
@@ -349,11 +529,17 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     with {:ok, absolute} <- PathSafety.resolve(path, allow_missing: allow_missing),
          :ok <- ensure_inside_workspace(absolute, runtime.workspace_root),
          relative <- Path.relative_to(absolute, runtime.workspace_root),
+         :ok <- reject_workspace_root_write(relative, mode),
          :ok <- authorize_runtime_path(relative, mode, runtime.policy),
          :ok <- authorize_project_path(relative, mode, runtime.policy) do
       {:ok, absolute}
     end
   end
+
+  defp reject_workspace_root_write(".", :write),
+    do: {:error, "Workspace root cannot be mutated directly by Eeva."}
+
+  defp reject_workspace_root_write(_relative, _mode), do: :ok
 
   defp authorize_runtime_path(_relative, :read, %{mode: :chat}),
     do: {:error, "Filesystem access is unavailable in chat mode."}
@@ -389,21 +575,25 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   end
 
   defp authorize_memory_write(runtime) do
-    if runtime.policy.mode in [:read_only, :local_context_helper, :invalid_policy, :chat] do
-      {:error, "Memory mutation is blocked by the active #{runtime.policy.mode} policy."}
-    else
-      :ok
+    cond do
+      runtime.policy.mode in [:local_context_helper, :invalid_policy] ->
+        {:error, "Memory mutation is blocked by the active #{runtime.policy.mode} policy."}
+
+      Map.get(runtime.policy, :allow_memory_write, true) ->
+        :ok
+
+      true ->
+        {:error, "Memory mutation is blocked by the active policy."}
     end
   end
 
   defp authorize_command(command, args, runtime) do
     cond do
       command in @shell_commands ->
-        {:error,
-         "Shell interpreters are unavailable inside Eeva; invoke the executable directly."}
+        {:error, "Shell interpreters are unavailable inside Eeva; invoke the executable directly."}
 
       contains_internal_path?([command | Enum.map(args, &to_string/1)]) ->
-        {:error, "Commands cannot access BeamCore internal snapshot or recovery storage."}
+        {:error, "Commands cannot access BeamCore internal snapshot, recovery, or memory storage."}
 
       network_command?(command, args) and not Map.get(runtime.policy, :allow_network, false) ->
         {:error, "Network command #{command} is blocked by the active policy."}
@@ -413,6 +603,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
 
       runtime.policy.mode == :read_only and not read_only_command?(command, args) ->
         {:error, "Command #{command} is not permitted by the read-only policy."}
+
+      not safe_command?(command, args) ->
+        {:error,
+         "Command #{command} is not permitted inside Eeva unless it is a read-only or validation command. Use File.* APIs for workspace mutations so changes are journaled precisely."}
 
       unsafe_path_argument?(args, runtime.workspace_root) ->
         {:error, "Command arguments may not address paths outside the workspace."}
@@ -434,17 +628,23 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   end
 
   defp read_only_command?("git", [operation | _]),
-    do: operation in ["status", "diff", "log", "show", "grep", "rev-parse", "branch"]
+    do: operation in ["--version", "status", "diff", "log", "show", "grep", "rev-parse", "branch"]
 
   defp read_only_command?("mix", [operation | _]), do: operation in ["help", "--version"]
+  defp read_only_command?(command, args), do: command in @read_only_commands and "--version" in args
 
-  defp read_only_command?(command, args),
-    do: command in @read_only_commands and "--version" in args
+  defp safe_command?("git", args), do: read_only_command?("git", args)
+  defp safe_command?("mix", ["test" | _]), do: true
+  defp safe_command?("mix", ["format", "--check-formatted" | _]), do: true
+  defp safe_command?("mix", args), do: read_only_command?("mix", args)
+  defp safe_command?("make", [target | _]), do: target in ["test", "check", "validate"]
+  defp safe_command?("cargo", [operation | _]), do: operation in ["test", "check", "clippy"]
+  defp safe_command?("go", [operation | _]), do: operation in ["test", "vet"]
+  defp safe_command?(command, args), do: command in @read_only_commands and "--version" in args
 
   defp network_command?(command, args) do
     command in @network_commands or
-      (command == "git" and
-         Enum.any?(args, &(&1 in ["clone", "fetch", "pull", "push", "ls-remote"])))
+      (command == "git" and Enum.any?(args, &(&1 in ["clone", "fetch", "pull", "push", "ls-remote"])))
   end
 
   defp unsafe_path_argument?(args, workspace_root) do
@@ -452,20 +652,11 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
       value = to_string(arg)
 
       cond do
-        value == "" or String.starts_with?(value, "-") ->
-          false
-
-        URI.parse(value).scheme in ["http", "https", "ssh", "git"] ->
-          false
-
-        Path.type(value) == :absolute ->
-          not String.starts_with?(Path.expand(value), workspace_root <> "/")
-
-        String.contains?(value, "../") ->
-          true
-
-        true ->
-          false
+        value == "" or String.starts_with?(value, "-") -> false
+        URI.parse(value).scheme in ["http", "https", "ssh", "git"] -> false
+        Path.type(value) == :absolute -> not String.starts_with?(Path.expand(value), workspace_root <> "/")
+        String.contains?(value, "../") -> true
+        true -> false
       end
     end)
   end
@@ -526,9 +717,9 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   defp contains_internal_path?(values) do
     Enum.any?(values, fn value ->
       down = value |> to_string() |> String.downcase()
-
       String.contains?(down, ".beamcore/snapshots") or
-        String.contains?(down, ".beamcore/recovery")
+        String.contains?(down, ".beamcore/recovery") or
+        String.contains?(down, ".beamcore/memory")
     end)
   end
 
