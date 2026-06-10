@@ -114,7 +114,7 @@ defmodule Beamcore.TUI.Components.Activity do
              "#{selection_marker(event, selected_event_id)}#{marker(event, step)} #{event.label}",
              wrap_width
            ),
-         style: style(event.status),
+         style: event_style(event),
          wrap: false
        }, 1}
     ]
@@ -150,7 +150,7 @@ defmodule Beamcore.TUI.Components.Activity do
     [
       {%Paragraph{
          text: Enum.join(label_lines, "\n"),
-         style: style(event.status),
+         style: event_style(event),
          wrap: false
        }, label_height},
       if(args_height > 0,
@@ -196,6 +196,7 @@ defmodule Beamcore.TUI.Components.Activity do
       "state: #{event.status}",
       "target: #{event.target || "none"}",
       "branch/checkpoints: #{format_tool_args(event.args || %{})}",
+      checkpoint_reference(event),
       "summary: #{event.summary || "none"}",
       "arguments:\n#{args_str}",
       "output:\n#{to_string(event.result || "none")}"
@@ -204,6 +205,27 @@ defmodule Beamcore.TUI.Components.Activity do
     lines
     |> Enum.flat_map(fn line -> Wrap.lines(line, width) end)
   end
+
+  defp checkpoint_reference(%{checkpoint?: true, args: args}) when is_map(args) do
+    message = Map.get(args, :chat_message) || Map.get(args, "chat_message")
+    description = Map.get(args, :checkpoint_description) || Map.get(args, "checkpoint_description")
+
+    cond do
+      is_integer(message) and is_binary(description) and description != "" ->
+        "chat reference: message ##{message} · #{description}"
+
+      is_integer(message) ->
+        "chat reference: message ##{message}"
+
+      is_binary(description) and description != "" ->
+        "checkpoint description: #{description}"
+
+      true ->
+        "checkpoint reference: unavailable"
+    end
+  end
+
+  defp checkpoint_reference(_event), do: "chat reference: none"
 
   defp timestamp(%{timestamp_ms: timestamp}) when is_integer(timestamp) do
     timestamp
@@ -238,6 +260,8 @@ defmodule Beamcore.TUI.Components.Activity do
   defp status_prefix(:blocked), do: "blocked"
   defp status_prefix(:error), do: "error"
   defp status_prefix(status), do: to_string(status)
+  defp marker(%{checkpoint_active?: true}, _step), do: "◆"
+  defp marker(%{checkpoint?: true}, _step), do: "●"
   defp marker(%{status: :queued}, _step), do: "◇"
   defp marker(%{status: :running}, step), do: Enum.at(["◆", "◇", "◆", "◈"], rem(step, 4))
   defp marker(%{status: :done}, _step), do: "✓"
@@ -246,6 +270,11 @@ defmodule Beamcore.TUI.Components.Activity do
   defp marker(_event, _step), do: "·"
   defp selection_marker(%{id: id}, id), do: "> "
   defp selection_marker(_event, _selected_id), do: "  "
+  defp event_style(%{checkpoint_active?: true}), do: Theme.style(:checkpoint_active)
+  defp event_style(%{checkpoint?: true}), do: Theme.style(:checkpoint)
+  defp event_style(%{status: status}), do: style(status)
+  defp event_style(_event), do: Theme.style(:accent)
+
   defp style(:done), do: Theme.style(:done)
   defp style(:blocked), do: Theme.style(:blocked)
   defp style(:error), do: Theme.style(:error)

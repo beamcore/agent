@@ -32,7 +32,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, parsing, search, tests, Git commands, data transformations, and multi-step workflows. The runtime returns stdout, the expression result, and journaled workspace changes.",
+          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, parsing, search, tests, Git commands, data transformations, Beamcore.Helpers introspection, Beamcore.Memory access, and multi-step workflows. Runtime policy checks the parsed program and each computed side effect without confirmation prompts. The runtime returns stdout, the expression result, and journaled workspace changes.",
         parameters: %{
           type: "object",
           properties: %{
@@ -84,12 +84,18 @@ defmodule Beamcore.Agent.Tools.Eeva do
     do: encode_error("Parameters must be an object", "invalid_request")
 
   defp prepare_and_execute(code, policy) do
-    case Sandbox.prepare(code,
+    case Sandbox.prepare(code, policy,
            max_code_bytes: limit(:max_code_bytes, @default_max_code_bytes),
            max_ast_nodes: limit(:max_ast_nodes, @default_max_ast_nodes)
          ) do
-      {:ok, prepared} -> execute_prepared(code, prepared, policy)
-      {:error, reason} -> encode_error(reason, "execution_guard", code)
+      {:ok, prepared} ->
+        execute_prepared(code, prepared, policy)
+
+      {:error, "Policy violation:" <> _rest = reason} ->
+        encode_error(reason, "policy_violation", code)
+
+      {:error, reason} ->
+        encode_error(reason, "execution_guard", code)
     end
   end
 

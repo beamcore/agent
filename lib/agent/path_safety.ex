@@ -64,8 +64,27 @@ defmodule Beamcore.Agent.PathSafety do
   def error(reason), do: "Error: #{reason}"
 
   def workspace_root do
-    Process.get(:workspace_root) || Application.get_env(:agent, :workspace_root) ||
-      canonical_path(File.cwd!())
+    configured = Process.get(:workspace_root) || Application.get_env(:agent, :workspace_root)
+
+    cond do
+      is_binary(configured) and File.dir?(configured) ->
+        canonical_path(configured)
+
+      true ->
+        case File.cwd() do
+          {:ok, cwd} -> canonical_path(cwd)
+          {:error, _reason} -> fallback_workspace_root()
+        end
+    end
+  end
+
+  defp fallback_workspace_root do
+    initial = Application.get_env(:agent, :initial_workspace_root)
+
+    cond do
+      is_binary(initial) and File.dir?(initial) -> canonical_path(initial)
+      true -> canonical_path(System.tmp_dir!())
+    end
   end
 
   def configure_workspace_root(root) when is_binary(root) do
@@ -84,12 +103,10 @@ defmodule Beamcore.Agent.PathSafety do
     expanded = Path.expand(path)
 
     if File.dir?(expanded) do
-      File.cd!(expanded, fn ->
-        case System.cmd("pwd", ["-P"], stderr_to_stdout: true) do
-          {resolved, 0} -> String.trim(resolved)
-          _ -> expanded
-        end
-      end)
+      case System.cmd("pwd", ["-P"], cd: expanded, stderr_to_stdout: true) do
+        {resolved, 0} -> String.trim(resolved)
+        _ -> expanded
+      end
     else
       expanded
     end

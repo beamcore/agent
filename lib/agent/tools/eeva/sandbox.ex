@@ -1,25 +1,20 @@
 defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   @moduledoc """
-  Parses model-authored Elixir for OTP-supervised execution.
+  Parses, validates, and instruments model-authored Elixir for supervised Eeva execution.
 
-  Eeva intentionally exposes ordinary Elixir rather than a catalogue of prepared
-  capabilities. The model supplies an Elixir program; the runtime supervises the
-  process, captures output and result data, and journals workspace changes around
-  the execution.
-
-  This module only enforces source-size, identifier-budget, and AST-size limits.
-  It does not rewrite File, Path, System, Git, test, math, or process calls into
-  bespoke tools.
+  The model still writes ordinary Elixir. Policy enforcement is an execution
+  boundary: obvious violations are rejected during AST preflight and real
+  computed paths/commands are checked immediately before their side effects.
   """
 
-  alias Beamcore.Agent.Tools.Eeva.AtomBudget
+  alias Beamcore.Agent.Tools.Eeva.{AtomBudget, Policy}
 
   @type prepared :: %{quoted: Macro.t(), node_count: non_neg_integer()}
 
-  @spec prepare(binary(), keyword()) :: {:ok, prepared()} | {:error, binary()}
-  def prepare(code, opts \\ [])
+  @spec prepare(binary(), map(), keyword()) :: {:ok, prepared()} | {:error, binary()}
+  def prepare(code, policy, opts \\ [])
 
-  def prepare(code, opts) when is_binary(code) do
+  def prepare(code, policy, opts) when is_binary(code) and is_map(policy) do
     max_code_bytes = Keyword.get(opts, :max_code_bytes, 64_000)
     max_ast_nodes = Keyword.get(opts, :max_ast_nodes, 12_000)
 
@@ -30,13 +25,14 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
       true ->
         with :ok <- AtomBudget.admit(code),
              {:ok, quoted} <- parse(code),
-             {:ok, node_count} <- count_nodes(quoted, max_ast_nodes) do
-          {:ok, %{quoted: quoted, node_count: node_count}}
+             {:ok, node_count} <- count_nodes(quoted, max_ast_nodes),
+             {:ok, instrumented} <- Policy.prepare(quoted, policy) do
+          {:ok, %{quoted: instrumented, node_count: node_count}}
         end
     end
   end
 
-  def prepare(_code, _opts), do: {:error, "Eeva code must be a string."}
+  def prepare(_code, _policy, _opts), do: {:error, "Eeva code must be a string."}
 
   defp parse(code) do
     case Code.string_to_quoted(code, file: "eeva", line: 1, existing_atoms_only: true) do
@@ -48,26 +44,12 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   end
 
   defp count_nodes(quoted, max_ast_nodes) do
-    {_quoted, {count, protected_path?}} =
-      Macro.prewalk(quoted, {0, false}, fn node, {count, protected_path?} ->
-        protected_path? =
-          protected_path? or
-            (is_binary(node) and
-               (String.contains?(String.downcase(node), ".beamcore/snapshots") or
-                  String.contains?(String.downcase(node), ".beamcore/recovery")))
+    {_quoted, count} = Macro.prewalk(quoted, 0, fn node, count -> {node, count + 1} end)
 
-        {node, {count + 1, protected_path?}}
-      end)
-
-    cond do
-      protected_path? ->
-        {:error, "Eeva code cannot access BeamCore internal snapshot or recovery storage."}
-
-      count > max_ast_nodes ->
-        {:error, "Eeva code exceeds the #{max_ast_nodes}-node AST limit."}
-
-      true ->
-        {:ok, count}
+    if count > max_ast_nodes do
+      {:error, "Eeva code exceeds the #{max_ast_nodes}-node AST limit."}
+    else
+      {:ok, count}
     end
   end
 

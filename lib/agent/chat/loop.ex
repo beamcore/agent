@@ -177,7 +177,6 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> apply_session_project_policy_bypass(session)
 
     emit(opts, {:status, :thinking})
-
     context =
       if ToolPolicy.project_policy_bypassed?(policy) do
         Context.clear_policy_blocks(session.context)

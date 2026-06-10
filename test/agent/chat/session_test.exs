@@ -200,9 +200,9 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       context =
         Beamcore.Agent.Chat.Context.new(:elixir)
         |> Beamcore.Agent.Chat.Context.update_from_tool(
-          "read",
-          %{"path" => "README.md"},
-          "file content should not appear"
+          "eeva",
+          %{"code" => "File.read!(\"README.md\")"},
+          Jason.encode!(%{"ok" => true, "filesystem_changes" => %{"mutations" => []}})
         )
 
       messages = [
@@ -573,8 +573,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
           decisions: ["dec1", "dec2", "dec3", "dec4", "dec5", "dec6", "dec7"],
           blocked_attempts: ["att1", "att2", "att3", "att4"],
           known_risks: ["risk1", "risk2", "risk3", "risk4"],
-          last_validation: %{command: "test", ok: true, summary: "passed"},
-          pending_action: %{summary: "action"}
+          last_validation: %{command: "test", ok: true, summary: "passed"}
       }
 
       compacted = Beamcore.Agent.Chat.Context.compact(context)
@@ -586,7 +585,6 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert length(compacted.blocked_attempts) == 3
       assert length(compacted.known_risks) == 3
       assert compacted.last_validation == %{command: "test", ok: true, summary: "passed"}
-      assert compacted.pending_action == nil
     end
 
     test "summarize_and_rollover/3 transparently rolls over the session, preserving session_id and context" do

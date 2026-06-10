@@ -42,4 +42,17 @@ defmodule Beamcore.Agent.Policy.ProjectPolicyTest do
              ProjectPolicy.load(root)
            ) == []
   end
+
+  test "allow_write_paths permits creating the parent of a recursive pattern", %{root: root} do
+    policy =
+      ProjectPolicy.default(root)
+      |> Map.put(:loaded?, true)
+      |> Map.put(:allow_write_paths, ["allowed/**"])
+
+    assert {:ok, _} = ProjectPolicy.save(root, policy)
+    assert :ok == ProjectPolicy.allowed_write_path?(ProjectPolicy.load(root), "allowed")
+    assert :ok == ProjectPolicy.allowed_write_path?(ProjectPolicy.load(root), "allowed/file.txt")
+    assert {:error, _} = ProjectPolicy.allowed_write_path?(ProjectPolicy.load(root), "other.txt")
+  end
+
 end

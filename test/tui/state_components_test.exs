@@ -12,7 +12,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
         State.add_activity(current, "eeva", %{"code" => "step = #{n}"}, :done)
       end)
 
-    assert length(state.activity) == 240
+    assert length(state.activity) == 260
     assert hd(state.activity).label =~ "step = 260"
   end
 

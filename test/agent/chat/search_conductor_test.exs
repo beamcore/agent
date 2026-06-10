@@ -16,6 +16,7 @@ defmodule Beamcore.Agent.Chat.SearchConductorTest do
   end
 
   test "search conductor module remains available" do
+    assert {:module, SearchConductor} = Code.ensure_loaded(SearchConductor)
     assert function_exported?(SearchConductor, :preflight, 5)
   end
 end

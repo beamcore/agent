@@ -116,4 +116,127 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     refute result["ok"]
     assert result["summary"] =~ "timeout"
   end
+
+  test "read-only policy allows reads and blocks writes", %{root: root} do
+    File.write!(Path.join(root, "sample.txt"), "safe")
+    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | mode: :read_only, allowed_write_paths: []}
+
+    read = Eeva.execute(%{"code" => "File.read!(\"sample.txt\")"}, policy) |> Jason.decode!()
+    assert read["ok"]
+    assert read["result"] =~ "safe"
+
+    write =
+      Eeva.execute(%{"code" => "File.write!(\"blocked.txt\", \"no\")"}, policy)
+      |> Jason.decode!()
+
+    refute write["ok"]
+    assert write["stderr"] =~ "Workspace mutation is blocked"
+    refute File.exists?(Path.join(root, "blocked.txt"))
+  end
+
+  test "restricted write policy accepts the allowed parent and rejects other paths", %{root: root} do
+    policy = Beamcore.Agent.Chat.ToolPolicy.restricted_write_policy(["allowed/**"], ["eeva"])
+
+    allowed =
+      Eeva.execute(
+        %{"code" => "File.mkdir_p!(\"allowed\"); File.write!(\"allowed/result.txt\", \"ok\")"},
+        policy
+      )
+      |> Jason.decode!()
+
+    assert allowed["ok"]
+    assert File.read!(Path.join(root, "allowed/result.txt")) == "ok"
+
+    blocked =
+      Eeva.execute(%{"code" => "File.write!(\"other.txt\", \"no\")"}, policy)
+      |> Jason.decode!()
+
+    refute blocked["ok"]
+    refute File.exists?(Path.join(root, "other.txt"))
+  end
+
+  test "dynamic traversal is rejected at runtime" do
+    code = "path = Enum.join([\"..\", \"outside.txt\"], \"/\"); File.write!(path, \"no\")"
+    result = Eeva.execute(%{"code" => code}) |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["stderr"] =~ "traversal"
+  end
+
+  test "shell interpreters are rejected without confirmation" do
+    result =
+      Eeva.execute(%{"code" => "System.cmd(\"sh\", [\"-c\", \"echo unsafe\"])"})
+      |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["stderr"] =~ "Shell interpreters"
+  end
+
+  test "network commands obey allow_network" do
+    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | allow_network: false}
+
+    result =
+      Eeva.execute(%{"code" => "System.cmd(\"curl\", [\"https://example.com\"])"}, policy)
+      |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["stderr"] =~ "Network command"
+  end
+
+  test "Beamcore helpers expose public functions dynamically" do
+    result =
+      Eeva.execute(%{
+        "code" => "Beamcore.Helpers.info(Beamcore.Memory, :functions)"
+      })
+      |> Jason.decode!()
+
+    assert result["ok"]
+    assert result["result"] =~ "remember: 5"
+    assert result["result"] =~ "recall: 4"
+  end
+
+  test "memory reads remain available and memory writes obey read-only policy" do
+    {org, repo} = Beamcore.Memory.detect_org_repo()
+    assert :ok == Beamcore.Memory.remember(org, repo, :facts, "eeva-test", "value")
+
+    read =
+      Eeva.execute(%{
+        "code" =>
+          "{org, repo} = Beamcore.Memory.detect_org_repo(); Beamcore.Memory.recall(org, repo, :facts, \"eeva-test\")"
+      })
+      |> Jason.decode!()
+
+    assert read["ok"]
+    assert read["result"] =~ "value"
+
+    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | mode: :read_only, allowed_write_paths: []}
+
+    blocked =
+      Eeva.execute(
+        %{
+          "code" =>
+            "{org, repo} = Beamcore.Memory.detect_org_repo(); Beamcore.Memory.remember(org, repo, :facts, \"blocked\", \"no\")"
+        },
+        policy
+      )
+      |> Jason.decode!()
+
+    refute blocked["ok"]
+    assert blocked["stderr"] =~ "Memory mutation is blocked"
+  end
+
+
+  test "execution does not change the VM-global current directory", %{root: root} do
+    original_cwd = File.cwd!()
+
+    result =
+      Eeva.execute(%{
+        "code" => "{File.cwd!(), File.write!(\"cwd-safe.txt\", \"ok\")}"
+      })
+      |> Jason.decode!()
+
+    assert result["ok"]
+    assert File.cwd!() == original_cwd
+    assert File.read!(Path.join(root, "cwd-safe.txt")) == "ok"
+  end
 end

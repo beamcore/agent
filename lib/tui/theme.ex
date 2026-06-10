@@ -33,6 +33,8 @@ defmodule Beamcore.TUI.Theme do
     running: %Style{fg: @amber, modifiers: [:bold]},
     queued: %Style{fg: @blue},
     done: %Style{fg: @success},
+    checkpoint: %Style{fg: @cyan, modifiers: [:bold]},
+    checkpoint_active: %Style{fg: @amber, modifiers: [:bold]},
     blocked: %Style{fg: @amber, modifiers: [:bold]},
     error: %Style{fg: @red, modifiers: [:bold]},
     input: %Style{fg: @ice},

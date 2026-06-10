@@ -7,7 +7,7 @@ defmodule Beamcore.TUI.State do
   alias Beamcore.Agent.Core.ToolDisplay
   alias Beamcore.Agent.Policy.ProjectPolicy
 
-  @max_activity 240
+  @max_activity 500
 
   defstruct terminal: nil,
             textarea: nil,
@@ -487,7 +487,8 @@ defmodule Beamcore.TUI.State do
   defp timeline_event_to_activity(event, session) do
     checkpoint = checkpoint_for_event(session, event)
     checkpoint_id = (checkpoint && checkpoint.id) || event.checkpoint_id
-    active? = checkpoint_id == active_checkpoint_id(session)
+    checkpoint_owner? = not is_nil(checkpoint) and checkpoint.event_id == event.id
+    active? = checkpoint_owner? and checkpoint_id == active_checkpoint_id(session)
     branch = Map.get(session.branches || %{}, event.branch_id, %{})
     branch_status = branch[:status] || branch["status"] || :started
 
@@ -497,6 +498,7 @@ defmodule Beamcore.TUI.State do
         branch: event.branch_id,
         checkpoint: checkpoint_id
       }
+      |> maybe_put_checkpoint_context(if(checkpoint_owner?, do: checkpoint, else: nil))
       |> maybe_put_filesystem_revision(checkpoint)
       |> maybe_put_reversible(event.reversible)
 
@@ -511,8 +513,21 @@ defmodule Beamcore.TUI.State do
       summary: event.summary,
       result: inspect(event.metadata || %{}, pretty: true),
       args: args,
+      checkpoint?: checkpoint_owner?,
+      checkpoint_active?: active?,
       timeline_event: event
     }
+  end
+
+  defp maybe_put_checkpoint_context(args, nil), do: args
+
+  defp maybe_put_checkpoint_context(args, checkpoint) do
+    message_index = max(length(checkpoint.messages || []), 1)
+    request = checkpoint.user_request || ""
+
+    args
+    |> Map.put(:chat_message, message_index)
+    |> Map.put(:checkpoint_description, request)
   end
 
   defp maybe_put_reversible(args, value) when is_boolean(value),

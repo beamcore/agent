@@ -1,5 +1,7 @@
 ExUnit.start()
 
+{:ok, _started} = Application.ensure_all_started(:agent)
+
 policy_root =
   Path.join(System.tmp_dir!(), "beamcore_test_policy_root_#{System.unique_integer([:positive])}")
 

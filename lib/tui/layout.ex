@@ -24,7 +24,7 @@ defmodule Beamcore.TUI.Layout do
         [body, input, status] = shell(area, 0, input_height(area.height))
 
         [chat, activity] =
-          RatLayout.split(body, :horizontal, [{:percentage, 74}, {:percentage, 26}])
+          RatLayout.split(body, :horizontal, [{:percentage, 68}, {:percentage, 32}])
 
         %{
           mode: :wide,
@@ -78,6 +78,6 @@ defmodule Beamcore.TUI.Layout do
   defp input_height(height) when height < 26, do: 4
   defp input_height(_height), do: 5
 
-  defp compact_activity_height(height) when height < 24, do: 6
-  defp compact_activity_height(_height), do: 9
+  defp compact_activity_height(height) when height < 24, do: 8
+  defp compact_activity_height(_height), do: 12
 end
