@@ -143,23 +143,37 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
     filesystem_context = Keyword.get(opts, :filesystem_context)
 
     run = fn ->
+      max_output = Keyword.fetch!(opts, :max_output_bytes)
+
       {:ok, io} =
-        Beamcore.Agent.Tools.Eeva.IODevice.start_link(Keyword.fetch!(opts, :max_output_bytes))
+        Beamcore.Agent.Tools.Eeva.IODevice.start_link(max_output)
+
+      {:ok, stderr_io} =
+        Beamcore.Agent.Tools.Eeva.IODevice.start_link(max_output)
 
       previous_group_leader = Process.group_leader()
       Process.group_leader(self(), io)
 
-      try do
-        {value, _binding} =
-          Code.eval_quoted(Keyword.fetch!(opts, :quoted), [], file: "eeva", line: 1)
+      previous_stderr = swap_standard_error(stderr_io)
 
-        value = if is_function(value, 0), do: value.(), else: value
+      try do
+        {eval_result, diagnostics} =
+          Code.with_diagnostics(fn ->
+            {value, _binding} =
+              Code.eval_quoted(Keyword.fetch!(opts, :quoted), [], file: "eeva", line: 1)
+
+            if is_function(value, 0), do: value.(), else: value
+          end)
+
+        stdout = Beamcore.Agent.Tools.Eeva.IODevice.output(io)
+        stderr = Beamcore.Agent.Tools.Eeva.IODevice.output(stderr_io)
+        output = merge_captured_output(stdout, stderr, diagnostics)
 
         %{
           status: :ok,
-          output: Beamcore.Agent.Tools.Eeva.IODevice.output(io),
+          output: output,
           result:
-            value
+            eval_result
             |> inspect(
               pretty: true,
               limit: 100,
@@ -169,16 +183,22 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
         }
       catch
         kind, error ->
+          stdout = Beamcore.Agent.Tools.Eeva.IODevice.output(io)
+          stderr = Beamcore.Agent.Tools.Eeva.IODevice.output(stderr_io)
+          output = merge_captured_output(stdout, stderr, [])
+
           %{
             status: :error,
-            output: Beamcore.Agent.Tools.Eeva.IODevice.output(io),
+            output: output,
             kind: kind,
             error: error,
             stacktrace: __STACKTRACE__
           }
       after
         Process.group_leader(self(), previous_group_leader)
+        restore_standard_error(previous_stderr, stderr_io)
         stop_io_device(io)
+        stop_io_device(stderr_io)
       end
     end
 
@@ -199,6 +219,84 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
     after
       Beamcore.Agent.Tools.Eeva.Policy.clear()
     end
+  end
+
+  # Temporarily replace the global :standard_error process with our IODevice.
+  # Returns the previous :standard_error pid (or nil if not registered).
+  # This is the same pattern ExUnit.CaptureIO uses for :stderr capture.
+  defp swap_standard_error(new_pid) do
+    previous = Process.whereis(:standard_error)
+
+    if previous do
+      Process.unregister(:standard_error)
+    end
+
+    Process.register(new_pid, :standard_error)
+    previous
+  rescue
+    # If another process races us (unlikely in practice since eeva executions
+    # are serialized), fall back gracefully — stderr just won't be captured.
+    _ -> nil
+  end
+
+  defp restore_standard_error(nil, stderr_io) do
+    try do
+      Process.unregister(:standard_error)
+    rescue
+      _ -> :ok
+    end
+
+    # Re-register the stderr_io briefly to avoid a gap — but the original was
+    # nil, so there's nothing to restore. This is an edge case (e.g. in tests).
+    _ = stderr_io
+    :ok
+  end
+
+  defp restore_standard_error(previous, _stderr_io) do
+    try do
+      Process.unregister(:standard_error)
+    rescue
+      _ -> :ok
+    end
+
+    if Process.alive?(previous) do
+      Process.register(previous, :standard_error)
+    end
+
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp merge_captured_output(stdout, stderr, diagnostics) do
+    diag_text = format_diagnostics(diagnostics)
+
+    parts =
+      [stdout, stderr, diag_text]
+      |> Enum.reject(&(&1 == "" or is_nil(&1)))
+
+    Enum.join(parts, "\n")
+  end
+
+  defp format_diagnostics([]), do: ""
+
+  defp format_diagnostics(diagnostics) do
+    diagnostics
+    |> Enum.map(fn diag ->
+      severity = Map.get(diag, :severity, :warning)
+      message = Map.get(diag, :message, "")
+      position = Map.get(diag, :position, nil)
+
+      pos_str =
+        case position do
+          line when is_integer(line) -> "eeva:#{line}: "
+          {line, col} -> "eeva:#{line}:#{col}: "
+          _ -> ""
+        end
+
+      "#{pos_str}#{severity}: #{message}"
+    end)
+    |> Enum.join("\n")
   end
 
   defp stop_io_device(pid) when is_pid(pid) do
