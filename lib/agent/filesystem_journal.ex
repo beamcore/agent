@@ -8,7 +8,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
   state.
   """
 
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.PathSafety
   alias Beamcore.Agent.Timeline
   alias Beamcore.Agent.FilesystemJournal.Server
 
@@ -228,10 +228,9 @@ defmodule Beamcore.Agent.FilesystemJournal do
   def complete_command_scope(%{"workspace_root" => workspace_root, "workdir" => workdir} = scope) do
     absolute_workdir = absolute(workspace_root, workdir)
 
-    with {:ok, after_manifest} <- command_manifest(absolute_workdir, workspace_root) do
-      mutations =
-        command_manifest_mutations(scope, Map.get(scope, "baseline", %{}), after_manifest)
-
+    with {:ok, after_manifest} <- command_manifest(absolute_workdir, workspace_root),
+         {:ok, mutations} <-
+           command_manifest_mutations(scope, Map.get(scope, "baseline", %{}), after_manifest) do
       Enum.each(mutations, &append_mutation(workspace_root, &1))
 
       {:ok,
@@ -1178,25 +1177,29 @@ defmodule Beamcore.Agent.FilesystemJournal do
       |> Enum.uniq()
       |> Enum.sort()
 
-    Enum.reduce(paths, [], fn rel, acc ->
+    paths
+    |> Enum.reduce_while({:ok, []}, fn rel, {:ok, acc} ->
       before_state = Map.get(before, rel, %{"type" => "absent"})
       after_state = Map.get(after_manifest, rel, %{"type" => "absent"})
 
       cond do
         equivalent_state?(before_state, after_state) ->
-          acc
+          {:cont, {:ok, acc}}
 
         before_state["type"] == "directory" and after_state["type"] == "directory" ->
-          acc
+          {:cont, {:ok, acc}}
 
         true ->
           case command_mutation(scope, rel, before_state, after_state) do
-            {:ok, mutation} -> [mutation | acc]
-            {:error, _reason} -> acc
+            {:ok, mutation} -> {:cont, {:ok, [mutation | acc]}}
+            {:error, reason} -> {:halt, {:error, reason}}
           end
       end
     end)
-    |> Enum.reverse()
+    |> case do
+      {:ok, mutations} -> {:ok, Enum.reverse(mutations)}
+      {:error, reason} -> {:error, reason}
+    end
   end
 
   defp command_mutation(scope, rel, before_state, after_state) do

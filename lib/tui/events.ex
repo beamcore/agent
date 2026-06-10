@@ -156,12 +156,6 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event({:tool_running, name, args}, state),
     do: State.add_activity(State.set_status(state, :tool_running), name, args, :running)
 
-  def handle_runtime_event({:tool_finished, "modify_file", args, result}, state) do
-    state
-    |> State.update_activity("modify_file", args, result)
-    |> State.add_message(:tool, result)
-  end
-
   def handle_runtime_event({:tool_finished, name, args, result}, state) do
     State.update_activity(state, name, args, result)
   end

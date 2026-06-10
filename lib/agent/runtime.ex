@@ -276,13 +276,6 @@ defmodule Beamcore.Agent.Runtime do
 
     emit(state, {:status, :thinking})
 
-    session =
-      if ToolPolicy.confirmation_required?(resolved_policy) do
-        %{session | pending_user_message: content}
-      else
-        %{session | pending_user_message: nil}
-      end
-
     context =
       if ToolPolicy.project_policy_bypassed?(resolved_policy) do
         Context.clear_policy_blocks(session.context)
@@ -510,7 +503,19 @@ defmodule Beamcore.Agent.Runtime do
           end)
         end
 
-        content = Dispatcher.execute(name, args, policy)
+        filesystem_context = %{
+          session_id: state.session.session_id,
+          branch_id: state.session.branch_id,
+          checkpoint_id: state.session.active_checkpoint_id,
+          generation_id: "runtime-#{state.generation}",
+          workspace_root: state.session.workspace_root
+        }
+
+        content =
+          Beamcore.Agent.FilesystemJournal.with_context(filesystem_context, fn ->
+            Dispatcher.execute(name, args, policy)
+          end)
+
         {:tool_result, tool_call, content}
       end)
 
@@ -652,9 +657,6 @@ defmodule Beamcore.Agent.Runtime do
     cond do
       ToolPolicy.project_policy_bypassed?(policy) ->
         "Current turn policy: freedom. Exposed tools: #{tool_names}. Project policy is bypassed for this session. Previous project-policy block messages are obsolete; retry the requested tool action directly instead of asking to update policy. Hard runtime safety still applies."
-
-      Map.get(policy, :mode) == :unconfirmed ->
-        "Current turn policy: legacy_unconfirmed. Exposed tools: #{tool_names}. Mutation tools are unavailable in this legacy compatibility mode."
 
       Map.get(policy, :mode) == :restricted_write ->
         allowed_paths = Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")

@@ -1,17 +1,28 @@
 defmodule Beamcore.Agent.Tools.Eeva do
   @moduledoc """
-  Executes Elixir code under an isolated, temporary supervisor, capturing stdout/stderr and returning exit status.
+  The single model-facing execution tool in BeamCore.
 
-  Before execution the code is emitted as a `:eeva_preview` runtime event so the
-  TUI can display it for the operator to inspect. Execution is hard-capped at
-  `@timeout_ms` (1 000 ms) to keep the harness responsive.
-
-  On failure the result includes structured diagnostics: the original exception
-  message, its module, a formatted stacktrace, and a human-readable hint so the
-  calling model can self-correct.
+  Eeva accepts ordinary Elixir code, starts an OTP-supervised execution worker,
+  captures stdout and the returned value, and records workspace changes in the
+  reversible filesystem journal. It intentionally does not expose prepared
+  read/write/search/git/test sub-tools: the model writes the Elixir program it
+  needs, using the language and runtime directly.
   """
 
-  @timeout_ms 1_000
+  alias Beamcore.Agent.Chat.ToolPolicy
+  alias Beamcore.Agent.FilesystemJournal
+  alias Beamcore.Agent.FilesystemJournal.Server, as: JournalServer
+  alias Beamcore.Agent.Tools.Eeva.{Sandbox, Supervisor, Worker}
+  alias Beamcore.Agent.PathSafety
+
+  @default_timeout_ms 30_000
+  @default_max_memory_bytes 256 * 1024 * 1024
+  @default_max_reductions 40_000_000
+  @default_max_output_bytes 256_000
+  @default_max_result_bytes 128_000
+  @default_max_code_bytes 128_000
+  @default_max_ast_nodes 24_000
+  @max_preview_bytes 16_000
 
   def name, do: "eeva"
 
@@ -21,15 +32,14 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Executes an Elixir code string under an isolated supervisor. " <>
-            "The code is shown in the TUI before execution. " <>
-            "Hard timeout: #{@timeout_ms}ms. Returns stdout, exit code, and diagnostics on failure.",
+          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, parsing, search, tests, Git commands, data transformations, and multi-step workflows. The runtime returns stdout, the expression result, and journaled workspace changes.",
         parameters: %{
           type: "object",
           properties: %{
             code: %{
               type: "string",
-              description: "The Elixir code to evaluate and execute."
+              description:
+                "Elixir source code to evaluate. Examples: File.read!(\"README.md\"), Path.wildcard(\"lib/**/*.ex\"), System.cmd(\"git\", [\"status\"]), System.cmd(\"mix\", [\"test\"]), or an arbitrary multi-expression Elixir program. A returned zero-arity function is invoked automatically."
             }
           },
           required: ["code"]
@@ -38,288 +48,221 @@ defmodule Beamcore.Agent.Tools.Eeva do
     }
   end
 
-  def execute(params) do
-    code = Map.get(params, "code")
+  def execute(params),
+    do: execute(params, Process.get(:beamcore_tool_policy) || ToolPolicy.default())
 
-    cond do
-      is_nil(code) or String.trim(code) == "" ->
-        error_result("No code provided")
+  def execute(params, policy) when is_map(params) and is_map(policy) do
+    code = Map.get(params, "code") || Map.get(params, :code)
 
-      true ->
-        emit_preview(code)
-        run_supervised(code)
+    try do
+      cond do
+        not is_binary(code) or String.trim(code) == "" ->
+          encode_error("No code provided", "invalid_request")
+
+        true ->
+          emit_preview(preview_code(code))
+          prepare_and_execute(code, policy)
+      end
+    rescue
+      error ->
+        encode_error(
+          "Unexpected Eeva failure: #{Exception.message(error)}",
+          "internal_error",
+          code
+        )
+    catch
+      kind, reason ->
+        encode_error(
+          "Unexpected Eeva #{kind}: #{inspect(reason)}",
+          "internal_error",
+          code
+        )
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # TUI preview
-  # ---------------------------------------------------------------------------
+  def execute(_params, _policy),
+    do: encode_error("Parameters must be an object", "invalid_request")
 
-  defp emit_preview(code) do
-    case Process.get(:event_handler) do
-      handler when is_function(handler, 1) ->
-        handler.({:eeva_preview, code})
-
-      _ ->
-        # Fallback: walk $ancestors looking for a TUI-connected Agent state.
-        case find_tui_and_parent() do
-          {parent_pid, tui_pid} when is_pid(parent_pid) and is_pid(tui_pid) ->
-            send(tui_pid, {:runtime_event, parent_pid, {:eeva_preview, code}})
-
-          _ ->
-            :ok
-        end
+  defp prepare_and_execute(code, policy) do
+    case Sandbox.prepare(code,
+           max_code_bytes: limit(:max_code_bytes, @default_max_code_bytes),
+           max_ast_nodes: limit(:max_ast_nodes, @default_max_ast_nodes)
+         ) do
+      {:ok, prepared} -> execute_prepared(code, prepared, policy)
+      {:error, reason} -> encode_error(reason, "execution_guard", code)
     end
   end
 
-  defp find_tui_and_parent do
-    (Process.get(:"$ancestors") || [])
-    |> Enum.find_value({nil, nil}, fn pid ->
-      if is_pid(pid) and Process.alive?(pid) do
-        try do
-          case Agent.get(pid, & &1, 100) do
-            %{tui_pid: tui_pid} when is_pid(tui_pid) -> {pid, tui_pid}
-            _ -> nil
-          end
-        catch
-          _, _ -> nil
-        end
-      end
-    end)
-  end
+  defp execute_prepared(code, prepared, policy) do
+    owner = self()
+    filesystem_context = FilesystemJournal.context()
+    workspace_root = context_workspace_root(filesystem_context)
 
-  # ---------------------------------------------------------------------------
-  # Supervised execution
-  # ---------------------------------------------------------------------------
-
-  defp run_supervised(code) do
-    task_fun = fn ->
-      {:ok, io} = StringIO.open("")
-      Process.group_leader(self(), io)
-
-      try do
-        {result, _bindings} = Code.eval_string(code)
-        IO.puts("Returned: #{inspect(result)}")
-        {:ok, {_in, output}} = StringIO.close(io)
-        {:ok, output}
-      catch
-        kind, error ->
-          stacktrace = __STACKTRACE__
-          IO.puts("Error: #{Exception.format(kind, error, stacktrace)}")
-          {:ok, {_in, output}} = StringIO.close(io)
-          {:error, kind, error, stacktrace, output}
-      end
+    execute = fn ->
+      execute_with_scope(code, prepared, policy, owner, workspace_root, filesystem_context)
     end
 
-    {:ok, sup} = Task.Supervisor.start_link()
-    task = Task.Supervisor.async_nolink(sup, task_fun)
+    JournalServer.transaction(workspace_root, execute)
+  end
 
-    result =
-      case Task.yield(task, @timeout_ms) do
-        {:ok, {:ok, output}} ->
-          success_result(output, code)
+  defp execute_with_scope(code, prepared, policy, owner, workspace_root, filesystem_context) do
+    with {:ok, scope} <-
+           FilesystemJournal.begin_command_scope("eeva", "elixir_eval", workspace_root,
+             context: filesystem_context,
+             command_kind: "eeva"
+           ) do
+      result = run(prepared.quoted, policy, owner, workspace_root, filesystem_context)
 
-        {:ok, {:error, kind, error, stacktrace, output}} ->
-          diagnostics = build_diagnostics(kind, error, stacktrace, code)
-          failure_result(output, diagnostics, code)
-
-        {:exit, {:crash, {:error, error}, output}} when is_binary(output) ->
-          diagnostics = build_diagnostics(:error, error, [], code)
-          failure_result(output, diagnostics, code)
-
-        {:exit, reason} ->
-          output = extract_output(reason)
-          diagnostics = build_exit_diagnostics(reason, code)
-          failure_result(output, diagnostics, code)
-
-        nil ->
-          Task.shutdown(task, :brutal_kill)
-          timeout_result(code)
+      case FilesystemJournal.complete_command_scope(scope) do
+        {:ok, filesystem_changes} -> format_result(result, code, prepared, filesystem_changes)
+        {:error, reason} -> format_journal_failure(result, code, prepared, reason)
       end
-
-    Supervisor.stop(sup)
-    result
+    else
+      {:error, reason} -> encode_error(reason, "journal_error", code)
+    end
   end
 
-  # ---------------------------------------------------------------------------
-  # Diagnostics builders
-  # ---------------------------------------------------------------------------
+  defp run(quoted, policy, owner, workspace_root, filesystem_context) do
+    opts = [
+      quoted: quoted,
+      owner: owner,
+      policy: policy,
+      workspace_root: workspace_root,
+      filesystem_context: filesystem_context,
+      timeout_ms: limit(:timeout_ms, @default_timeout_ms),
+      max_memory_bytes: limit(:max_memory_bytes, @default_max_memory_bytes),
+      max_reductions: limit(:max_reductions, @default_max_reductions),
+      max_output_bytes: limit(:max_output_bytes, @default_max_output_bytes),
+      max_result_bytes: limit(:max_result_bytes, @default_max_result_bytes)
+    ]
 
-  defp build_diagnostics(kind, raw_error, stacktrace, code) do
-    formatted_error = Exception.format(kind, raw_error, stacktrace)
-
-    # Normalize Erlang error terms (e.g. {:badkey, :b}) into Elixir structs (%KeyError{}).
-    error = Exception.normalize(kind, raw_error, stacktrace)
-
-    error_module =
-      case error do
-        %{__struct__: mod} -> inspect(mod)
-        _ -> inspect(kind)
-      end
-
-    error_message =
-      case error do
-        %{__struct__: _} -> Exception.message(error)
-        _ -> inspect(raw_error)
-      end
-
-    formatted_trace =
-      case stacktrace do
-        [] ->
-          "(no stacktrace available)"
-
-        trace ->
-          trace
-          |> Enum.take(8)
-          |> Exception.format_stacktrace()
-      end
-
-    hint = diagnose_hint(kind, error, code)
-
-    %{
-      "summary" => "Execution failed: #{compact(error_message, 120)}",
-      "error_type" => error_module,
-      "error_message" => error_message,
-      "formatted" => formatted_error,
-      "stacktrace" => formatted_trace,
-      "hint" => hint
-    }
+    with {:ok, pid} <- Supervisor.start_execution(opts) do
+      Worker.await(pid)
+    else
+      {:error, reason} -> {:error, :supervisor_start, reason}
+    end
   end
 
-  defp build_exit_diagnostics(reason, _code) do
-    %{
-      "summary" => "Process exited: #{compact(inspect(reason), 120)}",
-      "error_type" => "exit",
-      "error_message" => inspect(reason),
-      "formatted" => inspect(reason, pretty: true),
-      "stacktrace" => "(process exited — no stacktrace)",
-      "hint" =>
-        "The evaluated code caused the process to exit abnormally. Check for calls to System.halt/1, exit/1, or linked process crashes."
-    }
-  end
+  defp context_workspace_root(%{workspace_root: root}) when is_binary(root), do: root
+  defp context_workspace_root(_context), do: PathSafety.workspace_root()
 
-  defp diagnose_hint(:error, %CompileError{description: desc}, _code) do
-    "Compilation failed: #{desc}. Check syntax, missing end/do blocks, or undefined variables."
-  end
-
-  defp diagnose_hint(:error, %TokenMissingError{} = err, _code) do
-    "Syntax error: #{Exception.message(err)}. Check for missing end/do blocks or closing delimiters."
-  end
-
-  defp diagnose_hint(:error, %SyntaxError{} = err, _code) do
-    "Syntax error: #{Exception.message(err)}. Check for typos, mismatched brackets, or invalid tokens."
-  end
-
-  defp diagnose_hint(
-         :error,
-         %UndefinedFunctionError{module: mod, function: fun, arity: arity},
-         _code
-       ) do
-    "#{inspect(mod)}.#{fun}/#{arity} is not defined. Verify the module is loaded and the function exists with the correct arity."
-  end
-
-  defp diagnose_hint(:error, %ArgumentError{message: msg}, _code) do
-    "Bad argument: #{msg}. Check the types passed to the function."
-  end
-
-  defp diagnose_hint(:error, %RuntimeError{message: msg}, _code) do
-    "Runtime error: #{msg}."
-  end
-
-  defp diagnose_hint(:error, %FunctionClauseError{module: mod, function: fun}, _code) do
-    "No clause in #{inspect(mod)}.#{fun}/? matched the given arguments. Verify the argument shape."
-  end
-
-  defp diagnose_hint(:error, %MatchError{term: term}, _code) do
-    "Pattern match failed on: #{compact(inspect(term), 100)}. The right-hand side did not match the left-hand pattern."
-  end
-
-  defp diagnose_hint(:error, %KeyError{key: key, term: term}, _code) do
-    "Key #{inspect(key)} not found in #{compact(inspect(term), 80)}."
-  end
-
-  defp diagnose_hint(:throw, value, _code) do
-    "Code threw: #{compact(inspect(value), 100)}. Use try/catch if this is expected."
-  end
-
-  defp diagnose_hint(_kind, _error, _code) do
-    "Review the stacktrace above and verify that all modules, functions, and arguments are correct."
-  end
-
-  # ---------------------------------------------------------------------------
-  # Result formatters
-  # ---------------------------------------------------------------------------
-
-  defp success_result(output, code) do
+  defp format_result({:ok, %{status: :ok} = result}, code, prepared, filesystem_changes) do
     %{
       "ok" => true,
       "tool" => name(),
       "exit_code" => 0,
-      "stdout" => output,
+      "stdout" => result.output,
       "stderr" => "",
+      "result" => result.result,
       "code" => code,
-      "summary" => "Elixir code executed successfully."
+      "ast_nodes" => prepared.node_count,
+      "filesystem_changes" => filesystem_changes,
+      "summary" => success_summary(filesystem_changes)
     }
     |> Jason.encode!()
   end
 
-  defp failure_result(output, %{} = diagnostics, code) do
+  defp format_result({:ok, %{status: :error} = result}, code, prepared, filesystem_changes) do
     %{
       "ok" => false,
       "tool" => name(),
       "exit_code" => 1,
-      "stdout" => output,
-      "stderr" => "",
+      "stdout" => result.output,
+      "stderr" => Exception.format(result.kind, result.error, result.stacktrace),
+      "result" => nil,
       "code" => code,
-      "summary" => diagnostics["summary"],
-      "diagnostics" => diagnostics
+      "ast_nodes" => prepared.node_count,
+      "filesystem_changes" => filesystem_changes,
+      "summary" => "Eeva program raised #{inspect(result.error)}."
     }
     |> Jason.encode!()
   end
 
-  defp timeout_result(code) do
-    %{
-      "ok" => false,
-      "tool" => name(),
-      "exit_code" => 1,
-      "stdout" => "",
-      "stderr" => "",
-      "code" => code,
-      "summary" => "Execution timed out after #{@timeout_ms}ms.",
-      "diagnostics" => %{
-        "summary" => "Execution timed out after #{@timeout_ms}ms.",
-        "error_type" => "timeout",
-        "error_message" => "The code did not complete within #{@timeout_ms}ms.",
-        "formatted" => "Timeout: code exceeded the #{@timeout_ms}ms execution limit.",
-        "stacktrace" => "(killed — no stacktrace)",
-        "hint" =>
-          "The code took longer than #{@timeout_ms}ms. " <>
-            "Reduce the work (e.g., limit file reads, avoid network calls with long timeouts, avoid Process.sleep)."
-      }
-    }
-    |> Jason.encode!()
-  end
-
-  defp error_result(reason) do
+  defp format_result({:error, kind, reason}, code, prepared, filesystem_changes) do
     %{
       "ok" => false,
       "tool" => name(),
       "exit_code" => nil,
       "stdout" => "",
-      "stderr" => "",
-      "code" => "",
-      "summary" => reason
+      "stderr" => inspect(reason),
+      "result" => nil,
+      "code" => code,
+      "ast_nodes" => prepared.node_count,
+      "filesystem_changes" => filesystem_changes,
+      "summary" => execution_error_summary(kind, reason)
     }
     |> Jason.encode!()
   end
 
-  # ---------------------------------------------------------------------------
-  # Helpers
-  # ---------------------------------------------------------------------------
+  defp format_journal_failure(result, code, prepared, reason) do
+    %{
+      "ok" => false,
+      "tool" => name(),
+      "exit_code" => nil,
+      "stdout" => result_output(result),
+      "stderr" => to_string(reason),
+      "result" => nil,
+      "code" => code,
+      "ast_nodes" => prepared.node_count,
+      "filesystem_changes" => %{"changed_path_count" => 0},
+      "summary" => "Eeva completed, but workspace effects could not be journaled: #{reason}"
+    }
+    |> Jason.encode!()
+  end
 
-  defp extract_output({_, _, output}) when is_binary(output), do: output
-  defp extract_output(_), do: ""
+  defp result_output({:ok, %{output: output}}), do: output
+  defp result_output(_), do: ""
 
-  defp compact(text, limit) when byte_size(text) <= limit, do: text
-  defp compact(text, limit), do: String.slice(text, 0, max(limit - 3, 0)) <> "..."
+  defp success_summary(%{"changed_path_count" => count}) when is_integer(count) and count > 0,
+    do: "Eeva completed and journaled #{count} changed workspace path(s)."
+
+  defp success_summary(_), do: "Eeva completed successfully."
+
+  defp execution_error_summary(:timeout, timeout),
+    do: "Eeva exceeded the #{timeout}ms execution timeout."
+
+  defp execution_error_summary(:memory_limit, bytes),
+    do: "Eeva exceeded the memory budget at #{bytes} bytes."
+
+  defp execution_error_summary(:reduction_limit, reductions),
+    do: "Eeva exceeded the reduction budget at #{reductions} reductions."
+
+  defp execution_error_summary(kind, reason),
+    do: "Eeva execution failed (#{kind}): #{inspect(reason)}"
+
+  defp encode_error(message, classification, code \\ nil) do
+    %{
+      "ok" => false,
+      "tool" => name(),
+      "exit_code" => nil,
+      "stdout" => "",
+      "stderr" => message,
+      "result" => nil,
+      "code" => code,
+      "classification" => classification,
+      "filesystem_changes" => %{"changed_path_count" => 0},
+      "summary" => message
+    }
+    |> Jason.encode!()
+  end
+
+  defp emit_preview(code) do
+    send(self(), {:eeva_preview, code})
+    :ok
+  end
+
+  defp preview_code(code) when byte_size(code) <= @max_preview_bytes, do: code
+
+  defp preview_code(code) do
+    binary_part(code, 0, @max_preview_bytes) <> "\n# ... preview truncated"
+  end
+
+  defp limit(name, default) do
+    env = "BEAMCORE_EEVA_" <> (name |> Atom.to_string() |> String.upcase())
+
+    case Integer.parse(System.get_env(env, "")) do
+      {value, ""} when value > 0 -> value
+      _ -> default
+    end
+  end
 end

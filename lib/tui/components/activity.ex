@@ -240,7 +240,6 @@ defmodule Beamcore.TUI.Components.Activity do
   defp status_prefix(status), do: to_string(status)
   defp marker(%{status: :queued}, _step), do: "◇"
   defp marker(%{status: :running}, step), do: Enum.at(["◆", "◇", "◆", "◈"], rem(step, 4))
-  defp marker(%{status: :done, name: "image_generation"}, _step), do: "◈"
   defp marker(%{status: :done}, _step), do: "✓"
   defp marker(%{status: :blocked}, _step), do: "!"
   defp marker(%{status: :error}, _step), do: "×"

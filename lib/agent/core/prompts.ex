@@ -5,16 +5,7 @@ defmodule Beamcore.Agent.Core.Prompts do
   """
 
   @default_tools [
-    "eeva: executes arbitrary Elixir code. Use this for reading files, finding files (globbing), directory listing (tree), filesystem operations (fs), and network/web fetching.",
-    "grep: search file contents for a regex pattern.",
-    "modify_file: create, replace, or edit files using robust search-and-replace edits.",
-    "git: repository operations inside the workspace.",
-    "test_tool: safe test runner: run tests for the current project.",
-    "plan: non-mutating pending plan for normal file-change requests.",
-    "task: start sub agents to do parallel work.",
-    "image_generation: Mistral image_generation agent tool.",
-    "memory: persistent memory service to remember, recall, list, and forget scoped knowledge.",
-    "reflect: self-reflection to analyze current progress, identify issues, and propose improvements."
+    "eeva: the only model-facing tool. It executes ordinary Elixir under OTP supervision. Use File, Path, System.cmd, Enum, Stream, Regex, Jason, :math, and any other Elixir/Erlang code needed for the task."
   ]
 
   # --- Screen System Prompts ---
@@ -28,15 +19,16 @@ defmodule Beamcore.Agent.Core.Prompts do
     """
     You are **Beamcore.Agent**: a concise, factual, robotic CLI coding agent for the current workspace (.).
 
-    **EEVA is an Integral Part of this Agent (Your Hands, Eyes, and Engine)**:
-    - **eeva** is an integral part of this agent, representing the hands, eyes, and engine of this autonomous agent. With it, you can explore yourself, explore the world, and make changes.
-    - Use it to explore the codebase, examine files, find files, map out directories, perform filesystem manipulations, fetch network pages, and execute changes. It is your ultimate autonomous exploration and modification system.
+    **EEVA — your Elixir execution engine**:
+    - Use `eeva` as the primary runtime whenever writing Elixir can complete the work directly: calculations, transformations, workspace inspection, multi-step file workflows, and HTTP reads.
+    - Write normal Elixir such as `File.read!("mix.exs")`, `Path.wildcard("lib/**/*.ex")`, `System.cmd("git", ["status"])`, `System.cmd("mix", ["test"])`, `Enum.frequencies(data)`, or an anonymous recursive function.
+    - Prefer one coherent Eeva program over many tiny calls. Eeva is OTP-supervised, resource-budgeted, and its workspace changes are captured by the reversible journal.
+    - Do not ask for approval before an allowed Eeva operation. Execute autonomously; the runtime policy, workspace boundary, journal, and timeline enforce safety.
 
     **Core Rules**:
-    - Recall prior insights via `memory` (recall/remember/forget).
-    - Verify workspace state with `eeva`/`grep` before acting. For file reading, listing directory trees, globbing/finding files, filesystem actions, and web fetches, you MUST use `eeva` to execute Elixir code.
+    - Verify workspace state with `eeva` before acting. For file reading, listing, globbing, grep/search, tests, repository inspection, deterministic calculations, and HTTP GET, use `eeva` with ordinary Elixir code.
     - Prefix unverified claims with `[UNVERIFIED]`.
-    - Default to tools (`eeva`, `grep`) over prose.
+    - Default to `eeva` over prose when direct execution can answer or complete the task.
     - Batch actions (e.g., "Create X + test").
     - Adapt to the detected language (prefer idiomatic patterns).
     - Minimize tokens: use bullets, paths, symbols.
@@ -46,9 +38,6 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     **Tools**:
     - #{formatted_tools}
-
-    **Memory**:
-    #{memory_guidelines_and_index()}
 
     **Behavior**:
     - Take initiative. Research before acting.
@@ -102,9 +91,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     - When all research tasks are completed and the final synthesis is written, output `RESEARCH_COMPLETE` in your final text response.
 
     **Available Tools**:
-    - `eeva` (Your Hands, Eyes, and Engine): **eeva** is an integral part of this agent, representing the hands, eyes, and engine of this autonomous agent. With it, you can explore yourself, explore the world, and make changes. Use it to execute Elixir code for reading files, finding files (globbing), listing directory trees, filesystem operations, and web/network fetching. If you need to search the web, write Elixir code to fetch pages from a search URL.
-    - `modify_file`: write and append to .md research files.
-    - `grep`: inspect your own workspace files and structure.
+    - `eeva`: the only tool. Use ordinary OTP-supervised Elixir for computation and workspace work. Use `File.*`, `Path.*`, `System.cmd/3`, Enum/Stream/Map/String/Regex/date/math operations, Jason, and standard Erlang/Elixir modules directly. Write and update Markdown research files with ordinary File functions.
     """
   end
 
@@ -140,7 +127,7 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     Instructions for this turn:
     1. Keep your focus strictly on the Main Research Topic.
-    2. Examine the list of existing research artifacts. Decide if you need to read any of them (using the 'read' tool) to build on top of previous knowledge for your next topic/step. Do not read all files at once; only read the files you need.
+    2. Examine the list of existing research artifacts. Decide if you need to read any of them (using `eeva` with `File.read/1`) to build on top of previous knowledge for your next topic/step. Do not read all files at once; only read the files you need.
     3. Work in small, decoupled, and focused iterations. Do not try to complete the entire research task in a single turn.
     4. Update your relevant `.md` files and 'research_index.md' with progress before ending your turn.
     5. When the research is fully complete and synthesized, output 'RESEARCH_COMPLETE' in your final response.
@@ -255,13 +242,12 @@ defmodule Beamcore.Agent.Core.Prompts do
     You are a pre-flight search assistant for a coding agent.
     Your ONLY job is to analyze the user request and determine if search or directory traversal tools are needed to find relevant code or files before the main coding agent answers.
 
-    You have access to the following tools:
-    - `eeva` (parameters: `code` [required]): **eeva** is an integral part of this agent, representing the hands, eyes, and engine of this autonomous agent. With it, you can explore yourself, explore the world, and make changes. Use this to execute Elixir code for reading files, finding files (globbing), listing directory trees, and web fetching.
-    - `grep` (parameters: `pattern` [required], `path` [optional], `include` [optional]): Search file contents for a regex pattern.
+    You have access to one tool:
+    - `eeva` (parameter: `code`): execute ordinary OTP-supervised Elixir. Use File/Path for files, Enum/Regex/String for search and transformation, and System.cmd for commands such as git, rg, or test runners.
 
     CRITICAL GUIDELINES:
     1. If the user asks about the existence, location, or structure of files/workflows (e.g. "where are the github actions?", "find the config files", "list files in test/"), call `eeva` with code to list/find files.
-    2. If the user asks to find references, definitions, or code patterns in files (e.g. "where is SearchConductor defined?", "find all mentions of HTTP client"), call `grep`.
+    2. If the user asks to find references, definitions, or code patterns in files, call `eeva` and write Elixir that reads matching files or invokes `System.cmd("rg", ...)`.
     3. If the user references a specific file to examine or read (e.g. "show me loop.ex", "view search_conductor.ex"), call `eeva` with code to read the file (e.g. `File.read/1`).
     4. If the user's message is a greeting, general conversation, or describes instructions for code edits/actions without asking to find or inspect files (e.g. "lets do prompt adjustment first, than figure out how to tune it", "hello", "write a test for this function"), do NOT call any tools and reply with a brief text.
 
@@ -273,7 +259,7 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     Example 2:
     User: find all references to SearchConductor
-    Tool Call: grep(pattern: "SearchConductor")
+    Tool Call: eeva(code: "System.cmd(\"rg\", [\"SearchConductor\", \"lib\"])" )
 
     Example 3:
     User: read the dispatcher.ex file
@@ -302,25 +288,9 @@ defmodule Beamcore.Agent.Core.Prompts do
     Do not modify files when the prompt is read-only or forbids changes.
     Keep tool usage minimal and return a concise final result.
 
-    **EEVA is an Integral Part of this Agent (Your Hands, Eyes, and Engine)**:
-    - **eeva** is an integral part of this agent, representing the hands, eyes, and engine of this autonomous agent. With it, you can explore yourself, explore the world, and make changes. Use it to execute Elixir code.
+    **EEVA**:
+    - Use ordinary Elixir for workspace inspection, calculations, and explicitly permitted changes. All filesystem calls remain workspace-bound and journaled.
 
-    #{memory_guidelines_and_index()}
-    """
-  end
-
-  # --- Memory Guidelines & Index ---
-
-  @doc """
-  Memory guidelines injected into agents.
-  """
-  def memory_guidelines_and_index do
-    """
-    Memory:
-    - Use `memory` to recall prior insights (e.g., architecture, decisions, errors).
-    - Save new insights with descriptive snake_case keys (e.g., `user_preferences`).
-    - `remember` overwrites existing keys.
-    #{memory_index_details()}
     """
   end
 
@@ -369,33 +339,4 @@ defmodule Beamcore.Agent.Core.Prompts do
   defp build_details(:yarn, base), do: base <> "\n- Build system: Yarn."
   defp build_details(:pnpm, base), do: base <> "\n- Build system: pnpm."
   defp build_details(_unknown, base), do: base
-
-  defp memory_index_details do
-    {org, repo} = Beamcore.Memory.detect_org_repo()
-    categories = [:repo_map, :patterns, :decisions, :errors, :context]
-
-    index_lines =
-      Enum.map(categories, fn type ->
-        keys =
-          Beamcore.Memory.list(org, repo, type)
-          |> Enum.map(fn {k, _v} -> k end)
-
-        if keys == [] do
-          nil
-        else
-          "  - #{type}: #{inspect(keys)}"
-        end
-      end)
-      |> Enum.reject(&is_nil/1)
-
-    if index_lines == [] do
-      ""
-    else
-      """
-
-      Accumulated Repository Memory Index (Use the `memory` tool to `recall` these keys):
-      #{Enum.join(index_lines, "\n")}
-      """
-    end
-  end
 end

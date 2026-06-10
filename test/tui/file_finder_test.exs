@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.FileFinderTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.TUI.FileFinder
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.PathSafety
 
   describe "parse/2" do
     test "returns :no_file_query when @ is absent" do

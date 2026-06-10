@@ -14,10 +14,9 @@ same provider contract. Models are data, not separate implementations.
 
 - full-screen TUI with chat, activity timeline, provider selector, autocomplete,
   multiline input, and `@` file search;
-- unified guarded `modify_file` tool with exact operations, checksums, atomic
-  writes, reread verification, and structured diffs;
+- reversible, journaled workspace writes with reread verification and structured diffs;
 - workspace-bound PathSafety and optional project policy;
-- parallel sub-agents with provider-specific scheduling;
+- model-authored parallel work through ordinary Elixir/OTP primitives inside Eeva;
 - provider-neutral routing and per-provider cooldowns;
 - optional local context helper, disabled by default;
 - persistent memory, ledger, provider configuration, and login data;
@@ -216,7 +215,7 @@ BEAMCORE_SNAPSHOT_MAX_TOTAL_BYTES=104857600
 
 When a destructive mutation cannot be snapshotted within policy limits, the tool
 returns an error and leaves the filesystem unchanged.
-Command attribution scans exclude BeamCore internals, `.git`, and common
+Command attribution scans exclude BeamCore internals, `.beamcore`, and common
 disposable build/dependency directories such as `_build`, `deps`, and
 `node_modules`; source files, untracked files, and ignored files inside the
 workspace remain attributable when changed by BeamCore-started commands.
@@ -237,7 +236,7 @@ There is no automatic Gemma selection.
 
 Any discovered local model may be selected. The helper receives only a reduced
 read-only tool set for workspace search and context preparation. It cannot call
-`modify_file`, destructive filesystem operations, command execution, git
+`eeva`, destructive filesystem operations, command execution, eeva
 mutation, or recursive sub-agents.
 
 If the helper is unavailable, times out, or produces an invalid result, the
@@ -391,30 +390,49 @@ filtered through PathSafety, including symlink-escape protection. Build output,
 dependencies, and ignored paths should not be used as model context unless
 explicitly requested.
 
-## Tools
+## Eeva: the only model-facing tool
 
-| Tool | Purpose |
-|---|---|
-| `read` | Read workspace files and directories. |
-| `grep` | Search file contents. |
-| `glob` | Find files by pattern. |
-| `tree` | Show a compact workspace tree. |
-| `modify_file` | Create or modify files through guarded transactional operations. |
-| `fs` | Limited filesystem operations with explicit destructive guards. |
-| `git` | Bounded repository operations. Allowed Git commands run inside a command mutation scope so hook-written workspace files are journaled. `git clone` and `git restore` remain disabled until they have journal-aware implementations. |
-| `test_tool` | Detect and run the project test/build system. |
-| `task` | Delegate bounded work to sub-agents. |
-| `memory` | Store and recall repository-scoped knowledge. |
-| `plan` | Record a non-mutating plan. |
-| `reflect` | Review current work with bounded context. |
-| `web_get` | Optional explicit HTTP GET. |
-| `image_generation` | Optional image generation provider boundary. |
-| `eeva` | Executes Elixir code under an isolated, temporary supervisor, capturing stdout/stderr and returning exit status. |
+BeamCore exposes exactly one function tool to every tool-enabled model session:
+`eeva(code)`. The model does not choose from prepared read, write, grep, Git,
+test, planning, memory, task, or image tools. It writes the Elixir program needed
+for the current step and receives captured stdout, the returned value, execution
+metadata, and journaled workspace changes.
 
-`modify_file` rejects missing or ambiguous anchors, invalid ranges, binary
-files, path escapes, no-op changes, and checksum mismatches. It applies edits in
-memory, writes atomically, rereads the file, verifies the result, and returns a
-structured diff and checksums.
+Examples:
+
+```elixir
+File.read!("README.md")
+```
+
+```elixir
+Path.wildcard("lib/**/*.ex")
+|> Enum.filter(fn path -> String.contains?(File.read!(path), "GenServer") end)
+```
+
+```elixir
+System.cmd("git", ["status"], stderr_to_stdout: true)
+```
+
+```elixir
+System.cmd("mix", ["test"], stderr_to_stdout: true)
+```
+
+```elixir
+fib = fn fib, n -> if n < 2, do: n, else: fib.(fib, n - 1) + fib.(fib, n - 2) end
+fib.(fib, 35)
+```
+
+Eeva runs each program under its own OTP-supervised worker. BeamCore applies
+execution timeout, heap, reductions, source, AST, stdout, result, and identifier
+budgets; monitors the caller; stops stale work after interrupt/rewind/fork; and
+wraps the whole execution in the filesystem journal. The model remains
+autonomous: permitted work executes immediately, while policy rejection and
+resource failures are automatic runtime outcomes rather than confirmation
+prompts.
+
+There are no hidden `Eeva.grep`, `Eeva.git`, `Eeva.test`, or equivalent prepared
+capabilities. Search, repository work, validation, networking, calculations,
+file operations, and concurrency are expressed with ordinary Elixir/Erlang code.
 
 ## Workspace and policy safety
 
@@ -430,26 +448,18 @@ Example:
 ```json
 {
   "version": 1,
-  "deny_paths": [".env", ".env.*", "secrets/**", "_build/**", "deps/**", ".git/**"],
+  "deny_paths": [".env", ".env.*", "secrets/**", "_build/**", "deps/**", ".beamcore/**"],
   "read_only_paths": ["mix.lock"],
   "allow_write_paths": ["lib/**", "test/**", "README.md", "scratch/**"],
   "tool_permissions": {
-    "read": "allow",
-    "grep": "allow",
-    "glob": "allow",
-    "tree": "allow",
-    "modify_file": "confirm",
-    "fs": "confirm",
-    "git": "allow",
-    "test_tool": "allow",
-    "task": "deny"
+    "eeva": "allow"
   }
 }
 ```
 
 ## Rate limiting and concurrency
 
-Parallel sub-agents remain supported. Provider calls pass through
+Parallel model work may be expressed directly with Elixir/OTP primitives inside Eeva. Provider calls pass through
 `Beamcore.Provider.Scheduler`, keyed by provider, account fingerprint, and
 model. A remote provider cooldown does not block unrelated local-model work.
 The legacy global limiter remains only for compatibility paths that have not

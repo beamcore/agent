@@ -1,0 +1,42 @@
+defmodule Beamcore.Agent.Tools.Eeva.Supervisor do
+  @moduledoc """
+  Dynamic OTP supervisor for isolated Eeva executions.
+
+  Every model-authored program gets a temporary worker. The supervisor limits
+  concurrent executions so one model turn cannot exhaust the VM by starting an
+  unbounded number of evaluators.
+  """
+
+  use DynamicSupervisor
+
+  @default_max_children 8
+
+  def start_link(opts \\ []) do
+    DynamicSupervisor.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  @impl true
+  def init(_opts) do
+    DynamicSupervisor.init(
+      strategy: :one_for_one,
+      max_children: env_limit("BEAMCORE_EEVA_MAX_CONCURRENCY", @default_max_children)
+    )
+  end
+
+  def start_execution(opts) when is_list(opts) do
+    case Process.whereis(__MODULE__) do
+      nil ->
+        {:error, :eeva_supervisor_not_started}
+
+      _pid ->
+        DynamicSupervisor.start_child(__MODULE__, {Beamcore.Agent.Tools.Eeva.Worker, opts})
+    end
+  end
+
+  defp env_limit(name, default) do
+    case Integer.parse(System.get_env(name, "")) do
+      {value, ""} when value > 0 -> value
+      _ -> default
+    end
+  end
+end

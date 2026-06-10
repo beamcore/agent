@@ -1,149 +1,48 @@
 defmodule Beamcore.Agent.Chat.ContextTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   alias Beamcore.Agent.Chat.{Context, ToolPolicy}
 
-  test "tracks inspected files from read-like tools without duplicates" do
-    context =
-      Context.new(:elixir, :mix)
-      |> Context.update_from_tool("read", %{"path" => "README.md"}, "full content is ignored")
-      |> Context.update_from_tool("read", %{"path" => "README.md"}, "full content is ignored")
-      |> Context.update_from_tool("grep", %{"path" => "lib"}, "many matches")
-
-    assert MapSet.to_list(context.inspected_files) |> Enum.sort() == ["README.md", "lib"]
-    refute Context.summary(context) =~ "full content is ignored"
-  end
-
-  test "tracks modified files from write, edit, fs, and patch tools" do
-    patch = """
-    --- /dev/null
-    +++ b/scratch/a.ex
-    @@ -0,0 +1 @@
-    +ok
-    """
-
-    context =
-      Context.new(:elixir, :mix)
-      |> Context.update_from_tool(
-        "modify_file",
-        %{"path" => "scratch/a.ex"},
-        "Successfully wrote"
-      )
-      |> Context.update_from_tool(
-        "modify_file",
-        %{"path" => "scratch/a_test.exs"},
-        "Successfully updated"
-      )
-      |> Context.update_from_tool("fs", %{"operation" => "mkdir", "path" => "scratch"}, "ok")
-      |> Context.update_from_tool("modify_file", %{"patch_content" => patch}, "Patch applied")
-
-    assert "scratch/a.ex" in context.modified_files
-    assert "scratch/a_test.exs" in context.modified_files
-    assert "scratch" in context.modified_files
-  end
-
-  test "records last validation summary from mix validate" do
-    result = Jason.encode!(%{"ok" => true, "summary" => "Validation passed."})
-
-    context =
-      Context.new(:elixir, :mix)
-      |> Context.update_from_tool("mix", %{"command" => "validate"}, result)
-
-    assert context.last_validation == %{
-             command: "validate",
-             ok: true,
-             summary: "Validation passed."
-           }
-
-    assert Context.summary(context) =~ "Last validation: mix validate passed"
-  end
-
-  test "plan tool remains informational and does not create pending action" do
+  test "tracks workspace mutations reported by eeva" do
     result =
-      Beamcore.Agent.Tools.Plan.execute(%{
-        "summary" => "Create a scratch module",
-        "create_files" => ["scratch/policy_test.ex"],
-        "allowed_tools" => ["modify_file", "mix"],
-        "validation" => "mix test scratch/policy_test.exs"
+      Jason.encode!(%{
+        "ok" => true,
+        "filesystem_changes" => %{
+          "mutations" => [
+            %{"path" => "lib/a.ex"},
+            %{"path" => "lib/b.ex", "target_path" => "lib/c.ex"}
+          ]
+        }
       })
 
-    context = Context.new(:elixir, :mix) |> Context.update_from_tool("plan", %{}, result)
+    context = Context.new(:elixir, :mix) |> Context.update_from_tool("eeva", %{}, result)
 
-    assert context.pending_action == nil
-    refute Context.summary(context) =~ "Pending action"
-    refute Context.summary(context) =~ "defmodule"
+    assert "lib/a.ex" in context.modified_files
+    assert "lib/b.ex" in context.modified_files
+    assert "lib/c.ex" in context.modified_files
   end
 
-  test "records compact blocked attempts" do
-    context =
-      Context.new(:elixir, :mix)
-      |> Context.update_from_tool(
-        "modify_file",
-        %{"path" => "eval/a.ex"},
-        "Error: Tool call blocked by restricted-write policy: eval/a.ex is not allowed."
-      )
-
-    assert ["modify_file eval/a.ex"] == context.blocked_attempts
+  test "ignores non-eeva historical tool names" do
+    context = Context.new(:elixir, :mix)
+    assert Context.update_from_tool(context, "modify_file", %{"path" => "x"}, "ok") == context
   end
 
-  test "clear_policy_blocks removes stale blocked policy context" do
+  test "user request keeps autonomous eeva constraints" do
     context =
-      Context.new(:elixir, :mix)
-      |> Context.update_from_tool(
-        "modify_file",
-        %{"path" => "scratch/a.ex"},
-        "Error: Tool call blocked by project policy: scratch/a.ex is denied."
-      )
-
-    context = %{
-      context
-      | active_constraints: [
-          "Restricted writes only: scratch/a.ex.",
-          "Current turn is read-only." | context.active_constraints
-        ]
-    }
-
-    cleared = Context.clear_policy_blocks(context)
-
-    assert cleared.blocked_attempts == []
-
-    refute Enum.any?(
-             cleared.active_constraints,
-             &String.starts_with?(&1, "Restricted writes only")
-           )
-
-    refute Enum.any?(cleared.active_constraints, &String.starts_with?(&1, "Current turn"))
-    assert "No shell tool." in cleared.active_constraints
-  end
-
-  test "summary is compact and truncates large lists safely" do
-    context =
-      Enum.reduce(1..30, Context.new(:elixir, :mix), fn i, context ->
-        Context.update_from_tool(context, "read", %{"path" => "lib/file_#{i}.ex"}, "content")
-      end)
+      Context.new(:elixir, :mix) |> Context.from_user_request("fix it", ToolPolicy.default())
 
     summary = Context.summary(context)
-
-    assert String.length(summary) <= 1_515
-    assert summary =~ "Already inspected:"
-    assert summary =~ "..."
-    refute summary =~ "file content"
+    assert summary =~ "All executable work goes through Eeva"
+    assert summary =~ "fix it"
   end
 
-  test "current task is set from final complete message, not partial fragments" do
-    partial = """
-    Policy:
-    mode: restricted_write
-    allowed_write_paths:
-    - scratch/a.ex
-    """
+  test "records compact eeva policy failures" do
+    result = Jason.encode!(%{"ok" => false, "summary" => "Eeva execution is blocked by policy."})
 
-    final = partial <> "\nImplement module."
+    context =
+      Context.new(:elixir, :mix)
+      |> Context.update_from_tool("eeva", %{"code" => "File.write!(\"a\", \"b\")"}, result)
 
-    policy = ToolPolicy.from_user_message(final)
-    context = Context.from_user_request(Context.new(:elixir, :mix), final, policy)
-
-    assert context.current_task =~ "Implement module"
-    assert context.active_constraints |> Enum.any?(&String.contains?(&1, "scratch/a.ex"))
+    assert Context.summary(context) =~ "Blocked attempts"
   end
 end

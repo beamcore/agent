@@ -7,15 +7,13 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   bypass hard path safety, tool policy, or workspace bounds.
   """
 
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.PathSafety
 
   @config_path ".beamcore/policy.json"
   @example_path ".beamcore/policy.example.json"
   @protected_paths [@config_path]
   @process_bypass_key {__MODULE__, :bypassed}
-  @known_tools ~w(eeva grep modify_file git task test_tool plan image_generation memory reflect)
-  @write_tools ~w(modify_file image_generation)
-  @read_tools ~w(grep)
+  @known_tools ~w(eeva)
 
   defstruct loaded?: false,
             valid?: true,
@@ -48,7 +46,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   def config_path, do: @config_path
   def example_path, do: @example_path
   def known_tools, do: @known_tools
-  def permissions, do: ~w(allow confirm deny)
+  def permissions, do: ~w(allow deny)
 
   def bypassed?, do: Process.get(@process_bypass_key, false)
 
@@ -136,7 +134,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     do: update_list(policy, :allow_write_paths, pattern, :remove)
 
   def set_tool_permission(%__MODULE__{} = policy, tool, permission)
-      when tool in @known_tools and permission in ["allow", "confirm", "deny"] do
+      when tool in @known_tools and permission in ["allow", "deny"] do
     %{policy | tool_permissions: Map.put(policy.tool_permissions, tool, permission)}
   end
 
@@ -309,55 +307,22 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
 
   defp tool_exposed?(_name, _runtime_policy, %__MODULE__{loaded?: false}), do: true
 
-  defp tool_exposed?(name, runtime_policy, %__MODULE__{} = project_policy) do
+  defp tool_exposed?(name, _runtime_policy, %__MODULE__{} = project_policy) do
     case Map.get(project_policy.tool_permissions, name, "allow") do
       "allow" -> true
       "deny" -> false
-      "confirm" -> confirm_satisfied?(name, runtime_policy)
       _unknown -> false
     end
   end
 
-  defp confirm_satisfied?(name, %{mode: mode})
-       when name in @write_tools and mode in [:unrestricted, :development, :restricted_write],
-       do: true
+  defp allow_tool_paths(policy, "eeva", args) do
+    read_paths = path_values(args, ["path", "workdir"])
+    write_paths = path_values(args, ["path", "output_path"])
 
-  defp confirm_satisfied?(name, _runtime_policy) when name in @write_tools, do: false
-  defp confirm_satisfied?(_name, _runtime_policy), do: true
-
-  defp allow_tool_paths(policy, name, args) when name in @read_tools do
-    args
-    |> path_values(["filePath", "path"])
-    |> allow_all(policy, :read)
-  end
-
-  defp allow_tool_paths(policy, "modify_file", args),
-    do: args |> path_values(["path"]) |> allow_all(policy, :write)
-
-  defp allow_tool_paths(policy, "image_generation", args),
-    do: args |> path_values(["output_path"]) |> allow_all(policy, :write)
-
-  defp allow_tool_paths(policy, "plan", args) do
-    args
-    |> plan_paths()
-    |> allow_all(policy, :write)
-  end
-
-  defp allow_tool_paths(policy, "git", args) do
-    args
-    |> path_values(["path", "workdir"])
-    |> allow_all(policy, :read)
-  end
-
-  defp allow_tool_paths(policy, name, args)
-       when name in ~w(python node make go rust terraform ruby bazel) do
-    args
-    |> path_values(["workdir"])
-    |> case do
-      [] -> ["."]
-      paths -> paths
+    with :ok <- allow_all(read_paths, policy, :read),
+         :ok <- allow_all(write_paths, policy, :write) do
+      :ok
     end
-    |> allow_all(policy, :read)
   end
 
   defp allow_tool_paths(_policy, _name, _args), do: :ok
@@ -417,12 +382,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
     |> Enum.reject(&(&1 in [nil, ""]))
   end
 
-  defp plan_paths(args) do
-    ["create_files", "modify_files", "delete_files"]
-    |> Enum.flat_map(&(Map.get(args, &1, []) |> List.wrap()))
-    |> Enum.reject(&(&1 in [nil, ""]))
-  end
-
   defp matches_any?(relative, patterns), do: Enum.any?(patterns, &match_pattern?(relative, &1))
 
   defp match_pattern?(relative, pattern) do
@@ -458,7 +417,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   defp tool_permissions(values) when is_map(values) do
     values
     |> Enum.filter(fn {tool, value} ->
-      tool in @known_tools and value in ["allow", "confirm", "deny"]
+      tool in @known_tools and value in ["allow", "deny"]
     end)
     |> Map.new()
   end
@@ -520,7 +479,6 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
   end
 
   defp permission_rank("deny"), do: 0
-  defp permission_rank("confirm"), do: 1
   defp permission_rank("allow"), do: 2
   defp permission_rank(_), do: 2
 
@@ -563,22 +521,7 @@ defmodule Beamcore.Agent.Policy.ProjectPolicy do
       "read_only_paths" => ["mix.lock", "config/prod.exs"],
       "allow_write_paths" => ["lib/**", "test/**", "README.md", "generated/**"],
       "tool_permissions" => %{
-        "eeva" => "allow",
-        "grep" => "allow",
-        "modify_file" => "allow",
-        "git" => "allow",
-        "mix" => "allow",
-        "memory" => "allow",
-        "python" => "allow",
-        "node" => "allow",
-        "make" => "allow",
-        "go" => "allow",
-        "rust" => "allow",
-        "terraform" => "deny",
-        "ruby" => "allow",
-        "bazel" => "allow",
-        "image_generation" => "allow",
-        "task" => "deny"
+        "eeva" => "allow"
       }
     }
   end

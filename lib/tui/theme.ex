@@ -47,7 +47,6 @@ defmodule Beamcore.TUI.Theme do
   def border(:thinking), do: style(:border_hot)
   def border(:local_search), do: style(:border_hot)
   def border(:tool_running), do: style(:running)
-  def border(:waiting_for_confirmation), do: style(:running)
   def border(:error), do: style(:error)
   def border(_status), do: style(:border)
 end

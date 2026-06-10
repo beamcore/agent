@@ -78,6 +78,6 @@ defmodule Beamcore.TUI.Layout do
   defp input_height(height) when height < 26, do: 4
   defp input_height(_height), do: 5
 
-  defp compact_activity_height(height) when height < 24, do: 3
-  defp compact_activity_height(_height), do: 4
+  defp compact_activity_height(height) when height < 24, do: 6
+  defp compact_activity_height(_height), do: 9
 end
