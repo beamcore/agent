@@ -80,7 +80,11 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   end
 
   def install(policy, workspace_root) when is_map(policy) and is_binary(workspace_root) do
-    Process.put(@process_key, %{policy: policy, workspace_root: PathSafety.canonical_path(workspace_root)})
+    Process.put(@process_key, %{
+      policy: policy,
+      workspace_root: PathSafety.canonical_path(workspace_root)
+    })
+
     :ok
   end
 
@@ -194,7 +198,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   end
 
   defp validate_node(
-         {:&, meta, [{:/, _slash_meta, [{{:., _dot_meta, [module_ast, function]}, _call_meta, []}, arity]}]},
+         {:&, meta,
+          [{:/, _slash_meta, [{{:., _dot_meta, [module_ast, function]}, _call_meta, []}, arity]}]},
          _policy,
          errors
        )
@@ -220,13 +225,22 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
         errors
 
       module in @blocked_modules ->
-        ["Calls to #{inspect(module)} are unavailable inside Eeva at line #{line(meta)}." | errors]
+        [
+          "Calls to #{inspect(module)} are unavailable inside Eeva at line #{line(meta)}."
+          | errors
+        ]
 
       module == System and function in @blocked_system_functions ->
-        ["System.#{function}/#{length(args)} is unavailable inside Eeva at line #{line(meta)}." | errors]
+        [
+          "System.#{function}/#{length(args)} is unavailable inside Eeva at line #{line(meta)}."
+          | errors
+        ]
 
       module == File and function in [:cd, :cd!] ->
-        ["File.#{function}/#{length(args)} is unavailable; Eeva already owns the workspace directory." | errors]
+        [
+          "File.#{function}/#{length(args)} is unavailable; Eeva already owns the workspace directory."
+          | errors
+        ]
 
       network_module?(module) and not Map.get(policy, :allow_network, false) ->
         ["Network access through #{inspect(module)} is blocked by the active policy." | errors]
@@ -235,7 +249,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
         ["Direct access to Eeva policy internals is unavailable." | errors]
 
       is_nil(module) and not (args == [] and Keyword.get(call_meta, :no_parens, false)) ->
-        ["Dynamic module invocation is unavailable because it would bypass Eeva policy checks." | errors]
+        [
+          "Dynamic module invocation is unavailable because it would bypass Eeva policy checks."
+          | errors
+        ]
 
       true ->
         errors
@@ -300,6 +317,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     do: {:error, "File.#{function} is not supported inside the Eeva workspace boundary."}
 
   defp authorize_file_args([], _mode, _runtime), do: []
+
   defp authorize_file_args([path | rest], mode, runtime) do
     case authorize_path(path, mode, runtime) do
       {:ok, absolute} -> [absolute | rest]
@@ -381,7 +399,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   defp authorize_command(command, args, runtime) do
     cond do
       command in @shell_commands ->
-        {:error, "Shell interpreters are unavailable inside Eeva; invoke the executable directly."}
+        {:error,
+         "Shell interpreters are unavailable inside Eeva; invoke the executable directly."}
 
       contains_internal_path?([command | Enum.map(args, &to_string/1)]) ->
         {:error, "Commands cannot access BeamCore internal snapshot or recovery storage."}
@@ -418,11 +437,14 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
     do: operation in ["status", "diff", "log", "show", "grep", "rev-parse", "branch"]
 
   defp read_only_command?("mix", [operation | _]), do: operation in ["help", "--version"]
-  defp read_only_command?(command, args), do: command in @read_only_commands and "--version" in args
+
+  defp read_only_command?(command, args),
+    do: command in @read_only_commands and "--version" in args
 
   defp network_command?(command, args) do
     command in @network_commands or
-      (command == "git" and Enum.any?(args, &(&1 in ["clone", "fetch", "pull", "push", "ls-remote"])))
+      (command == "git" and
+         Enum.any?(args, &(&1 in ["clone", "fetch", "pull", "push", "ls-remote"])))
   end
 
   defp unsafe_path_argument?(args, workspace_root) do
@@ -430,11 +452,20 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
       value = to_string(arg)
 
       cond do
-        value == "" or String.starts_with?(value, "-") -> false
-        URI.parse(value).scheme in ["http", "https", "ssh", "git"] -> false
-        Path.type(value) == :absolute -> not String.starts_with?(Path.expand(value), workspace_root <> "/")
-        String.contains?(value, "../") -> true
-        true -> false
+        value == "" or String.starts_with?(value, "-") ->
+          false
+
+        URI.parse(value).scheme in ["http", "https", "ssh", "git"] ->
+          false
+
+        Path.type(value) == :absolute ->
+          not String.starts_with?(Path.expand(value), workspace_root <> "/")
+
+        String.contains?(value, "../") ->
+          true
+
+        true ->
+          false
       end
     end)
   end
@@ -495,6 +526,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   defp contains_internal_path?(values) do
     Enum.any?(values, fn value ->
       down = value |> to_string() |> String.downcase()
+
       String.contains?(down, ".beamcore/snapshots") or
         String.contains?(down, ".beamcore/recovery")
     end)

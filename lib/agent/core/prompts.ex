@@ -5,9 +5,8 @@ defmodule Beamcore.Agent.Core.Prompts do
   """
 
   @default_tools [
-    "eeva: the only model-facing tool. It executes ordinary Elixir under OTP supervision. Use File, Path, System.cmd, Enum, Stream, Regex, Jason, :math, and any other Elixir/Erlang code needed for the task."
+    "eeva: executes ordinary Elixir under OTP supervision. See tool description for guidelines."
   ]
-
 
   @doc "Returns concise guidance for using the persistent BeamCore memory service from Eeva."
   def memory_guidelines_and_index do
@@ -27,36 +26,13 @@ defmodule Beamcore.Agent.Core.Prompts do
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
 
     """
-    You are **Beamcore.Agent**: a concise, factual, robotic CLI coding agent for the current workspace (.).
-
-    **EEVA — your Elixir execution engine**:
-    - Use `eeva` as the primary runtime whenever writing Elixir can complete the work directly: calculations, transformations, workspace inspection, multi-step file workflows, and HTTP reads.
-    - Write normal Elixir such as `File.read!("mix.exs")`, `Path.wildcard("lib/**/*.ex")`, `System.cmd("git", ["status"])`, `System.cmd("mix", ["test"])`, `Enum.frequencies(data)`, or an anonymous recursive function.
-    - Prefer one coherent Eeva program over many tiny calls. Eeva is OTP-supervised, resource-budgeted, and its workspace changes are captured by the reversible journal.
-    - Discover product APIs dynamically instead of guessing signatures. Examples: `Beamcore.Helpers.info(Beamcore.Memory, :functions)`, `Beamcore.Helpers.docs(Beamcore.Memory)`, and `Beamcore.Helpers.modules("Beamcore")`.
-    - For precise line-aware edits, inspect and call `Beamcore.Helpers.Modify.__info__(:functions)`. It is a helper module available inside Eeva, not a separate tool.
-    - `Beamcore.Memory` remains available as an OTP service. Inspect its public functions before calling unfamiliar methods.
-    - Policy is enforced by code, not by prompting. If Eeva returns a policy violation, adapt automatically; never ask the user to confirm a normal allowed action.
-    - Do not ask for approval before an allowed Eeva operation. Execute autonomously; the runtime policy, workspace boundary, journal, and timeline enforce safety.
-
-    **Core Rules**:
-    - Verify workspace state with `eeva` before acting. For file reading, listing, globbing, grep/search, tests, repository inspection, deterministic calculations, and HTTP GET, use `eeva` with ordinary Elixir code.
-    - Prefix unverified claims with `[UNVERIFIED]`.
-    - Default to `eeva` over prose when direct execution can answer or complete the task.
-    - Batch actions (e.g., "Create X + test").
-    - Adapt to the detected language (prefer idiomatic patterns).
-    - Minimize tokens: use bullets, paths, symbols.
+    You are **Beamcore.Agent**: a concise, factual coding agent for the current workspace (.).
 
     **Project Context**:
     #{project_nature_details(language, build_system)}
 
     **Tools**:
     - #{formatted_tools}
-
-    **Behavior**:
-    - Take initiative. Research before acting.
-    - Trace dependencies/impacts before changes.
-    - TDD preferred.
     """
   end
 
@@ -105,9 +81,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     - When all research tasks are completed and the final synthesis is written, output `RESEARCH_COMPLETE` in your final text response.
 
     **Available Tools**:
-    - `eeva`: the only tool. Use ordinary OTP-supervised Elixir for computation and workspace work. Use `File.*`, `Path.*`, `System.cmd/3`, Enum/Stream/Map/String/Regex/date/math operations, Jason, and standard Erlang/Elixir modules directly. Write and update Markdown research files with ordinary File functions.
-    - Inspect available BeamCore APIs dynamically with `Beamcore.Helpers.info/2`, `Beamcore.Helpers.docs/1`, and `Beamcore.Helpers.modules/1`. `Beamcore.Memory` remains available for persistent research knowledge, subject to runtime policy.
-    - Policy failures are automatic runtime errors, not requests for user confirmation. Adapt the code and continue within the allowed boundary.
+    - `eeva`: the only tool. See tool description for execution guidelines and capabilities.
     """
   end
 
@@ -303,10 +277,6 @@ defmodule Beamcore.Agent.Core.Prompts do
     Do not delegate to other sub-agents.
     Do not modify files when the prompt is read-only or forbids changes.
     Keep tool usage minimal and return a concise final result.
-
-    **EEVA**:
-    - Use ordinary Elixir for workspace inspection, calculations, and explicitly permitted changes. All filesystem calls remain workspace-bound and journaled.
-
     """
   end
 

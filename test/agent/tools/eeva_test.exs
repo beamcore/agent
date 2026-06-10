@@ -119,7 +119,12 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
   test "read-only policy allows reads and blocks writes", %{root: root} do
     File.write!(Path.join(root, "sample.txt"), "safe")
-    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | mode: :read_only, allowed_write_paths: []}
+
+    policy = %{
+      Beamcore.Agent.Chat.ToolPolicy.default()
+      | mode: :read_only,
+        allowed_write_paths: []
+    }
 
     read = Eeva.execute(%{"code" => "File.read!(\"sample.txt\")"}, policy) |> Jason.decode!()
     assert read["ok"]
@@ -209,7 +214,11 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert read["ok"]
     assert read["result"] =~ "value"
 
-    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | mode: :read_only, allowed_write_paths: []}
+    policy = %{
+      Beamcore.Agent.Chat.ToolPolicy.default()
+      | mode: :read_only,
+        allowed_write_paths: []
+    }
 
     blocked =
       Eeva.execute(
@@ -224,7 +233,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     refute blocked["ok"]
     assert blocked["stderr"] =~ "Memory mutation is blocked"
   end
-
 
   test "execution does not change the VM-global current directory", %{root: root} do
     original_cwd = File.cwd!()

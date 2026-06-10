@@ -177,6 +177,7 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> apply_session_project_policy_bypass(session)
 
     emit(opts, {:status, :thinking})
+
     context =
       if ToolPolicy.project_policy_bypassed?(policy) do
         Context.clear_policy_blocks(session.context)
@@ -743,8 +744,10 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp normalize_tool_calls(%{"tool_calls" => tool_calls} = message) when is_list(tool_calls) do
+    single_tool_calls = if length(tool_calls) > 1, do: [List.first(tool_calls)], else: tool_calls
+
     fixed_tool_calls =
-      Enum.map(tool_calls, fn tool_call ->
+      Enum.map(single_tool_calls, fn tool_call ->
         tool_call
         |> Map.put("type", "function")
         |> Map.delete("index")
