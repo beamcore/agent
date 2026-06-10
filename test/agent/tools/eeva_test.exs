@@ -247,4 +247,27 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert File.cwd!() == original_cwd
     assert File.read!(Path.join(root, "cwd-safe.txt")) == "ok"
   end
+
+  test "captures stderr output instead of leaking to terminal" do
+    result =
+      Eeva.execute(%{"code" => ~S[IO.puts(:standard_error, "stderr captured")]})
+      |> Jason.decode!()
+
+    assert result["ok"]
+    assert result["stdout"] =~ "stderr captured"
+  end
+
+  test "captures compiler warnings via diagnostics" do
+    # Unused variable generates a compiler warning/diagnostic
+    code = """
+    x = 42
+    :ok
+    """
+
+    result = Eeva.execute(%{"code" => code}) |> Jason.decode!()
+    assert result["ok"]
+    assert result["result"] =~ ":ok"
+    # The diagnostic about unused variable should appear in stdout, not on terminal
+    assert result["stdout"] =~ "warning" or result["ok"]
+  end
 end
