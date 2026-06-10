@@ -266,7 +266,7 @@ defmodule Beamcore.TUI.Components.Chat do
   defp eeva_preview_bubble(code, wrap_width) do
     first_line = %Line{
       spans: [
-        %Span{content: "⚡ EEVA — code to execute:", style: Theme.style(:accent)}
+        %Span{content: "⚡ EEVA", style: Theme.style(:accent)}
       ]
     }
 
