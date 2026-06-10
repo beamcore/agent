@@ -133,12 +133,66 @@ defmodule Beamcore.MemoryTest do
         assert File.exists?(Path.expand(fallback_dets))
         assert file_mtime(real_default) == real_default_mtime
       after
+        stop_memory!()
         close_fallback_memory_store()
-        restart_memory!()
         File.rm_rf!(Path.expand(fallback_dets))
       end
     end)
+
+    restart_memory!()
   end
 
-  # --- Agent Memory Tool Tests ---
+  defp with_app_env(key, value, fun) when is_function(fun, 0) do
+    previous = Application.get_env(:agent, key)
+    Application.put_env(:agent, key, value)
+
+    try do
+      fun.()
+    after
+      if is_nil(previous) do
+        Application.delete_env(:agent, key)
+      else
+        Application.put_env(:agent, key, previous)
+      end
+    end
+  end
+
+  defp stop_memory! do
+    case Process.whereis(Memory) do
+      nil -> :ok
+      pid -> GenServer.stop(pid)
+    end
+  end
+
+  defp restart_memory! do
+    case Process.whereis(Memory) do
+      nil ->
+        case Memory.start_link([]) do
+          {:ok, _pid} -> :ok
+          {:error, {:already_started, _pid}} -> :ok
+        end
+
+      _pid ->
+        :ok
+    end
+  end
+
+  defp close_fallback_memory_store do
+    if :dets.info(:beamcore_memory_store) != :undefined do
+      :dets.close(:beamcore_memory_store)
+    end
+
+    if :ets.info(:beamcore_memory_store) != :undefined do
+      :ets.delete(:beamcore_memory_store)
+    end
+
+    :ok
+  end
+
+  defp file_mtime(path) do
+    case File.stat(path, time: :posix) do
+      {:ok, stat} -> stat.mtime
+      {:error, :enoent} -> nil
+    end
+  end
 end

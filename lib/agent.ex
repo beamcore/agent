@@ -19,6 +19,7 @@ defmodule Beamcore.Agent do
   Start the Beamcore.Agent application.
   """
   def start(_type, _args) do
+    remember_initial_workspace()
     maybe_connect_ledger_node()
 
     children = [
@@ -41,6 +42,15 @@ defmodule Beamcore.Agent do
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  defp remember_initial_workspace do
+    if is_nil(Application.get_env(:agent, :initial_workspace_root)) do
+      case File.cwd() do
+        {:ok, cwd} -> Application.put_env(:agent, :initial_workspace_root, Path.expand(cwd))
+        {:error, _reason} -> :ok
+      end
+    end
   end
 
   defp maybe_connect_ledger_node do

@@ -14,6 +14,7 @@ defmodule Beamcore.Agent.Chat.Context do
             active_constraints: [],
             current_task: nil,
             blocked_attempts: [],
+            pending_action: nil,
             known_risks: []
 
   @max_summary_chars 1_500
@@ -58,6 +59,7 @@ defmodule Beamcore.Agent.Chat.Context do
   def update_from_tool(%__MODULE__{} = context, "eeva", args, result) do
     context
     |> maybe_record_blocked_attempt("eeva", args, result)
+    |> record_eeva_inspected_files(args)
     |> update_eeva(result)
   end
 
@@ -69,6 +71,7 @@ defmodule Beamcore.Agent.Chat.Context do
     [
       "Known session context:",
       "- Project type: #{format_project_type(context.project_type)}",
+      list_line("Inspected this session", context.inspected_files),
       list_line("Modified this session", context.modified_files),
       list_line("Active constraints", context.active_constraints),
       list_line("Decisions", context.decisions),
@@ -79,6 +82,21 @@ defmodule Beamcore.Agent.Chat.Context do
     |> Enum.reject(&is_nil/1)
     |> Enum.join("\n")
     |> compact_text(@max_summary_chars)
+  end
+
+
+  defp record_eeva_inspected_files(context, args) do
+    code = Map.get(args, "code") || Map.get(args, :code) || ""
+
+    paths =
+      Regex.scan(~r/File\.(?:read|read!|stream!|stat|stat!|lstat|lstat!|exists\?|dir\?|regular\?)\(\s*["']([^"']+)["']/, code,
+        capture: :all_but_first
+      )
+      |> List.flatten()
+
+    Enum.reduce(paths, context, fn path, current ->
+      %{current | inspected_files: MapSet.put(current.inspected_files, normalize_path(path))}
+    end)
   end
 
   defp update_eeva(context, result) do

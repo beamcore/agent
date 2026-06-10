@@ -3,7 +3,12 @@ defmodule Beamcore.Agent.Discovery.DetectorTest do
   alias Beamcore.Agent.Discovery.Detector
 
   setup do
-    test_dir = "test_discovery_dir"
+    test_dir =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_discovery_#{System.unique_integer([:positive, :monotonic])}"
+      )
+
     File.mkdir_p!(test_dir)
 
     on_exit(fn ->

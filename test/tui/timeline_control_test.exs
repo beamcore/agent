@@ -329,6 +329,37 @@ defmodule Beamcore.TUI.TimelineControlTest do
     assert is_list(State.visible_timeline_items(state, 0))
   end
 
+
+  test "checkpoint items are highlighted and include chat orientation", %{state: state} do
+    session =
+      state.session
+      |> Map.put(:messages, [%{role: :user, content: "Implement policy-aware Eeva"}])
+      |> Session.append_timeline(:decision, "Goal accepted.")
+
+    item =
+      %{state | session: session}
+      |> State.timeline_items()
+      |> Enum.find(& &1.checkpoint?)
+
+    assert item.checkpoint?
+    assert item.args.chat_message >= 1
+    assert item.args.checkpoint_description =~ "Implement policy-aware Eeva"
+
+    details = Activity.details_lines(item, 0, 1, 120) |> Enum.join("\n")
+    assert details =~ "chat reference: message #"
+    assert details =~ "Implement policy-aware Eeva"
+  end
+
+  test "activity retains a larger rolling history", %{state: state} do
+    state =
+      Enum.reduce(1..520, state, fn index, acc ->
+        State.add_activity(acc, "eeva", %{"code" => "#{index}"}, :done)
+      end)
+
+    assert length(state.activity) == 500
+  end
+
+
   defp submit_command(state, command) do
     ExRatatui.textarea_set_value(state.textarea, command)
     {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)

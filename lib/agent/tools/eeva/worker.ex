@@ -133,8 +133,12 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
 
   defp evaluate(opts) do
     configure_heap_limit(Keyword.fetch!(opts, :max_memory_bytes))
-    Process.put(:workspace_root, Keyword.fetch!(opts, :workspace_root))
-    Process.put(:beamcore_tool_policy, Keyword.fetch!(opts, :policy))
+    workspace_root = Keyword.fetch!(opts, :workspace_root)
+    policy = Keyword.fetch!(opts, :policy)
+
+    Process.put(:workspace_root, workspace_root)
+    Process.put(:beamcore_tool_policy, policy)
+    Beamcore.Agent.Tools.Eeva.Policy.install(policy, workspace_root)
 
     filesystem_context = Keyword.get(opts, :filesystem_context)
 
@@ -179,24 +183,21 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
     end
 
     authorized_run = fn ->
-      policy = Keyword.fetch!(opts, :policy)
-      workspace_root = Keyword.fetch!(opts, :workspace_root)
-
-      execute_in_workspace = fn -> File.cd!(workspace_root, run) end
-
-      :global.trans({__MODULE__, :workspace_cwd}, fn ->
-        if Beamcore.Agent.Chat.ToolPolicy.project_policy_bypassed?(policy) do
-          Beamcore.Agent.Policy.ProjectPolicy.with_bypass(execute_in_workspace)
-        else
-          execute_in_workspace.()
-        end
-      end)
+      if Beamcore.Agent.Chat.ToolPolicy.project_policy_bypassed?(policy) do
+        Beamcore.Agent.Policy.ProjectPolicy.with_bypass(run)
+      else
+        run.()
+      end
     end
 
-    if filesystem_context do
-      Beamcore.Agent.FilesystemJournal.with_context(filesystem_context, authorized_run)
-    else
-      authorized_run.()
+    try do
+      if filesystem_context do
+        Beamcore.Agent.FilesystemJournal.with_context(filesystem_context, authorized_run)
+      else
+        authorized_run.()
+      end
+    after
+      Beamcore.Agent.Tools.Eeva.Policy.clear()
     end
   end
 

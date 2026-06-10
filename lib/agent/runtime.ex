@@ -275,7 +275,6 @@ defmodule Beamcore.Agent.Runtime do
       |> apply_session_project_policy_bypass(session)
 
     emit(state, {:status, :thinking})
-
     context =
       if ToolPolicy.project_policy_bypassed?(resolved_policy) do
         Context.clear_policy_blocks(session.context)

@@ -63,7 +63,7 @@ defmodule ChatTest do
     test "accepts valid messages and tools" do
       client = Beamcore.OpenAI.client()
       messages = [%{role: "user", content: "test"}]
-      tools = [%{type: "function", function: %{name: "test_tool", description: "test"}}]
+      tools = [%{type: "function", function: %{name: "eeva", description: "test"}}]
       # This test will not fail the validation, but may fail later due to API calls
       # We only test that validation passes
       assert Beamcore.Agent.Chat.API.execute(client, messages, tools, :main) !=

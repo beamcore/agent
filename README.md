@@ -157,9 +157,13 @@ adds new events to the new branch only.
 
 Activity is scrollable and navigable. `F6` focuses Activity, `Up`/`k` and
 `Down`/`j` move selection, `PageUp`/`PageDown` page, `Home`/`g` jumps to the
-oldest event, and `End`/`G` jumps to newest and resumes live-follow. When the
-user scrolls away from newest, Activity preserves the selection and counts new
-events instead of force-scrolling.
+oldest event, and `End`/`G` jumps to newest and resumes live-follow. The panel
+keeps up to 500 recent UI activity entries, uses a larger wide/medium viewport,
+and highlights checkpoints separately from ordinary tool/model events. Each
+checkpoint detail includes the originating user-request description and a chat
+message reference so the branch can be oriented quickly. When the user scrolls
+away from newest, Activity preserves the selection and counts new events instead
+of force-scrolling.
 
 Current timeline event types include `started`, `decision`, `research_stage`,
 `model_call`, `tool_call`, `file_change`, `compression`, `checkpoint_saved`,
@@ -425,19 +429,32 @@ fib.(fib, 35)
 Eeva runs each program under its own OTP-supervised worker. BeamCore applies
 execution timeout, heap, reductions, source, AST, stdout, result, and identifier
 budgets; monitors the caller; stops stale work after interrupt/rewind/fork; and
-wraps the whole execution in the filesystem journal. The model remains
-autonomous: permitted work executes immediately, while policy rejection and
-resource failures are automatic runtime outcomes rather than confirmation
-prompts.
+wraps the whole execution in the filesystem journal. Before evaluation, BeamCore
+parses and instruments the Elixir AST. Obvious policy violations are rejected at
+preflight, while real computed file paths, glob patterns, commands, network
+intent, and `Beamcore.Memory` mutations are checked immediately before their
+side effects. The model remains autonomous: permitted work executes immediately,
+while policy rejection and resource failures are automatic runtime outcomes
+rather than confirmation prompts.
 
 There are no hidden `Eeva.grep`, `Eeva.git`, `Eeva.test`, or equivalent prepared
-capabilities. Search, repository work, validation, networking, calculations,
-file operations, and concurrency are expressed with ordinary Elixir/Erlang code.
+capabilities. Search, repository work, validation, networking, calculations, and
+file operations are expressed with ordinary Elixir/Erlang code. Public BeamCore
+APIs can be discovered dynamically with
+`Beamcore.Helpers.info(Beamcore.Memory, :functions)`,
+`Beamcore.Helpers.docs(Beamcore.Memory)`, and
+`Beamcore.Helpers.modules("Beamcore")`. The persistent `Beamcore.Memory` OTP
+service remains available; read and mutation calls are classified by runtime
+policy.
 
 ## Workspace and policy safety
 
-All file tools are workspace-relative. Absolute paths, `..` traversal, and
-symlink escapes are rejected by PathSafety.
+All Eeva filesystem effects are workspace-relative. Ordinary `File.*` and
+`Path.wildcard/1` calls are instrumented internally, but the model still writes
+normal Elixir. Absolute paths, `..` traversal, internal snapshot/recovery paths,
+and symlink escapes are rejected by PathSafety. `System.cmd/3` is also guarded:
+shell interpreters and workspace escapes are blocked, read-only/research modes
+remain enforced, and network commands follow `allow_network`.
 
 Projects may add `.beamcore/policy.json` to restrict tools and paths. `/yolo`
 bypasses project policy only for the current session; it never disables

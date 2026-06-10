@@ -109,7 +109,11 @@ defmodule Beamcore.Agent.Core.Pretty do
   Apply ANSI color to text if colors are supported.
     "
   def colorize(text, color \\ &Colors.cyan/0) when is_function(color) do
-    if supports_color?() do
+    colorize(text, color, supports_color?())
+  end
+
+  def colorize(text, color, enabled?) when is_function(color) and is_boolean(enabled?) do
+    if enabled? do
       color_code = color.()
       "#{color_code}#{text}#{Colors.reset()}"
     else

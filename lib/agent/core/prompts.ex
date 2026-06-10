@@ -8,6 +8,16 @@ defmodule Beamcore.Agent.Core.Prompts do
     "eeva: the only model-facing tool. It executes ordinary Elixir under OTP supervision. Use File, Path, System.cmd, Enum, Stream, Regex, Jason, :math, and any other Elixir/Erlang code needed for the task."
   ]
 
+
+  @doc "Returns concise guidance for using the persistent BeamCore memory service from Eeva."
+  def memory_guidelines_and_index do
+    """
+    - Persistent memory is available through `Beamcore.Memory`.
+    - Discover signatures with `Beamcore.Helpers.info(Beamcore.Memory, :functions)`.
+    - Read with `recall/4` and `list/3`; write with `remember/5` and `forget/4` when policy allows.
+    """
+  end
+
   # --- Screen System Prompts ---
 
   @doc """
@@ -23,6 +33,10 @@ defmodule Beamcore.Agent.Core.Prompts do
     - Use `eeva` as the primary runtime whenever writing Elixir can complete the work directly: calculations, transformations, workspace inspection, multi-step file workflows, and HTTP reads.
     - Write normal Elixir such as `File.read!("mix.exs")`, `Path.wildcard("lib/**/*.ex")`, `System.cmd("git", ["status"])`, `System.cmd("mix", ["test"])`, `Enum.frequencies(data)`, or an anonymous recursive function.
     - Prefer one coherent Eeva program over many tiny calls. Eeva is OTP-supervised, resource-budgeted, and its workspace changes are captured by the reversible journal.
+    - Discover product APIs dynamically instead of guessing signatures. Examples: `Beamcore.Helpers.info(Beamcore.Memory, :functions)`, `Beamcore.Helpers.docs(Beamcore.Memory)`, and `Beamcore.Helpers.modules("Beamcore")`.
+    - For precise line-aware edits, inspect and call `Beamcore.Helpers.Modify.__info__(:functions)`. It is a helper module available inside Eeva, not a separate tool.
+    - `Beamcore.Memory` remains available as an OTP service. Inspect its public functions before calling unfamiliar methods.
+    - Policy is enforced by code, not by prompting. If Eeva returns a policy violation, adapt automatically; never ask the user to confirm a normal allowed action.
     - Do not ask for approval before an allowed Eeva operation. Execute autonomously; the runtime policy, workspace boundary, journal, and timeline enforce safety.
 
     **Core Rules**:
@@ -92,6 +106,8 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     **Available Tools**:
     - `eeva`: the only tool. Use ordinary OTP-supervised Elixir for computation and workspace work. Use `File.*`, `Path.*`, `System.cmd/3`, Enum/Stream/Map/String/Regex/date/math operations, Jason, and standard Erlang/Elixir modules directly. Write and update Markdown research files with ordinary File functions.
+    - Inspect available BeamCore APIs dynamically with `Beamcore.Helpers.info/2`, `Beamcore.Helpers.docs/1`, and `Beamcore.Helpers.modules/1`. `Beamcore.Memory` remains available for persistent research knowledge, subject to runtime policy.
+    - Policy failures are automatic runtime errors, not requests for user confirmation. Adapt the code and continue within the allowed boundary.
     """
   end
 
@@ -156,7 +172,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     Execute one bounded research step:
     1. State your understanding of the request.
     2. Create or update a short plan in `research_index.md`.
-    3. Gather only the context needed for the next step.
+    3. Gather only the context needed for the next step. Use `Beamcore.Memory` when persistent research knowledge is useful; inspect its API first with `Beamcore.Helpers.info(Beamcore.Memory, :functions)`.
     4. Compress findings into a concise checkpoint.
     5. End with either a useful checkpoint answer or `RESEARCH_COMPLETE` when fully finished.
 

@@ -183,6 +183,7 @@ defmodule Beamcore.Memory do
 
   @impl true
   def handle_call({:remember, org, repo, type, key, value}, _from, state) do
+    state = ensure_runtime_tables(state)
     entry_key = {type, org, repo, key}
 
     # 1. Update ETS
@@ -197,6 +198,7 @@ defmodule Beamcore.Memory do
 
   @impl true
   def handle_call({:recall, org, repo, type, key}, _from, state) do
+    state = ensure_runtime_tables(state)
     entry_key = {type, org, repo, key}
 
     result =
@@ -210,6 +212,7 @@ defmodule Beamcore.Memory do
 
   @impl true
   def handle_call({:forget, org, repo, type, key}, _from, state) do
+    state = ensure_runtime_tables(state)
     entry_key = {type, org, repo, key}
 
     # 1. Delete from ETS
@@ -224,6 +227,7 @@ defmodule Beamcore.Memory do
 
   @impl true
   def handle_call({:list, org, repo, type}, _from, state) do
+    state = ensure_runtime_tables(state)
     # Select memories of matching category, org, and repo
     match_spec = [{{{type, org, repo, :"$1"}, :"$2"}, [], [{{:"$1", :"$2"}}]}]
     results = :ets.select(state.ets_name, match_spec)
@@ -233,6 +237,7 @@ defmodule Beamcore.Memory do
 
   @impl true
   def handle_call(:clear, _from, state) do
+    state = ensure_runtime_tables(state)
     # Delete all items
     :ets.delete_all_objects(state.ets_name)
     :dets.delete_all_objects(state.dets_name)
@@ -242,6 +247,41 @@ defmodule Beamcore.Memory do
   end
 
   # --- Helper functions ---
+
+  defp ensure_runtime_tables(state) do
+    ensure_ets_table(state.ets_name)
+    ensure_dets_table(state)
+  end
+
+  defp ensure_ets_table(ets_name) do
+    if :ets.info(ets_name) == :undefined do
+      :ets.new(ets_name, [:set, :public, :named_table])
+    end
+
+    :ok
+  end
+
+  defp ensure_dets_table(state) do
+    case :dets.info(state.dets_name) do
+      :undefined ->
+        case :dets.open_file(state.dets_name, file: to_charlist(state.expanded_path)) do
+          {:ok, _table} ->
+            case :dets.to_ets(state.dets_name, state.ets_name) do
+              {:error, reason} -> raise "Could not reload DETS data into ETS: #{inspect(reason)}"
+              _ -> state
+            end
+
+          {:error, {:already_open, _pid}} ->
+            state
+
+          {:error, reason} ->
+            raise "Could not reopen DETS memory store: #{inspect(reason)}"
+        end
+
+      _info ->
+        state
+    end
+  end
 
   defp server_ref do
     cond do
