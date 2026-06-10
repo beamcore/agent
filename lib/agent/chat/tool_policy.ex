@@ -1,19 +1,18 @@
 defmodule Beamcore.Agent.Chat.ToolPolicy do
   @moduledoc """
-  Runtime tool policy derived from an explicit Policy block.
+  Runtime policy for the single Eeva execution surface.
 
-  Natural-language task text is intentionally not used for mutation or network
-  intent detection. If a Policy block is present, it is the source of truth.
-  Without a Policy block, the default is autonomous mode. Hard path safety and
-  project policy still apply at runtime.
+  BeamCore no longer exposes separate read, write, search, command, Git, test,
+  task, plan, memory, or image tools to the model. A policy therefore decides
+  only whether the `eeva` evaluator is available and whether its process may use
+  network access. Normal permitted execution is autonomous and never enters an
+  approval loop.
   """
 
-  alias Beamcore.Agent.Tools.PathSafety
   alias Beamcore.Agent.Policy.ProjectPolicy
 
   @type mode ::
           :unrestricted
-          | :unconfirmed
           | :development
           | :read_only
           | :restricted_write
@@ -21,6 +20,7 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           | :invalid_policy
           | :chat
           | :research
+
   @type t :: %{
           mode: mode(),
           allow_task: boolean(),
@@ -31,54 +31,35 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           project_policy_bypassed?: boolean()
         }
 
-  @read_only_tools ~w(eeva grep git test_tool memory reflect)
-  @local_context_helper_tools ~w(eeva grep git memory reflect)
-  @unconfirmed_tools ~w(eeva grep plan git memory reflect)
-  @restricted_write_tools ~w(eeva grep modify_file test_tool memory reflect)
-  @development_tools ~w(eeva grep modify_file git test_tool memory)
-  @all_tool_names ~w(eeva grep modify_file git task test_tool plan image_generation memory reflect)
-  @mutation_tools ~w(modify_file fs image_generation)
-  @read_only_git_operations ~w(status diff log)
+  @tool "eeva"
   @valid_modes ~w(read_only development restricted_write)
 
-  @doc """
-  Build a policy from the latest complete user message.
-  """
   @spec from_user_message(binary()) :: t()
   def from_user_message(content) when is_binary(content) do
-    content
-    |> parse_policy_block()
-    |> policy_from_block()
+    case parse_policy_block(content) do
+      nil -> default()
+      block -> policy_from_block(block)
+    end
   end
 
   def from_user_message(_content), do: default()
 
-  @doc """
-  Permissive policy for trusted sessions. Allows all tools and paths.
-  """
-  @spec yolo() :: t()
   @spec yolo(keyword()) :: t()
   def yolo(opts \\ []) do
     %{
       mode: :unrestricted,
-      allow_task: true,
+      allow_task: false,
       allow_network: true,
       allowed_write_paths: ["**/*"],
-      allowed_tools: nil,
+      allowed_tools: [@tool],
       blocked_tools: [],
       project_policy_bypassed?: Keyword.get(opts, :project_policy_bypassed?, false)
     }
   end
 
-  @doc """
-  Default policy for fresh interactive sessions and direct tool calls.
-  """
   @spec default() :: t()
   def default, do: yolo()
 
-  @doc """
-  Policy used for chat-only mode (no tools allowed).
-  """
   @spec chat() :: t()
   def chat do
     %{
@@ -87,45 +68,27 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allow_network: true,
       allowed_write_paths: [],
       allowed_tools: [],
-      blocked_tools: @all_tool_names,
+      blocked_tools: [@tool],
       project_policy_bypassed?: false
     }
   end
 
-  @doc """
-  Policy used for research mode.
-  """
   @spec research() :: t()
   def research do
     %{
       mode: :research,
       allow_task: false,
       allow_network: true,
-      allowed_write_paths: ["**/*.md"],
-      allowed_tools: ~w(eeva grep modify_file),
-      blocked_tools: @all_tool_names -- ~w(eeva grep modify_file),
+      allowed_write_paths: ["**/*"],
+      allowed_tools: [@tool],
+      blocked_tools: [],
       project_policy_bypassed?: false
     }
   end
 
-  @doc """
-  Policy used inside sub-agents. Nested task delegation is always disabled.
-  """
   @spec subagent(binary()) :: t()
-  def subagent(prompt) do
-    prompt
-    |> from_user_message()
-    |> Map.put(:allow_task, false)
-    |> Map.update(:blocked_tools, ["task"], &Enum.uniq(["task" | &1]))
-  end
+  def subagent(prompt), do: from_user_message(prompt)
 
-  @doc """
-  Policy used by the optional local context helper.
-
-  The helper is allowed to inspect and summarize context, but it cannot mutate
-  files, spawn sub-agents, run shell commands, or use network tools. This is a
-  runtime policy, not a prompt convention.
-  """
   @spec local_context_helper(t()) :: t()
   def local_context_helper(parent_policy \\ default()) do
     %{
@@ -133,131 +96,114 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       allow_task: false,
       allow_network: false,
       allowed_write_paths: [],
-      allowed_tools: @local_context_helper_tools,
-      blocked_tools: @all_tool_names -- @local_context_helper_tools,
+      allowed_tools: [@tool],
+      blocked_tools: [],
       project_policy_bypassed?: project_policy_bypassed?(parent_policy)
     }
   end
 
-  @doc """
-  Returns the allowed tool names for the given policy.
-  """
-  @spec allowed_tool_names(t()) :: [binary()]
-  def allowed_tool_names(policy),
-    do: policy |> base_allowed_tool_names() |> apply_project_tool_filters(policy)
-
-  @doc """
-  Enforce the policy for a concrete tool call.
-  """
-  @spec allow_tool_call(t(), binary(), map()) :: :ok | {:error, binary()}
-  def allow_tool_call(policy, name, args \\ %{}) do
-    project_policy = ProjectPolicy.load()
-
-    cond do
-      name not in base_allowed_tool_names(policy) ->
-        {:error, blocked_message(policy, name)}
-
-      not project_policy_bypassed?(policy) and
-          project_blocked?(project_policy, policy, name, args) ->
-        project_blocked_message(project_policy, policy, name, args)
-
-      confirmation_required?(policy) and name in @mutation_tools ->
-        {:error, mutation_confirmation_message()}
-
-      fail_closed?(policy) and name == "git" ->
-        allow_read_only_git(args)
-
-      restricted_write?(policy) ->
-        allow_restricted_write(policy, name, args)
-
-      local_context_helper?(policy) and name == "git" ->
-        allow_read_only_git(args)
-
-      research?(policy) ->
-        allow_research_write(policy, name, args)
-
-      true ->
-        :ok
-    end
-  end
-
-  @spec read_only?(t()) :: boolean()
-  def read_only?(%{mode: :read_only}), do: true
-  def read_only?(_policy), do: false
-
-  @spec confirmation_required?(t()) :: boolean()
-  def confirmation_required?(%{mode: :unconfirmed}), do: true
-  def confirmation_required?(_policy), do: false
-
-  @spec invalid_policy?(t()) :: boolean()
-  def invalid_policy?(%{mode: :invalid_policy}), do: true
-  def invalid_policy?(_policy), do: false
-
-  @spec restricted_write?(t()) :: boolean()
-  def restricted_write?(%{mode: :restricted_write}), do: true
-  def restricted_write?(_policy), do: false
-
-  @spec local_context_helper?(t()) :: boolean()
-  def local_context_helper?(%{mode: :local_context_helper}), do: true
-  def local_context_helper?(_policy), do: false
-
-  @spec research?(t()) :: boolean()
-  def research?(%{mode: :research}), do: true
-  def research?(_policy), do: false
-
-  @spec project_policy_bypassed?(t()) :: boolean()
-  def project_policy_bypassed?(policy), do: Map.get(policy, :project_policy_bypassed?, false)
-
-  defp fail_closed?(policy),
-    do: read_only?(policy) or invalid_policy?(policy) or confirmation_required?(policy)
-
-  @doc """
-  Build a one-turn restricted-write policy for legacy compatibility and tests.
-  """
   @spec restricted_write_policy([binary()], [binary()]) :: t()
-  def restricted_write_policy(allowed_write_paths, allowed_tools) do
-    allowed_tools = allowed_tools |> Enum.uniq()
-
+  def restricted_write_policy(allowed_write_paths, _allowed_tools) do
     %{
       mode: :restricted_write,
       allow_task: false,
       allow_network: false,
       allowed_write_paths: Enum.uniq(allowed_write_paths),
-      allowed_tools: allowed_tools,
-      blocked_tools: ["task", "web_get", "git"],
+      allowed_tools: [@tool],
+      blocked_tools: [],
       project_policy_bypassed?: false
     }
   end
 
-  defp policy_from_block(nil), do: default()
+  @spec allowed_tool_names(t()) :: [binary()]
+  def allowed_tool_names(policy) do
+    names =
+      cond do
+        policy.mode == :chat -> []
+        @tool in Map.get(policy, :blocked_tools, []) -> []
+        is_list(policy.allowed_tools) and @tool not in policy.allowed_tools -> []
+        true -> [@tool]
+      end
+
+    if project_policy_bypassed?(policy) do
+      names
+    else
+      ProjectPolicy.allowed_tool_names(names, policy, ProjectPolicy.load())
+    end
+  end
+
+  @spec allow_tool_call(t(), binary(), map()) :: :ok | {:error, binary()}
+  def allow_tool_call(policy, @tool, args \\ %{}) when is_map(args) do
+    cond do
+      @tool not in allowed_tool_names(policy) ->
+        {:error, "Eeva execution is blocked by the active policy."}
+
+      project_policy_bypassed?(policy) ->
+        :ok
+
+      true ->
+        ProjectPolicy.allow_tool_call(ProjectPolicy.load(), policy, @tool, args)
+    end
+  end
+
+  def allow_tool_call(_policy, name, _args),
+    do: {:error, "Unknown tool #{name}. BeamCore exposes only eeva."}
+
+  @spec confirmation_required?(t()) :: boolean()
+  def confirmation_required?(_policy), do: false
+
+  @spec project_policy_bypassed?(t()) :: boolean()
+  def project_policy_bypassed?(policy), do: Map.get(policy, :project_policy_bypassed?, false)
+
+  @spec read_only?(t()) :: boolean()
+  def read_only?(%{mode: :read_only}), do: true
+  def read_only?(_), do: false
+
+  @spec invalid_policy?(t()) :: boolean()
+  def invalid_policy?(%{mode: :invalid_policy}), do: true
+  def invalid_policy?(_), do: false
+
+  @spec restricted_write?(t()) :: boolean()
+  def restricted_write?(%{mode: :restricted_write}), do: true
+  def restricted_write?(_), do: false
+
+  @spec local_context_helper?(t()) :: boolean()
+  def local_context_helper?(%{mode: :local_context_helper}), do: true
+  def local_context_helper?(_), do: false
+
+  @spec research?(t()) :: boolean()
+  def research?(%{mode: :research}), do: true
+  def research?(_), do: false
 
   defp policy_from_block(block) do
-    mode = parse_mode(Map.get(block, "mode"))
-    allowed_tools = parse_tools(Map.get(block, "allowed_tools"))
-    blocked_tools = parse_tools(Map.get(block, "blocked_tools")) || []
-    allowed_write_paths = parse_paths(Map.get(block, "allowed_write_paths"))
+    mode = parse_mode(first(block["mode"]))
+    allowed = parse_tools(block["allowed_tools"])
+    blocked = parse_tools(block["blocked_tools"]) || []
 
     %{
       mode: mode,
-      allow_task: tool_enabled?("task", allowed_tools, blocked_tools),
-      allow_network: tool_enabled?("web_get", allowed_tools, blocked_tools),
-      allowed_write_paths: allowed_write_paths,
-      allowed_tools: allowed_tools,
-      blocked_tools: blocked_tools,
+      allow_task: false,
+      allow_network: parse_boolean(first(block["allow_network"]), false),
+      allowed_write_paths: parse_paths(block["allowed_write_paths"]),
+      allowed_tools: allowed,
+      blocked_tools: blocked,
       project_policy_bypassed?: false
     }
   end
 
-  defp parse_mode([mode | _rest]), do: parse_mode(mode)
-  defp parse_mode(mode) when mode in @valid_modes, do: String.to_atom(mode)
-  defp parse_mode(_mode), do: :invalid_policy
+  defp parse_mode(mode) when mode in @valid_modes, do: String.to_existing_atom(mode)
+  defp parse_mode(_), do: :invalid_policy
+
+  defp parse_boolean(value, _default) when value in [true, "true", "yes", "on", "1"], do: true
+  defp parse_boolean(value, _default) when value in [false, "false", "no", "off", "0"], do: false
+  defp parse_boolean(_, default), do: default
 
   defp parse_tools(nil), do: nil
 
   defp parse_tools(values) do
     values
     |> Enum.flat_map(&split_values/1)
-    |> Enum.filter(&(&1 in @all_tool_names))
+    |> Enum.filter(&(&1 == @tool))
     |> Enum.uniq()
   end
 
@@ -266,38 +212,28 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
   defp parse_paths(values) do
     values
     |> Enum.flat_map(&split_values/1)
-    |> Enum.map(&normalize_candidate_path/1)
-    |> Enum.reject(&is_nil/1)
+    |> Enum.map(&String.trim/1)
+    |> Enum.reject(&(&1 == ""))
     |> Enum.uniq()
   end
 
-  defp split_values(value) do
-    value
-    |> String.split(",", trim: true)
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == ""))
-  end
+  defp split_values(value),
+    do: value |> to_string() |> String.split(",", trim: true) |> Enum.map(&String.trim/1)
 
-  defp tool_enabled?(tool, allowed_tools, blocked_tools) do
-    tool in (allowed_tools || []) and tool not in blocked_tools
-  end
-
-  defp explicit_tool_enabled?(policy, tool) do
-    tool in (Map.get(policy, :allowed_tools) || []) and
-      tool not in Map.get(policy, :blocked_tools, [])
-  end
+  defp first([value | _]), do: value
+  defp first(value), do: value
 
   defp parse_policy_block(content) do
     lines = String.split(content, ~r/\R/)
 
     case Enum.split_while(lines, &(String.trim(&1) != "Policy:")) do
       {_before, []} -> nil
-      {_before, [_policy | rest]} -> parse_policy_lines(rest)
+      {_before, [_ | rest]} -> parse_policy_lines(rest)
     end
   end
 
   defp parse_policy_lines(lines) do
-    {_current_key, data} =
+    {_key, data} =
       Enum.reduce_while(lines, {nil, %{}}, fn line, {current_key, data} ->
         trimmed = String.trim(line)
 
@@ -312,9 +248,9 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
           String.contains?(trimmed, ":") ->
             [key, value] = String.split(trimmed, ":", parts: 2)
             key = String.trim(key)
-            value = String.trim(value)
 
-            if valid_key?(key) do
+            if key in ~w(mode allowed_tools blocked_tools allowed_write_paths allow_network) do
+              value = String.trim(value)
               data = Map.put_new(data, key, [])
               data = if value == "", do: data, else: Map.put(data, key, [value])
               {:cont, {key, data}}
@@ -328,183 +264,5 @@ defmodule Beamcore.Agent.Chat.ToolPolicy do
       end)
 
     data
-  end
-
-  defp valid_key?(key), do: key in ~w(mode allowed_tools blocked_tools allowed_write_paths)
-
-  defp maybe_add(tools, tool, true), do: tools ++ [tool]
-  defp maybe_add(tools, _tool, false), do: tools
-
-  defp apply_tool_filters(tools, policy) do
-    tools
-    |> filter_allowed_tools(Map.get(policy, :allowed_tools))
-    |> Enum.reject(&(&1 in Map.get(policy, :blocked_tools, [])))
-  end
-
-  defp apply_project_tool_filters(tools, policy) do
-    if project_policy_bypassed?(policy) do
-      tools
-    else
-      ProjectPolicy.allowed_tool_names(tools, policy, ProjectPolicy.load())
-    end
-  end
-
-  defp base_allowed_tool_names(%{mode: :chat} = policy) do
-    []
-    |> apply_tool_filters(policy)
-  end
-
-  defp base_allowed_tool_names(%{mode: :research} = policy) do
-    ~w(eeva grep modify_file)
-    |> apply_tool_filters(policy)
-  end
-
-  defp base_allowed_tool_names(%{mode: :unrestricted} = policy),
-    do: apply_tool_filters(@all_tool_names, policy)
-
-  defp base_allowed_tool_names(%{mode: :unconfirmed} = policy),
-    do: apply_tool_filters(@unconfirmed_tools, policy)
-
-  defp base_allowed_tool_names(%{mode: :invalid_policy} = policy),
-    do: apply_tool_filters(@read_only_tools, policy)
-
-  defp base_allowed_tool_names(%{mode: :read_only} = policy),
-    do: apply_tool_filters(@read_only_tools, policy)
-
-  defp base_allowed_tool_names(%{mode: :local_context_helper} = policy),
-    do: apply_tool_filters(@local_context_helper_tools, policy)
-
-  defp base_allowed_tool_names(%{mode: :restricted_write} = policy) do
-    @restricted_write_tools
-    |> maybe_add("task", Map.get(policy, :allow_task, false))
-    |> maybe_add("web_get", Map.get(policy, :allow_network, false))
-    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
-    |> apply_tool_filters(policy)
-  end
-
-  defp base_allowed_tool_names(%{mode: :development} = policy) do
-    @development_tools
-    |> maybe_add("task", Map.get(policy, :allow_task, false))
-    |> maybe_add("web_get", Map.get(policy, :allow_network, false))
-    |> maybe_add("image_generation", explicit_tool_enabled?(policy, "image_generation"))
-    |> apply_tool_filters(policy)
-  end
-
-  defp filter_allowed_tools(tools, nil), do: tools
-  defp filter_allowed_tools(tools, allowed_tools), do: Enum.filter(tools, &(&1 in allowed_tools))
-
-  defp allow_read_only_git(args) do
-    operation = Map.get(args, "operation") || Map.get(args, "command")
-
-    if operation in @read_only_git_operations do
-      :ok
-    else
-      {:error,
-       "Tool call blocked by read-only policy: git operation #{inspect(operation)} is not allowed. Allowed git operations: #{Enum.join(@read_only_git_operations, ", ")}."}
-    end
-  end
-
-  defp allow_restricted_write(policy, name, args) do
-    case name do
-      "modify_file" -> allow_exact_path(policy, Map.get(args, "path"))
-      "image_generation" -> allow_exact_path(policy, Map.get(args, "output_path"))
-      "test_tool" -> :ok
-      "grep" -> :ok
-      _ -> {:error, blocked_message(policy, name)}
-    end
-  end
-
-  defp allow_research_write(policy, name, args) do
-    case name do
-      "modify_file" ->
-        path = Map.get(args, "path") || ""
-
-        if String.ends_with?(path, ".md") do
-          allow_research_path(path)
-        else
-          {:error,
-           "Tool call blocked: research screen is restricted to modifying only .md files."}
-        end
-
-      "grep" ->
-        :ok
-
-      _ ->
-        {:error, blocked_message(policy, name)}
-    end
-  end
-
-  defp allow_research_path(path) do
-    case PathSafety.resolve(to_string(path || ""), allow_missing: true) do
-      {:ok, _absolute_path} -> :ok
-      {:error, reason} -> {:error, "Path safety verification failed: #{reason}"}
-    end
-  end
-
-  defp allow_exact_path(policy, path) do
-    normalized = normalize_candidate_path(to_string(path || ""))
-
-    if normalized in Map.get(policy, :allowed_write_paths, []) do
-      :ok
-    else
-      {:error, restricted_path_message(policy, normalized || path)}
-    end
-  end
-
-  defp blocked_message(%{mode: :read_only}, name) do
-    "Tool call blocked by read-only policy: #{name}."
-  end
-
-  defp blocked_message(%{mode: :unconfirmed}, name) when name in @mutation_tools do
-    mutation_confirmation_message()
-  end
-
-  defp blocked_message(%{mode: :unconfirmed}, name) do
-    "Tool call blocked by legacy unconfirmed policy: #{name}. Mutation tools are unavailable in this mode."
-  end
-
-  defp blocked_message(%{mode: :invalid_policy}, name) do
-    "Tool call blocked by invalid policy: #{name}. The Policy block has an invalid mode, so mutation tools are disabled."
-  end
-
-  defp blocked_message(%{mode: :restricted_write}, name) do
-    "Tool call blocked by restricted-write policy: #{name}. Only explicitly allowed file writes are permitted."
-  end
-
-  defp blocked_message(%{mode: :local_context_helper}, name) do
-    "Tool call blocked by local_context_helper policy: #{name}. Helper tools are read-only and cannot mutate workspace state."
-  end
-
-  defp blocked_message(_policy, name), do: "Tool call blocked by policy: #{name}."
-
-  defp project_blocked?(project_policy, policy, name, args) do
-    case ProjectPolicy.allow_tool_call(project_policy, policy, name, args) do
-      :ok -> false
-      {:error, _message} -> true
-    end
-  end
-
-  defp project_blocked_message(project_policy, policy, name, args) do
-    case ProjectPolicy.allow_tool_call(project_policy, policy, name, args) do
-      {:error, message} -> {:error, message}
-      :ok -> {:error, "Tool call blocked by project policy: #{name}."}
-    end
-  end
-
-  defp restricted_path_message(policy, path) do
-    "Tool call blocked by restricted-write policy: #{path} is not in allowed_write_paths. Allowed write paths: #{Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")}."
-  end
-
-  defp mutation_confirmation_message do
-    "Mutation tools are unavailable in legacy unconfirmed policy."
-  end
-
-  defp normalize_candidate_path(path) do
-    path = path |> String.trim() |> String.trim_trailing(".") |> String.trim_trailing(",")
-
-    case PathSafety.resolve(path, allow_missing: true) do
-      {:ok, absolute_path} -> Path.relative_to(absolute_path, PathSafety.workspace_root())
-      {:error, _reason} -> nil
-    end
   end
 end

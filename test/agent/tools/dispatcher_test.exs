@@ -1,173 +1,30 @@
 defmodule Beamcore.Agent.Tools.DispatcherTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: false
 
   alias Beamcore.Agent.Chat.ToolPolicy
   alias Beamcore.Agent.Tools.Dispatcher
 
-  test "execute returns error for unknown tool" do
-    result = Dispatcher.execute("unknown_tool", %{})
-    assert result == "Function not implemented"
+  test "registers only eeva" do
+    assert Dispatcher.registered_tool_names() == ["eeva"]
   end
 
-  test "tool_specs returns autonomous specifications by default" do
-    specs = Dispatcher.tool_specs()
-    names = Enum.map(specs, fn spec -> spec.function.name end)
-
-    assert "eeva" in names
-    assert "plan" in names
-    assert "test_tool" in names
-    assert "modify_file" in names
-    assert "task" in names
-    assert "image_generation" in names
+  test "provider tool specs contain only eeva" do
+    specs = Dispatcher.tool_specs(ToolPolicy.default())
+    assert Enum.map(specs, & &1.function.name) == ["eeva"]
   end
 
-  test "tool_specs includes task only when policy allows explicit delegation" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: development
-      allowed_tools:
-      - task
-      """)
-
-    names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
-
-    assert "task" in names
-    refute "web_get" in names
+  test "chat mode exposes no function tools" do
+    assert Dispatcher.tool_specs(ToolPolicy.chat()) == []
   end
 
-  test "conductor_tool_specs applies read-only policy" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: read_only
-      """)
-
-    names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
-
-    assert Enum.sort(names) == Enum.sort(~w(eeva grep git test_tool memory reflect))
-    refute "task" in names
-    refute "web_get" in names
-    refute "modify_file" in names
-    refute "fs" in names
+  test "unknown tool calls are rejected" do
+    assert Dispatcher.execute("modify_file", %{}, ToolPolicy.default()) ==
+             "Function not implemented"
   end
 
-  test "tool_specs applies restricted-write policy without task, web_get, tree, or git" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: restricted_write
-      allowed_write_paths:
-      - scratch/a.ex
-      - scratch/a_test.exs
-      """)
-
-    names = Dispatcher.conductor_tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
-
-    assert Enum.sort(names) ==
-             Enum.sort(~w(eeva grep modify_file test_tool memory reflect))
-
-    refute "task" in names
-    refute "web_get" in names
-    refute "tree" in names
-    refute "git" in names
-    refute "image_generation" in names
-  end
-
-  test "tool_specs includes image generation only when explicitly allowed" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: restricted_write
-      allowed_write_paths:
-      - generated/architecture.png
-      allowed_tools:
-      - image_generation
-      """)
-
-    names = Dispatcher.tool_specs(policy) |> Enum.map(fn spec -> spec.function.name end)
-
-    assert names == ["image_generation"]
-  end
-
-  test "execute blocks mutating tools in read-only mode" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: read_only
-      """)
-
-    result =
-      Dispatcher.execute(
-        "modify_file",
-        %{"operation" => "create_file", "path" => "tmp.txt", "content" => "bad"},
-        policy
-      )
-
-    assert result =~ "read-only policy"
-  end
-
-  test "execute allows autonomous mutating tools by default" do
-    path = "scratch/dispatcher_autonomous_write.txt"
-    on_exit(fn -> File.rm_rf!("scratch/dispatcher_autonomous_write.txt") end)
-
-    result =
-      Dispatcher.execute("modify_file", %{
-        "operation" => "create_file",
-        "path" => path,
-        "content" => "ok"
-      })
-
-    assert Jason.decode!(result)["ok"]
-    assert File.read!(path) == "ok"
-  end
-
-  test "execute blocks unlisted writes in restricted-write mode" do
-    policy =
-      ToolPolicy.from_user_message("""
-      Policy:
-      mode: restricted_write
-      allowed_write_paths:
-      - scratch/a.ex
-      """)
-
-    result =
-      Dispatcher.execute(
-        "modify_file",
-        %{"operation" => "create_file", "path" => "eval/a.ex", "content" => "bad"},
-        policy
-      )
-
-    assert result =~ "restricted-write policy"
-    assert result =~ "eval/a.ex is not in allowed_write_paths"
-  end
-
-  test "plan tool records an informational non-mutating payload" do
-    result =
-      Dispatcher.execute("plan", %{
-        "summary" => "Create a scratch module",
-        "create_files" => ["scratch/policy_test.ex"],
-        "allowed_tools" => ["modify_file", "mix"],
-        "validation" => "mix test scratch/policy_test.exs"
-      })
-
-    assert {:ok, decoded} = Jason.decode(result)
-    assert decoded["ok"]
-    assert decoded["plan"]["create_files"] == ["scratch/policy_test.ex"]
-    assert decoded["pending_action"] == nil
-    assert decoded["summary"] =~ "no confirmation is required"
-  end
-
-  test "plan tool rejects unsafe planned paths" do
-    result =
-      Dispatcher.execute("plan", %{
-        "summary" => "Unsafe plan",
-        "create_files" => ["../outside.ex"],
-        "allowed_tools" => ["modify_file"]
-      })
-
-    assert {:ok, decoded} = Jason.decode(result)
-    refute decoded["ok"]
-    assert decoded["summary"] =~ "path traversal is not allowed"
+  test "eeva executes through the dispatcher" do
+    result = Dispatcher.execute("eeva", %{"code" => "Enum.sum(1..10)"}) |> Jason.decode!()
+    assert result["ok"]
+    assert result["result"] == "55"
   end
 end

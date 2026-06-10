@@ -1,7 +1,7 @@
-defmodule Beamcore.Agent.Tools.PathSafetyTest do
+defmodule Beamcore.Agent.PathSafetyTest do
   use ExUnit.Case
 
-  alias Beamcore.Agent.Tools.PathSafety
+  alias Beamcore.Agent.PathSafety
 
   test "resolves safe relative paths inside the workspace" do
     assert {:ok, path} = PathSafety.resolve("README.md")

@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.Tools.PathSafety do
+defmodule Beamcore.Agent.PathSafety do
   @moduledoc """
   Resolves user-provided tool paths inside the current workspace.
   """
@@ -197,12 +197,17 @@ defmodule Beamcore.Agent.Tools.PathSafety do
   end
 
   defp reject_internal_symlink_target(target_path, root) do
-    relative = Path.relative_to(target_path, root)
+    relative = target_path |> Path.relative_to(root) |> internal_normalize()
 
-    if internal_store_path?(internal_normalize(relative)) do
-      {:error, "symlink target points to BeamCore internal snapshot storage"}
-    else
-      :ok
+    cond do
+      internal_store_path?(relative) ->
+        {:error, "symlink target points to BeamCore internal snapshot storage"}
+
+      journal_excluded_root?(relative) ->
+        {:error, "symlink target points to workspace metadata excluded from rollback"}
+
+      true ->
+        :ok
     end
   end
 
@@ -237,6 +242,11 @@ defmodule Beamcore.Agent.Tools.PathSafety do
       ".beamcore/recovery",
       ".DS_Store"
     ])
+  end
+
+  defp journal_excluded_root?(normalized) do
+    root = normalized |> String.split("/", parts: 2) |> hd()
+    root in [".git", ".elixir_ls", "_build", "deps", "node_modules"]
   end
 
   defp internal_store_path?(normalized) do

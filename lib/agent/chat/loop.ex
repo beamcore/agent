@@ -63,12 +63,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp handle_command(command, session, pid) do
     case Commands.execute(command, session) do
-      {:run_pending, confirmed_session, content, policy} ->
-        confirmed_session
-        |> send_message(content, pid, policy)
-        |> Session.clear_pending_action()
-        |> loop(pid)
-
       {:login_prompt, session} ->
         handle_login_prompt(session, pid)
 
@@ -183,13 +177,6 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> apply_session_project_policy_bypass(session)
 
     emit(opts, {:status, :thinking})
-
-    session =
-      if ToolPolicy.confirmation_required?(policy) do
-        %{session | pending_user_message: content}
-      else
-        %{session | pending_user_message: nil}
-      end
 
     context =
       if ToolPolicy.project_policy_bypassed?(policy) do
@@ -543,23 +530,13 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp maybe_goal_checkpoint(session, _content), do: session
 
-  defp maybe_pre_tool_checkpoint(%{screen_type: :agent} = session, name, args)
-       when name in ["modify_file", "fs", "image_generation"] do
-    summary =
-      if destructive_tool_call?(name, args) do
-        "Before destructive filesystem mutation."
-      else
-        "Before filesystem mutation."
-      end
-
-    Session.append_timeline(session, :file_change, summary,
+  defp maybe_pre_tool_checkpoint(%{screen_type: :agent} = session, "eeva", _args) do
+    Session.append_timeline(session, :file_change, "Before Eeva execution.",
       role: :agent,
-      title: "F1 filesystem checkpoint",
+      title: "F1 execution checkpoint",
       metadata: %{
         mode: "F1 Dev",
-        tool: name,
-        operation: tool_operation(args),
-        destructive: destructive_tool_call?(name, args),
+        tool: "eeva",
         journal_position:
           Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
       }
@@ -568,16 +545,14 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp maybe_pre_tool_checkpoint(session, _name, _args), do: session
 
-  defp maybe_post_tool_checkpoint(%{screen_type: :agent} = session, name, args, content)
-       when name in ["modify_file", "fs", "image_generation"] do
-    if tool_success?(content) do
-      Session.append_timeline(session, :file_change, "After successful filesystem mutation.",
+  defp maybe_post_tool_checkpoint(%{screen_type: :agent} = session, "eeva", _args, content) do
+    if tool_success?(content) and filesystem_mutation?(content) do
+      Session.append_timeline(session, :file_change, "After Eeva workspace mutation.",
         role: :agent,
-        title: "F1 mutation completed",
+        title: "F1 Eeva mutation completed",
         metadata: %{
           mode: "F1 Dev",
-          tool: name,
-          operation: tool_operation(args),
+          tool: "eeva",
           journal_position:
             Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
         }
@@ -587,48 +562,29 @@ defmodule Beamcore.Agent.Chat.Loop do
     end
   end
 
-  defp maybe_post_tool_checkpoint(%{screen_type: :agent} = session, name, args, content)
-       when name in ["test_tool", "git"] do
-    if validation_tool_call?(name, args) do
-      Session.append_timeline(session, :decision, "After validation.",
-        role: :agent,
-        title: "F1 validation completed",
-        metadata: %{mode: "F1 Dev", tool: name, result: compact_event_content(content)}
-      )
-    else
-      session
+  defp maybe_post_tool_checkpoint(session, _name, _args, _content), do: session
+
+  defp filesystem_mutation?(content) when is_binary(content) do
+    case Jason.decode(content) do
+      {:ok, %{"filesystem_changes" => %{"changed_path_count" => count}}}
+      when is_integer(count) and count > 0 ->
+        true
+
+      _ ->
+        false
     end
   end
 
-  defp maybe_post_tool_checkpoint(session, _name, _args, _content), do: session
-
-  defp destructive_tool_call?("fs", args) do
-    operation = tool_operation(args)
-    operation in ["remove", "move"] or (operation == "copy" and Map.get(args, "force", false))
-  end
-
-  defp destructive_tool_call?("modify_file", args) do
-    Map.get(args, "operation") == "create_file" and Map.get(args, "overwrite", false)
-  end
-
-  defp destructive_tool_call?(_name, _args), do: false
-
-  defp validation_tool_call?("test_tool", _args), do: true
-  defp validation_tool_call?("git", args), do: tool_operation(args) in ["status", "diff"]
-  defp validation_tool_call?(_name, _args), do: false
+  defp filesystem_mutation?(_content), do: false
 
   defp tool_success?(content) when is_binary(content) do
-    not String.starts_with?(String.trim_leading(content), "Error:")
+    case Jason.decode(content) do
+      {:ok, %{"ok" => false}} -> false
+      _ -> not String.starts_with?(String.trim_leading(content), "Error:")
+    end
   end
 
   defp tool_success?(_), do: true
-
-  defp tool_operation(args) when is_map(args) do
-    Map.get(args, "operation") || Map.get(args, :operation) || Map.get(args, "command") ||
-      Map.get(args, :command) || "unknown"
-  end
-
-  defp tool_operation(_args), do: "unknown"
 
   defp short_text(content) when is_binary(content) do
     content
@@ -836,13 +792,10 @@ defmodule Beamcore.Agent.Chat.Loop do
       ToolPolicy.project_policy_bypassed?(policy) ->
         "Current turn policy: freedom. Exposed tools: #{tool_names}. Project policy is bypassed for this session. Previous project-policy block messages are obsolete; retry the requested tool action directly instead of asking to update policy. Hard runtime safety still applies."
 
-      Map.get(policy, :mode) == :unconfirmed ->
-        "Current turn policy: legacy_unconfirmed. Exposed tools: #{tool_names}. Mutation tools are unavailable in this legacy compatibility mode."
-
       Map.get(policy, :mode) == :restricted_write ->
         allowed_paths = Enum.join(Map.get(policy, :allowed_write_paths, []), ", ")
 
-        "Current turn policy: restricted_write. Exposed tools: #{tool_names}. Allowed write paths: #{allowed_paths}. Do not call plan."
+        "Current turn policy: restricted_write. Exposed tools: #{tool_names}. Allowed write paths: #{allowed_paths}."
 
       Map.get(policy, :mode) == :read_only ->
         "Current turn policy: read_only. Exposed tools: #{tool_names}. Do not call mutation or network tools."

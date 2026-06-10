@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.Components.Chat do
   @moduledoc false
 
-  alias Beamcore.TUI.Components.{Confirmation, EmptyState}
+  alias Beamcore.TUI.Components.EmptyState
   alias Beamcore.TUI.{State, Theme, Wrap}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Text.{Line, Span}
@@ -13,7 +13,6 @@ defmodule Beamcore.TUI.Components.Chat do
     items =
       state
       |> message_items(wrap_width)
-      |> append_confirmation(state, wrap_width)
       |> append_spinner(state)
 
     %WidgetList{
@@ -209,13 +208,6 @@ defmodule Beamcore.TUI.Components.Chat do
   end
 
   defp split_preserving_width(line, width), do: Wrap.lines(line, width)
-
-  defp append_confirmation(items, state, wrap_width) do
-    case State.pending_action(state.session) do
-      nil -> items
-      action -> items ++ Confirmation.items(action, wrap_width)
-    end
-  end
 
   defp append_spinner(items, %{status: status} = state)
        when status in [:thinking, :tool_running, :local_search] do

@@ -32,10 +32,6 @@ defmodule Beamcore.TUI.Components.Mascot do
       "ᕕ(◢▣◣)ᕗ ▰ img",
       "ᕙ(◢▣◣)ᕘ ▰ img"
     ],
-    waiting_confirmation: [
-      "◢▣◣ ? ▱    ",
-      "◢▣◣ ! ▰    "
-    ],
     error: [
       "  ◢▣◣  !   ",
       "  ◢▣◣  ×   "
@@ -48,7 +44,6 @@ defmodule Beamcore.TUI.Components.Mascot do
     running: ["o[b]o ...", "o[b]o #..", "o[b]o ##.", "<[b]> ###"],
     tool_running: ["* o[b]>   ", " * o[b]>  ", "  * <[b] "],
     generating: ["[b] img .  ", "[b] img .. ", "[b] img ..."],
-    waiting_confirmation: ["[b]? .  ", "[b]! #  "],
     error: ["[!]   ", "[x]   "]
   }
 
@@ -67,7 +62,6 @@ defmodule Beamcore.TUI.Components.Mascot do
   defp normalize(:local_search), do: :thinking
   defp normalize(:tool_running), do: :tool_running
   defp normalize(:generating), do: :generating
-  defp normalize(:waiting_for_confirmation), do: :waiting_confirmation
   defp normalize(:running), do: :running
   defp normalize(:error), do: :error
   defp normalize(_status), do: :idle

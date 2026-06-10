@@ -7,7 +7,7 @@ defmodule Beamcore.TUI.State do
   alias Beamcore.Agent.Core.ToolDisplay
   alias Beamcore.Agent.Policy.ProjectPolicy
 
-  @max_activity 80
+  @max_activity 240
 
   defstruct terminal: nil,
             textarea: nil,
@@ -142,19 +142,17 @@ defmodule Beamcore.TUI.State do
   def resume(state), do: %{state | status: :idle} |> mark_dirty()
 
   def set_session(state, session) do
-    status = if pending_action(session), do: :waiting_for_confirmation, else: state.status
     selected_checkpoint_id = state.selected_checkpoint_id || active_checkpoint_id(session)
     state = update_activity_live_follow(state, session)
 
-    %{state | session: session, status: status, selected_checkpoint_id: selected_checkpoint_id}
+    %{state | session: session, selected_checkpoint_id: selected_checkpoint_id}
     |> mark_dirty()
   end
 
   def start_worker(state, pid), do: %{state | worker: pid, status: :thinking} |> mark_dirty()
 
   def finish_worker(state, session) do
-    status = if pending_action(session), do: :waiting_for_confirmation, else: :idle
-    %{set_session(state, session) | worker: nil, status: status} |> mark_dirty()
+    %{set_session(state, session) | worker: nil, status: :idle} |> mark_dirty()
   end
 
   def mark_dirty(state), do: %{state | render_dirty?: true}
@@ -173,7 +171,6 @@ defmodule Beamcore.TUI.State do
   def animation_interval(%{status: status, messages: messages}) do
     cond do
       status in [:thinking, :tool_running, :local_search] -> 160
-      status == :waiting_for_confirmation -> 280
       messages == [] -> 360
       true -> 420
     end
@@ -352,9 +349,6 @@ defmodule Beamcore.TUI.State do
     do: "Paused · #{count} new events"
 
   def activity_indicator(%{activity_follow_tail?: false}), do: "Paused"
-
-  def pending_action(%{context: %{pending_action: action}}), do: action
-  def pending_action(_session), do: nil
 
   def yolo?(%{policy_override: nil}), do: true
   def yolo?(%{policy_override: %{mode: :unrestricted}}), do: true

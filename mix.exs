@@ -45,7 +45,7 @@ defmodule Beamcore.Agent.MixProject do
 
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :crypto, :inets, :ssl],
       mod: {Beamcore.Agent, []}
     ]
   end

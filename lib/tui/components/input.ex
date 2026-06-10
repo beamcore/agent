@@ -1,18 +1,11 @@
 defmodule Beamcore.TUI.Components.Input do
   @moduledoc false
 
-  alias Beamcore.TUI.{State, Theme}
+  alias Beamcore.TUI.Theme
   alias ExRatatui.Widgets.{Block, Textarea}
 
   def widget(state) do
-    pending? = State.pending_action(state.session) != nil
-
-    title =
-      if pending? do
-        "Pending action · /cancel clears · Ctrl+s send · @ files · / commands"
-      else
-        "Ctrl+s send · @ files · / commands"
-      end
+    title = "Ctrl+s send · @ files · / commands"
 
     %Textarea{
       state: state.textarea,

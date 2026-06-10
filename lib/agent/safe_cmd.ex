@@ -1,4 +1,4 @@
-defmodule Beamcore.Agent.Tools.SafeCmd do
+defmodule Beamcore.Agent.SafeCmd do
   @moduledoc """
   Shared helper for safely executing external commands with timeout and error handling.
   """

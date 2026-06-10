@@ -20,7 +20,6 @@ defmodule Beamcore.Agent.Chat.Session do
     :project_nature,
     :workspace_root,
     :context,
-    :pending_user_message,
     :roles,
     :screen_type,
     :mode_settings,
@@ -72,8 +71,8 @@ defmodule Beamcore.Agent.Chat.Session do
         research_dir
       else
         opts
-        |> Keyword.get(:workspace_root, Beamcore.Agent.Tools.PathSafety.workspace_root())
-        |> Beamcore.Agent.Tools.PathSafety.canonical_path()
+        |> Keyword.get(:workspace_root, Beamcore.Agent.PathSafety.workspace_root())
+        |> Beamcore.Agent.PathSafety.canonical_path()
       end
 
     {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root)
@@ -166,7 +165,6 @@ defmodule Beamcore.Agent.Chat.Session do
       project_nature: {language, build_system},
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
-      pending_user_message: nil,
       roles: roles,
       screen_type: screen_type,
       mode_settings: mode_settings,
@@ -221,14 +219,6 @@ defmodule Beamcore.Agent.Chat.Session do
     else
       {:error, reason} -> {:error, reason}
     end
-  end
-
-  def clear_pending_action(session) do
-    %{
-      session
-      | pending_user_message: nil,
-        context: Beamcore.Agent.Chat.Context.clear_pending_action(session.context)
-    }
   end
 
   def set_primary_provider(session, provider, model \\ nil) do
@@ -791,7 +781,6 @@ defmodule Beamcore.Agent.Chat.Session do
       project_nature: {language, build_system},
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
-      pending_user_message: nil,
       roles: restore_roles(Map.get(data, "roles"), mode_settings),
       screen_type: screen_type,
       mode_settings: mode_settings,

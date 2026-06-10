@@ -6,7 +6,8 @@ defmodule Beamcore.TUI.FileFinder do
   """
 
   alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.{PathSafety, SafeCmd}
+  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.SafeCmd
 
   @max_results 15
 

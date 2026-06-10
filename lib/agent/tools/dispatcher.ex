@@ -7,16 +7,7 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   alias Beamcore.Agent.Policy.ProjectPolicy
 
   @tools [
-    Beamcore.Agent.Tools.Eeva,
-    Beamcore.Agent.Tools.Grep,
-    Beamcore.Agent.Tools.Modify,
-    Beamcore.Agent.Tools.Git,
-    Beamcore.Agent.Tools.Task,
-    Beamcore.Agent.Tools.Plan,
-    Beamcore.Agent.Tools.ImageGeneration,
-    Beamcore.Agent.Tools.TestTool,
-    Beamcore.Agent.Tools.Memory,
-    Beamcore.Agent.Tools.Reflect
+    Beamcore.Agent.Tools.Eeva
   ]
 
   @doc """
@@ -40,17 +31,14 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
           :ok ->
             result =
               if ToolPolicy.project_policy_bypassed?(policy) do
-                ProjectPolicy.with_bypass(fn -> execute_tool(tool, name, args) end)
+                ProjectPolicy.with_bypass(fn -> execute_tool(tool, name, args, policy) end)
               else
-                execute_tool(tool, name, args)
+                execute_tool(tool, name, args, policy)
               end
 
             duration = System.monotonic_time(:millisecond) - start_time
 
-            status =
-              if is_binary(result) and String.starts_with?(result, "Error:"),
-                do: :error,
-                else: :ok
+            status = tool_result_status(result)
 
             Beamcore.Ledger.log_action(org, repo, name, args, result, duration, 0, status)
             result
@@ -87,37 +75,47 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     Enum.map(@tools, & &1.name())
   end
 
-  defp execute_tool(tool, name, args) do
+  defp execute_tool(tool, name, args, policy) do
+    previous_policy = Process.get(:beamcore_tool_policy)
+    Process.put(:beamcore_tool_policy, policy)
+
     try do
-      tool.execute(args)
+      if function_exported?(tool, :execute, 2) do
+        tool.execute(args, policy)
+      else
+        tool.execute(args)
+      end
     rescue
       e -> "Error executing tool #{name}: #{inspect(e)}"
+    after
+      if previous_policy do
+        Process.put(:beamcore_tool_policy, previous_policy)
+      else
+        Process.delete(:beamcore_tool_policy)
+      end
     end
   end
+
+  defp tool_result_status(result) when is_binary(result) do
+    cond do
+      String.starts_with?(String.trim_leading(result), "Error:") ->
+        :error
+
+      true ->
+        case Jason.decode(result) do
+          {:ok, %{"ok" => false}} -> :error
+          _ -> :ok
+        end
+    end
+  end
+
+  defp tool_result_status(_result), do: :ok
 
   defp find_tool(name) do
     Enum.find(@tools, fn tool ->
       tool.name() == name
     end)
   end
-
-  @doc false
-  def normalize_tool_call("write_file", args) do
-    path = Map.get(args, "path") || Map.get(args, :path)
-    content = Map.get(args, "content") || Map.get(args, :content)
-
-    new_args = %{
-      "operation" => "create_file",
-      "path" => path,
-      "content" => content,
-      "overwrite" => true
-    }
-
-    {"modify_file", new_args}
-  end
-
-  @doc false
-  def normalize_tool_call("write_to_file", args), do: normalize_tool_call("write_file", args)
 
   @doc false
   def normalize_tool_call(name, args), do: {name, args}

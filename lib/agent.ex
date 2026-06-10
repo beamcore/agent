@@ -28,6 +28,8 @@ defmodule Beamcore.Agent do
       Beamcore.RateLimiter,
       Beamcore.Provider.Scheduler,
       {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
+      Beamcore.Agent.Tools.Eeva.AtomBudget,
+      Beamcore.Agent.Tools.Eeva.Supervisor,
       Beamcore.Agent.FilesystemJournal.Server,
       {DynamicSupervisor, strategy: :one_for_one, name: Beamcore.Agent.RestoreSupervisor},
       Beamcore.Provider.Health,
@@ -163,15 +165,15 @@ defmodule Beamcore.Agent do
     workspace_root =
       opts
       |> Keyword.get(:workspace_root, File.cwd!())
-      |> Beamcore.Agent.Tools.PathSafety.canonical_path()
+      |> Beamcore.Agent.PathSafety.canonical_path()
 
-    previous = Beamcore.Agent.Tools.PathSafety.configure_workspace_root(workspace_root)
+    previous = Beamcore.Agent.PathSafety.configure_workspace_root(workspace_root)
     opts = Keyword.put(opts, :workspace_root, workspace_root)
 
     try do
       fun.(opts)
     after
-      Beamcore.Agent.Tools.PathSafety.restore_workspace_root(previous)
+      Beamcore.Agent.PathSafety.restore_workspace_root(previous)
     end
   end
 end

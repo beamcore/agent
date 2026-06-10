@@ -1,268 +1,106 @@
 defmodule Beamcore.Agent.Core.ToolDisplay do
   @moduledoc """
-  Pure display helpers for compact tool presentation.
-
-  This module intentionally has no IO, ANSI styling, ExRatatui structs, policy
-  checks, or runtime side effects. Renderers can use the returned strings/data in
-  their own presentation layer.
+  Presentation helpers for the single Eeva execution surface.
   """
 
   @default_limit 180
 
   def activity(name, args, status, result \\ nil) do
     name = to_string(name)
-    target = target(name, args)
 
     %{
       name: name,
-      target: target,
+      target: target(name, args),
       status: status,
-      label: label(name, args, target, status),
+      label: label(name, args, status),
       summary: summary(name, args, result),
       result: result_summary(result)
     }
   end
 
-  def label(name, args, status \\ :done) do
-    name = to_string(name)
-    label(name, args, target(name, args), status)
+  def label("eeva", args, :blocked), do: "blocked " <> label("eeva", args, :done)
+
+  def label("eeva", args, _status) do
+    code = args |> Map.get("code", "") |> first_code_line()
+    compact_join(["eeva", code]) || "eeva"
   end
 
-  def target("image_generation", args), do: Map.get(args, "output_path")
-  def target("policy", args), do: Map.get(args, "target") || Map.get(args, "action")
-  def target("test_tool", args), do: Map.get(args, "args")
-  def target("git", args), do: Map.get(args, "operation") || Map.get(args, "command")
-  def target("fs", args), do: Map.get(args, "path") || Map.get(args, "target")
-  def target("task", args), do: Map.get(args, "name")
+  def label(name, _args, _status), do: to_string(name)
 
-  def target(_name, args),
-    do: Map.get(args, "filePath") || Map.get(args, "path") || Map.get(args, "pattern")
+  def blocked_label(name, args, _target \\ nil), do: label(to_string(name), args, :blocked)
 
-  def label(name, args, target, :blocked), do: blocked_label(name, args, target)
+  def target("eeva", _args), do: "Elixir"
+  def target(_name, _args), do: nil
 
-  def label("image_generation", _args, target, _status),
-    do: compact_join(["image_generation ->", target]) || "image_generation"
-
-  def label("policy", args, target, _status),
-    do: compact_join(["policy", Map.get(args, "action"), target])
-
-  def label("modify_file", args, target, _status) do
-    compact_join(["modify_file", Map.get(args, "operation"), target, byte_badge(args)])
+  def summary("eeva", args, result) do
+    code = args |> Map.get("code", "") |> first_code_line()
+    compact_join([code, result_summary(result)]) |> compact_text()
   end
-
-  def label("fs", args, target, _status),
-    do: compact_join(["fs", Map.get(args, "operation"), target])
-
-  def label("git", args, _target, _status),
-    do:
-      compact_join([
-        "git",
-        Map.get(args, "operation") || Map.get(args, "command"),
-        Map.get(args, "path")
-      ])
-
-  def label("test_tool", args, _target, _status),
-    do: compact_join(["test_tool", Map.get(args, "args")])
-
-  def label("task", args, target, _status),
-    do: compact_join(["task", target || "sub-agent", model_badge(args)])
-
-  def label("grep", args, target, _status),
-    do: compact_join(["grep", quote_compact(Map.get(args, "pattern")), "in", target])
-
-  def label("glob", args, target, _status),
-    do: compact_join(["glob", quote_compact(Map.get(args, "pattern")), "in", target])
-
-  def label(name, _args, nil, _status), do: name
-  def label(name, _args, "", _status), do: name
-  def label(name, _args, target, _status), do: "#{name} #{target}"
-
-  def blocked_label(name, args, target \\ nil) do
-    target = target || target(to_string(name), args)
-    normal = label(to_string(name), args, target, :done)
-    compact_join(["blocked", normal]) || "blocked #{name}"
-  end
-
-  def summary("image_generation", args, result) do
-    prompt = compact_text(Map.get(args, "prompt", ""), 90)
-    output = Map.get(args, "output_path")
-    saved = saved_path(result)
-
-    [prompt, output && "output #{output}", saved && "saved #{saved}", saved && "open #{saved}"]
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.join(" · ")
-  end
-
-  def summary("plan", args, _result) do
-    files =
-      ["create_files", "modify_files", "delete_files"]
-      |> Enum.flat_map(&(Map.get(args, &1, []) || []))
-      |> Enum.take(5)
-      |> Enum.join(", ")
-
-    compact_text((files == "" && Map.get(args, "summary", "plan")) || files)
-  end
-
-  def summary("policy", args, result) do
-    [Map.get(args, "message"), result_summary(result)]
-    |> Enum.reject(&(&1 in [nil, ""]))
-    |> Enum.join(" · ")
-    |> compact_text()
-  end
-
-  def summary("modify_file", args, _result) do
-    key_values([
-      {"op", Map.get(args, "operation")},
-      {"path", Map.get(args, "path")},
-      {"range", modify_range(args)},
-      {"bytes", content_bytes(args)}
-    ])
-  end
-
-  def summary("fs", args, _result),
-    do: key_values([{"op", Map.get(args, "operation")}, {"target", Map.get(args, "target")}])
-
-  def summary("git", args, _result),
-    do:
-      key_values([
-        {"op", Map.get(args, "operation") || Map.get(args, "command")},
-        {"path", Map.get(args, "path")},
-        {"base", Map.get(args, "base")},
-        {"workdir", Map.get(args, "workdir")}
-      ])
-
-  def summary("test_tool", args, _result),
-    do: key_values([{"args", Map.get(args, "args")}, {"workdir", Map.get(args, "workdir")}])
-
-  def summary("task", args, _result),
-    do:
-      key_values([
-        {"name", Map.get(args, "name")},
-        {"model", Map.get(args, "model", "default")},
-        {"prompt", compact_text(Map.get(args, "prompt", ""), 72)}
-      ])
-
-  def summary("read", args, result),
-    do:
-      key_values([
-        {"path", Map.get(args, "filePath") || Map.get(args, "path")},
-        {"range", range_summary(args)},
-        {"result", result_summary(result)}
-      ])
-
-  def summary("grep", args, result),
-    do:
-      key_values([
-        {"pattern", Map.get(args, "pattern")},
-        {"path", Map.get(args, "path", ".")},
-        {"result", result_summary(result)}
-      ])
-
-  def summary("glob", args, result),
-    do:
-      key_values([
-        {"pattern", Map.get(args, "pattern")},
-        {"path", Map.get(args, "path", ".")},
-        {"result", result_summary(result)}
-      ])
 
   def summary(_name, _args, result), do: result_summary(result)
 
-  def result_status("Error: Tool call blocked" <> _), do: :blocked
-  def result_status("Error: Mutation requires" <> _), do: :blocked
-  def result_status("Error: " <> _), do: :error
-  def result_status(_result), do: :done
+  def result_status(result) when is_binary(result) do
+    case Jason.decode(result) do
+      {:ok, %{"ok" => false, "classification" => classification}}
+      when classification in ["policy", "blocked"] ->
+        :blocked
+
+      {:ok, %{"ok" => false}} ->
+        :error
+
+      _ ->
+        if String.starts_with?(String.trim_leading(result), "Error:"), do: :error, else: :done
+    end
+  end
+
+  def result_status(_), do: :done
 
   def result_summary(nil), do: ""
-  def result_summary("Error: " <> reason), do: compact_text(reason)
 
   def result_summary(result) when is_binary(result) do
     case Jason.decode(result) do
-      {:ok, %{"summary" => summary}} ->
-        compact_text(summary)
-
-      {:ok, %{"ok" => true, "files" => files}} when is_list(files) ->
-        compact_text(Enum.join(files, ", "))
-
-      _ ->
-        compact_text(result)
+      {:ok, %{"summary" => summary}} -> compact_text(summary)
+      _ -> compact_text(result)
     end
   end
 
   def result_summary(result), do: compact_text(inspect(result, limit: 4, printable_limit: 160))
 
-  def byte_summary(args) do
-    content = Map.get(args, "content") || ""
-    if content == "", do: "", else: "#{byte_size(content)} bytes"
-  end
+  def compact_text(text, limit \\ @default_limit)
+  def compact_text(nil, _limit), do: ""
 
-  def modify_summary(args) do
-    Map.get(args, "operation") || ""
-  end
+  def compact_text(text, limit) when is_binary(text) do
+    text = text |> String.replace(~r/\s+/, " ") |> String.trim()
 
-  def modify_badge(args) do
-    case Map.get(args, "operation") do
-      nil -> nil
-      operation -> "(#{operation})"
+    if String.length(text) > limit do
+      String.slice(text, 0, max(limit - 3, 0)) <> "..."
+    else
+      text
     end
   end
 
+  def compact_text(value, limit), do: value |> to_string() |> compact_text(limit)
+
+  # Kept as tiny public compatibility helpers for Pretty. They no longer encode
+  # separate tool semantics.
   def byte_badge(args) do
-    content = Map.get(args, "content", "")
-    if content == "", do: nil, else: "(#{byte_size(content)} bytes)"
-  end
-
-  def content_bytes(args) do
     case Map.get(args, "content") do
-      content when is_binary(content) -> byte_size(content)
-      _content -> nil
+      content when is_binary(content) and content != "" -> "(#{byte_size(content)} bytes)"
+      _ -> nil
     end
   end
 
-  def modify_range(args) do
-    case {Map.get(args, "start_line"), Map.get(args, "end_line")} do
-      {nil, nil} -> nil
-      {start_line, end_line} -> "#{start_line}-#{end_line}"
-    end
-  end
+  def modify_badge(_args), do: nil
 
-  def model_badge(args) do
-    case Map.get(args, "model") do
-      nil -> nil
-      "" -> nil
-      model -> "(#{model})"
-    end
-  end
-
-  def range_summary(args) do
-    case {Map.get(args, "offset"), Map.get(args, "limit")} do
-      {nil, nil} -> nil
-      {offset, nil} -> "from #{offset}"
-      {nil, limit} -> "limit #{limit}"
-      {offset, limit} -> "#{offset}+#{limit}"
-    end
-  end
-
-  def key_values(pairs, suffix \\ "") do
-    pairs
-    |> Enum.reject(fn {_key, value} -> value in [nil, ""] end)
-    |> Enum.map(fn {key, value} -> "#{key}: #{value}#{suffix}" end)
-    |> Enum.join(" · ")
-    |> case do
-      "" -> ""
-      text -> compact_text(text)
-    end
-  end
-
-  def compact_text(value, limit \\ @default_limit) do
-    value
+  defp first_code_line(code) do
+    code
     |> to_string()
-    |> String.replace(~r/\s+/, " ")
-    |> String.trim()
-    |> truncate(limit)
+    |> String.split(~r/\R/, parts: 2)
+    |> List.first()
+    |> compact_text(92)
   end
 
-  def compact_join(values) do
+  defp compact_join(values) do
     values
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.join(" ")
@@ -271,21 +109,4 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
       value -> value
     end
   end
-
-  defp quote_compact(nil), do: nil
-  defp quote_compact(""), do: nil
-  defp quote_compact(value), do: ~s("#{compact_text(value, 36)}")
-
-  defp saved_path(result) when is_binary(result) do
-    case Jason.decode(result) do
-      {:ok, %{"files" => [file | _]}} -> file
-      {:ok, %{"saved" => file}} -> file
-      _ -> nil
-    end
-  end
-
-  defp saved_path(_result), do: nil
-
-  defp truncate(text, limit) when byte_size(text) <= limit, do: text
-  defp truncate(text, limit), do: String.slice(text, 0, max(limit - 3, 0)) <> "..."
 end

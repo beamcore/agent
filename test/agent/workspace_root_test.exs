@@ -1,9 +1,10 @@
 defmodule Beamcore.Agent.WorkspaceRootTest do
   use ExUnit.Case, async: false
 
-  alias Beamcore.Agent.Policy.ProjectPolicy
-  alias Beamcore.Agent.Tools.{Git, TestTool, Modify, PathSafety, Eeva}
   alias Beamcore.Agent.Chat.Session
+  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Policy.ProjectPolicy
+  alias Beamcore.Agent.Tools.Eeva
 
   setup do
     root =
@@ -41,93 +42,42 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     assert_receive {:workspace, ^root, ^root}
   end
 
-  test "auto fallback keeps captured workspace root", %{root: root} do
-    parent = self()
-
-    ExUnit.CaptureIO.capture_io(fn ->
-      assert :ok =
-               Beamcore.Agent.chat(:auto,
-                 workspace_root: root,
-                 client: :test_client,
-                 supported?: true,
-                 tui_start: fn _opts -> raise "alternate screen failed" end,
-                 plain_start: fn opts ->
-                   send(parent, {:workspace, PathSafety.workspace_root(), opts[:workspace_root]})
-                   :ok
-                 end
-               )
-    end)
-
-    assert_receive {:workspace, ^root, ^root}
-  end
-
   test "session detects project nature from captured workspace root", %{root: root} do
     File.write!(Path.join(root, "mix.exs"), "defmodule Demo.MixProject do\nend\n")
-
     session = Session.new(:client, workspace_root: root)
-
     assert session.workspace_root == root
     assert session.project_nature == {:elixir, :mix}
   end
 
-  test "file tools resolve inside the configured workspace", %{root: root} do
+  test "ordinary Eeva File calls run inside the selected workspace", %{root: root} do
     with_workspace(root, fn ->
       result =
-        Modify.execute(%{
-          "operation" => "create_file",
-          "filePath" => "src/demo.txt",
-          "content" => "hello\n"
+        Eeva.execute(%{
+          "code" =>
+            "File.mkdir_p!(\"src\"); File.write!(\"src/demo.txt\", \"hello\\n\"); File.read!(\"src/demo.txt\")"
         })
         |> Jason.decode!()
 
       assert result["ok"]
-      assert result["path"] == "src/demo.txt"
-
+      assert result["result"] =~ "hello"
       assert File.read!(Path.join(root, "src/demo.txt")) == "hello\n"
-
-      assert Eeva.execute(%{"code" => "File.read!(\"#{Path.join(root, "src/demo.txt")}\")"}) =~
-               "hello"
-
       assert {:error, _reason} = PathSafety.resolve("../outside.txt")
     end)
   end
 
-  test "test_tool runs tests inside the user project workspace", %{root: root} do
-    File.write!(Path.join(root, "Makefile"), "test:\n\t@echo testing\n")
-
-    parent = self()
-
-    with_workspace(root, fn ->
-      previous = Application.get_env(:agent, :command_runner)
-
-      Application.put_env(:agent, :command_runner, fn exe, args, _opts ->
-        send(parent, {:called, exe, args})
-        {"ok", 0}
-      end)
-
-      try do
-        result = TestTool.execute(%{}) |> Jason.decode!()
-        assert result["ok"]
-        assert_receive {:called, "make", ["test"]}
-      after
-        if previous do
-          Application.put_env(:agent, :command_runner, previous)
-        else
-          Application.delete_env(:agent, :command_runner)
-        end
-      end
-    end)
-  end
-
-  test "git tool inspects the user project repository", %{root: root} do
+  test "ordinary Eeva System.cmd inspects the user repository", %{root: root} do
     File.write!(Path.join(root, "README.md"), "user repo\n")
     System.cmd("git", ["init"], cd: root, stderr_to_stdout: true)
 
     with_workspace(root, fn ->
-      output = Git.execute(%{"operation" => "status"})
+      result =
+        Eeva.execute(%{
+          "code" => "System.cmd(\"git\", [\"status\", \"--short\"], stderr_to_stdout: true)"
+        })
+        |> Jason.decode!()
 
-      assert output =~ "README.md"
-      refute output =~ "lib/agent.ex"
+      assert result["ok"]
+      assert result["result"] =~ "README.md"
     end)
   end
 
@@ -142,7 +92,6 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
 
     with_workspace(root, fn ->
       policy = ProjectPolicy.load()
-
       assert policy.loaded?
       assert policy.path == Path.join(root, ".beamcore/policy.json")
       assert {:error, _message} = ProjectPolicy.allowed_read_path?(policy, "secret/token.txt")
@@ -161,6 +110,6 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
 
   defp restore_project_policy_root(nil), do: Application.delete_env(:agent, :project_policy_root)
 
-  defp restore_project_policy_root(root),
-    do: Application.put_env(:agent, :project_policy_root, root)
+  defp restore_project_policy_root(value),
+    do: Application.put_env(:agent, :project_policy_root, value)
 end

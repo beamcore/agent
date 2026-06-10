@@ -285,7 +285,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             %{
               "id" => "call_1",
               "function" => %{
-                "name" => "modify_file",
+                "name" => "eeva",
                 "arguments" =>
                   Jason.encode!(%{
                     "path" => "scratch/big.ex",
@@ -295,7 +295,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             }
           ]
         },
-        %{role: "tool", tool_call_id: "call_1", name: "modify_file", content: "ok"}
+        %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
       prepared = Session.prepare_for_api(messages)
@@ -324,7 +324,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             %{
               "id" => "call_1",
               "function" => %{
-                "name" => "modify_file",
+                "name" => "eeva",
                 "arguments" =>
                   Jason.encode!(%{
                     "patch_content" => patch,
@@ -334,7 +334,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             }
           ]
         },
-        %{role: "tool", tool_call_id: "call_1", name: "modify_file", content: "ok"}
+        %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
       prepared = Session.prepare_for_api(messages)
@@ -357,7 +357,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
                 %{
                   "id" => "call_1",
                   "function" => %{
-                    "name" => "modify_file",
+                    "name" => "eeva",
                     "arguments" =>
                       Jason.encode!(%{"path" => "scratch/a.ex", "content" => content})
                   }

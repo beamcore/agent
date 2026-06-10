@@ -23,8 +23,6 @@ defmodule Beamcore.Agent.Chat.Commands do
     case command do
       "new" -> handle_new(session, nil, output)
       "new " <> arg -> handle_new(session, String.trim(arg), output)
-      "confirm" -> handle_confirm(session, output)
-      "cancel" -> handle_cancel(session, output)
       "context" -> handle_context(session, output)
       "context clear" -> handle_context_clear(session, output)
       "yolo" -> handle_yolo(session, output)
@@ -464,35 +462,6 @@ defmodule Beamcore.Agent.Chat.Commands do
     session
   end
 
-  defp handle_confirm(%{context: %{pending_action: nil}} = session, output) do
-    output.("No pending action to confirm.")
-    session
-  end
-
-  defp handle_confirm(%{pending_user_message: nil} = session, output) do
-    output.("No pending action to confirm.")
-    session
-  end
-
-  defp handle_confirm(session, output) do
-    pending_action = session.context.pending_action
-    confirmed_content = confirmed_execution_content(session.pending_user_message, pending_action)
-    confirmed_session = Session.clear_pending_action(session)
-
-    output.("Confirmed pending action.")
-    {:run_pending, confirmed_session, confirmed_content, pending_action.policy}
-  end
-
-  defp handle_cancel(%{context: %{pending_action: nil}} = session, output) do
-    output.("No pending action to cancel.")
-    session
-  end
-
-  defp handle_cancel(session, output) do
-    output.("Pending action canceled.")
-    Session.clear_pending_action(session)
-  end
-
   defp policy_command([]), do: {:show_summary}
   defp policy_command(["show"]), do: {:show_config}
   defp policy_command(["reload"]), do: {:reload}
@@ -549,7 +518,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   defp reset_policy do
     path =
-      Path.join(Beamcore.Agent.Tools.PathSafety.workspace_root(), ProjectPolicy.config_path())
+      Path.join(Beamcore.Agent.PathSafety.workspace_root(), ProjectPolicy.config_path())
 
     case File.rm(path) do
       :ok -> "Project policy reset. #{ProjectPolicy.summary(ProjectPolicy.load())}"
@@ -648,66 +617,5 @@ defmodule Beamcore.Agent.Chat.Commands do
       ],
       &String.contains?(key, &1)
     )
-  end
-
-  defp confirmed_execution_content(original_request, pending_action) do
-    """
-    Confirmed execution request.
-
-    The user confirmed the pending plan. Execute it now using the Policy below.
-    Do not call the plan tool. Do not ask for confirmation again.
-    Use only the allowed tools and paths. Do not run validation tools unless they are listed in allowed_tools.
-    If execution fails, report the error.
-
-    #{policy_block(pending_action)}
-
-    Original user request:
-    #{String.trim(to_string(original_request))}
-    """
-    |> String.trim()
-  end
-
-  defp policy_block(pending_action) do
-    policy = Map.get(pending_action, :policy, %{})
-
-    allowed_write_paths =
-      pending_action
-      |> Map.get(:allowed_write_paths, Map.get(policy, :allowed_write_paths, []))
-      |> List.wrap()
-      |> Enum.reject(&(&1 in [nil, ""]))
-      |> Enum.uniq()
-
-    allowed_tools =
-      policy
-      |> Map.get(:allowed_tools, Map.get(pending_action, :allowed_tools, []))
-      |> List.wrap()
-      |> Enum.reject(&(&1 in [nil, ""]))
-      |> Enum.uniq()
-
-    blocked_tools =
-      policy
-      |> Map.get(:blocked_tools, [])
-      |> List.wrap()
-      |> Enum.reject(&(&1 in [nil, ""]))
-      |> Enum.uniq()
-
-    [
-      "Policy:",
-      "mode: restricted_write",
-      list_block("allowed_write_paths", allowed_write_paths),
-      list_block("allowed_tools", allowed_tools),
-      list_block("blocked_tools", blocked_tools),
-      "Task:",
-      Map.get(pending_action, :summary, "Execute the confirmed pending plan.")
-    ]
-    |> List.flatten()
-    |> Enum.reject(&(&1 == nil or &1 == ""))
-    |> Enum.join("\n")
-  end
-
-  defp list_block(_key, []), do: []
-
-  defp list_block(key, values) do
-    ["#{key}:" | Enum.map(values, &"- #{&1}")]
   end
 end

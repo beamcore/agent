@@ -4,7 +4,8 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.FilesystemJournal.Server
-  alias Beamcore.Agent.Tools.{CommandRunner, Git, Modify, PathSafety}
+  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.Eeva
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{"MISTRAL_API_KEY" => "test-api-key"})
@@ -445,117 +446,6 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
     refute File.exists?(Path.join(root, "created.txt"))
   end
 
-  test "BeamCore-started command mutations are journaled and selectively rewound", %{
-    root: root,
-    session: session
-  } do
-    File.write!(Path.join(root, "format.txt"), "alpha\nbeta\n")
-    checkpoint_a = checkpoint!(session, "A")
-
-    Application.put_env(:agent, :command_runner, fn _executable, _args, opts ->
-      path = Path.join(Keyword.fetch!(opts, :cd), "format.txt")
-      File.write!(path, "alpha formatted by command\nbeta\n")
-      {"formatted\n", 0}
-    end)
-
-    try do
-      FilesystemJournal.with_context(context(session), fn ->
-        result =
-          CommandRunner.run("test_tool", "test", "fake", [],
-            workdir: ".",
-            command_kind: "formatter"
-          )
-
-        assert result["ok"]
-        assert result["filesystem_changes"]["changed_path_count"] == 1
-      end)
-
-      File.write!(
-        Path.join(root, "format.txt"),
-        "alpha formatted by command\nbeta\ngamma added by human\n"
-      )
-
-      assert {:ok, rewound} = Session.rewind(checkpoint_a.session, checkpoint_a.id)
-      assert File.read!(Path.join(root, "format.txt")) == "alpha\nbeta\ngamma added by human\n"
-      assert filesystem_restore(rewound)["conflict_count"] == 0
-    after
-      Application.delete_env(:agent, :command_runner)
-    end
-  end
-
-  test "timed out command still journals completed workspace changes", %{
-    root: root,
-    session: session
-  } do
-    checkpoint_a = checkpoint!(session, "A")
-
-    Application.put_env(:agent, :command_runner, fn _executable, _args, opts ->
-      File.write!(Path.join(Keyword.fetch!(opts, :cd), "timeout-output.txt"), "owned\n")
-      Process.sleep(1_000)
-      {"late\n", 0}
-    end)
-
-    try do
-      FilesystemJournal.with_context(context(session), fn ->
-        result =
-          CommandRunner.run("test_tool", "test", "fake", [],
-            workdir: ".",
-            command_kind: "validation",
-            timeout: 10
-          )
-
-        refute result["ok"]
-      end)
-
-      assert File.read!(Path.join(root, "timeout-output.txt")) == "owned\n"
-      assert {:ok, _rewound} = Session.rewind(checkpoint_a.session, checkpoint_a.id)
-      refute File.exists?(Path.join(root, "timeout-output.txt"))
-    after
-      Application.delete_env(:agent, :command_runner)
-    end
-  end
-
-  test "Git hook mutations are attributed to the git command batch", %{
-    root: root,
-    session: session
-  } do
-    System.cmd("git", ["init"], cd: root, stderr_to_stdout: true)
-    File.write!(Path.join(root, "tracked.txt"), "one\n")
-    System.cmd("git", ["add", "tracked.txt"], cd: root, stderr_to_stdout: true)
-
-    System.cmd(
-      "git",
-      [
-        "-c",
-        "user.name=Beamcore Test",
-        "-c",
-        "user.email=test@example.com",
-        "commit",
-        "-m",
-        "initial"
-      ],
-      cd: root,
-      stderr_to_stdout: true
-    )
-
-    hook = Path.join(root, ".git/hooks/pre-commit")
-    File.write!(hook, "#!/bin/sh\nprintf 'hook owned\\n' > hook-output.txt\n")
-    File.chmod!(hook, 0o755)
-
-    checkpoint_a = checkpoint!(session, "A")
-    File.write!(Path.join(root, "tracked.txt"), "two\n")
-
-    FilesystemJournal.with_context(context(session), fn ->
-      assert Git.execute(%{"operation" => "add", "path" => "tracked.txt"}) =~ "Success"
-      refute Git.execute(%{"operation" => "commit", "message" => "hook mutation"}) =~ "Error:"
-    end)
-
-    assert File.read!(Path.join(root, "hook-output.txt")) == "hook owned\n"
-
-    assert {:ok, _rewound} = Session.rewind(checkpoint_a.session, checkpoint_a.id)
-    refute File.exists?(Path.join(root, "hook-output.txt"))
-  end
-
   test "executable mode is restored", %{root: root, session: session} do
     path = Path.join(root, "script")
     File.write!(path, "#!/usr/bin/env elixir\n")
@@ -776,9 +666,37 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
     Map.put(checkpoint, :session, session)
   end
 
-  defp modify_agent!(session, args) do
+  defp modify_agent!(session, %{"operation" => "replace_exact"} = args) do
+    path = Map.fetch!(args, "path")
+    old = Map.fetch!(args, "old")
+    new = Map.fetch!(args, "new")
+
+    code = """
+    path = #{inspect(path)}
+    content = File.read!(path)
+    updated = String.replace(content, #{inspect(old)}, #{inspect(new)}, global: false)
+    if updated == content, do: raise("exact text was not found")
+    File.write!(path, updated)
+    """
+
     FilesystemJournal.with_context(context(session), fn ->
-      Modify.execute(args) |> Jason.decode!()
+      Eeva.execute(%{"code" => code}) |> Jason.decode!()
+    end)
+  end
+
+  defp modify_agent!(session, %{"operation" => "create_file"} = args) do
+    path = Map.fetch!(args, "path")
+    content = Map.get(args, "content", "")
+
+    code = """
+    path = #{inspect(path)}
+    parent = Path.dirname(path)
+    if parent != ".", do: File.mkdir_p!(parent)
+    File.write!(path, #{inspect(content)})
+    """
+
+    FilesystemJournal.with_context(context(session), fn ->
+      Eeva.execute(%{"code" => code}) |> Jason.decode!()
     end)
   end
 

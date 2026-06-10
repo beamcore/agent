@@ -3,7 +3,6 @@ defmodule Beamcore.Agent.Core.Pretty do
   Module for pretty-printing and formatting chat responses, tool calls, and errors.
   Supports colored output, structured formatting, and customizable themes.
     "
-  alias Beamcore.Agent.Core.ToolDisplay
 
   defmodule Colors do
     @moduledoc "ANSI color codes for terminal output."
@@ -238,177 +237,23 @@ defmodule Beamcore.Agent.Core.Pretty do
     )
   end
 
-  defp format_tool_args("modify_file", args, _context) do
-    path = Map.get(args, "path", "unknown")
-    operation = Map.get(args, "operation", "unknown")
-
-    badge = ToolDisplay.byte_badge(args) || ToolDisplay.modify_badge(args) || ""
-
-    IO.puts(
-      colorize("op: ", &Colors.dim/0) <>
-        colorize(operation, &Colors.bright_cyan/0) <>
-        colorize(" path: ", &Colors.dim/0) <>
-        colorize(path, &Colors.bright_white/0) <>
-        colorize(" #{badge}", &Colors.dim/0)
-    )
-  end
-
-  defp format_tool_args("read", args, _context)
-       when is_map(args) and (is_map_key(args, "filePath") or is_map_key(args, "path")) do
-    path = Map.get(args, "filePath") || Map.get(args, "path")
-    offset = Map.get(args, "offset")
-    limit = Map.get(args, "limit")
+  defp format_tool_args("eeva", args, _context) do
+    code =
+      args
+      |> Map.get("code", "")
+      |> String.trim()
+      |> String.split(~r/\R/, parts: 2)
+      |> List.first()
+      |> to_string()
 
     IO.puts(
-      colorize("path: ", &Colors.dim/0) <>
-        colorize(path, &Colors.bright_white/0) <>
-        colorize(" (offset: #{offset || 1}, limit: #{limit || 200})", &Colors.dim/0)
-    )
-  end
-
-  defp format_tool_args("grep", %{"pattern" => pattern} = args, _context) do
-    path = Map.get(args, "path", ".")
-    include = Map.get(args, "include")
-
-    header =
-      colorize("pattern: ", &Colors.dim/0) <>
-        colorize(pattern, &Colors.bright_magenta/0) <>
-        colorize(" path: ", &Colors.dim/0) <> colorize(path, &Colors.bright_white/0)
-
-    header =
-      if include do
-        header <>
-          colorize(" include: ", &Colors.dim/0) <> colorize(include, &Colors.bright_blue/0)
-      else
-        header
-      end
-
-    IO.puts(header)
-  end
-
-  defp format_tool_args("glob", %{"pattern" => pattern} = args, _context) do
-    path = Map.get(args, "path", ".")
-
-    IO.puts(
-      colorize("pattern: ", &Colors.dim/0) <>
-        colorize(pattern, &Colors.bright_magenta/0) <>
-        colorize(" path: ", &Colors.dim/0) <> colorize(path, &Colors.bright_white/0)
-    )
-  end
-
-  defp format_tool_args("web_get", %{"url" => url} = _args, _context) do
-    IO.puts(colorize("GET ", &Colors.bright_magenta/0) <> colorize(url, &Colors.bright_white/0))
-  end
-
-  defp format_tool_args("tree", args, _context) do
-    path = Map.get(args, "path", ".")
-
-    IO.puts(
-      colorize("path: ", &Colors.dim/0) <>
-        colorize(path, &Colors.bright_white/0)
-    )
-  end
-
-  defp format_tool_args("fs", %{"operation" => op} = args, _context) do
-    target = Map.get(args, "target")
-    op_str = colorize(op, &Colors.bright_magenta/0)
-    path_str = colorize(Map.get(args, "path", ""), &Colors.bright_white/0)
-
-    header =
-      colorize("op: ", &Colors.dim/0) <>
-        op_str <> colorize(" path: ", &Colors.dim/0) <> path_str
-
-    header =
-      if target do
-        header <> colorize(" target: ", &Colors.dim/0) <> colorize(target, &Colors.bright_white/0)
-      else
-        header
-      end
-
-    IO.puts(header)
-  end
-
-  defp format_tool_args("git", %{"operation" => op} = args, _context) do
-    op_str = colorize(op, &Colors.bright_magenta/0)
-
-    parts =
-      [
-        colorize("op: ", &Colors.dim/0) <> op_str,
-        maybe_format_arg("path", Map.get(args, "path")),
-        maybe_format_arg("url", Map.get(args, "url")),
-        maybe_format_arg("message", Map.get(args, "message")),
-        maybe_format_arg("workdir", Map.get(args, "workdir"))
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    IO.puts(Enum.join(parts, " "))
-  end
-
-  defp format_tool_args("task", %{"name" => name, "prompt" => prompt} = args, _context) do
-    model = Map.get(args, "model", "default")
-    prompt = ToolDisplay.compact_text(prompt, 60) <> "..."
-
-    IO.puts(
-      colorize("name: ", &Colors.dim/0) <>
-        colorize(name, &Colors.bright_white/0) <>
-        colorize(" model: ", &Colors.dim/0) <>
-        colorize(model, &Colors.bright_blue/0) <>
-        colorize(" prompt: ", &Colors.dim/0) <>
-        colorize(prompt, &Colors.bright_magenta/0)
-    )
-  end
-
-  defp format_tool_args("mix", %{"command" => cmd} = args, _context) do
-    mix_args = Map.get(args, "args", "")
-
-    header =
-      colorize("command: ", &Colors.dim/0) <>
-        colorize(cmd, &Colors.bright_magenta/0)
-
-    header =
-      if mix_args != "" do
-        header <> colorize(" args: ", &Colors.dim/0) <> colorize(mix_args, &Colors.bright_white/0)
-      else
-        header
-      end
-
-    IO.puts(header)
-  end
-
-  defp format_tool_args("plan", args, _context) do
-    create_files = Map.get(args, "create_files", [])
-    modify_files = Map.get(args, "modify_files", [])
-    delete_files = Map.get(args, "delete_files", [])
-    total_files = length(create_files) + length(modify_files) + length(delete_files)
-
-    IO.puts(
-      colorize("plan: #{total_files} files", &Colors.bright_white/0) <>
-        colorize(
-          " (create: #{length(create_files)}, modify: #{length(modify_files)}, delete: #{length(delete_files)})",
-          &Colors.dim/0
-        )
-    )
-  end
-
-  defp format_tool_args("image_generation", args, _context) do
-    output_path = Map.get(args, "output_path", "unknown")
-    prompt = Map.get(args, "prompt", "")
-
-    IO.puts(
-      colorize("output: ", &Colors.dim/0) <>
-        colorize(output_path, &Colors.bright_white/0) <>
-        colorize(" (prompt: #{String.length(prompt)} chars)", &Colors.dim/0)
+      colorize("elixir: ", &Colors.dim/0) <>
+        colorize(String.slice(code, 0, 120), &Colors.bright_cyan/0)
     )
   end
 
   defp format_tool_args(_name, args, _context) do
     IO.puts(colorize("a: ", &Colors.bright_yellow/0) <> inspect(args, pretty: true))
-  end
-
-  defp maybe_format_arg(_label, nil), do: nil
-
-  defp maybe_format_arg(label, val) do
-    colorize("#{label}: ", &Colors.dim/0) <> colorize(to_string(val), &Colors.bright_white/0)
   end
 
   @doc "
