@@ -5,7 +5,7 @@ defmodule Beamcore.TUI do
 
   use ExRatatui.App
 
-  alias Beamcore.TUI.{Events, MultiScreenState, Render, State}
+  alias Beamcore.TUI.{Events, FileFinder, MultiScreenState, Render, State}
 
   # --- Client API ---
 
@@ -56,6 +56,15 @@ defmodule Beamcore.TUI do
   def mount(opts) do
     # Start periodic ticking for animations (e.g. spinners, mascot)
     :timer.send_interval(100, self(), :tick)
+
+    # Warm the file finder cache off the UI thread so the first `@` keypress
+    # doesn't block the terminal while `git ls-files` runs.
+    parent = self()
+
+    Task.start(fn ->
+      files = FileFinder.load_files()
+      send(parent, {:file_finder_cache, files})
+    end)
 
     # Initialize presentational states for all three screens
     f1_state = State.new(nil, ExRatatui.textarea_new(), opts |> Keyword.put(:screen_type, :agent))
@@ -263,6 +272,22 @@ defmodule Beamcore.TUI do
     update_screen_by_session(state, session_id, fn screen_state ->
       Events.handle_restore_completed(action, checkpoint_id, result, screen_state)
     end)
+  end
+
+  @impl true
+  def handle_info({:file_finder_cache, files}, state) do
+    set_cache = fn screen_state ->
+      %{screen_state | file_finder_cache: screen_state.file_finder_cache || files}
+    end
+
+    new_state = %{
+      state
+      | f1_state: set_cache.(state.f1_state),
+        f2_state: set_cache.(state.f2_state),
+        f3_state: set_cache.(state.f3_state)
+    }
+
+    {:noreply, new_state}
   end
 
   @impl true
