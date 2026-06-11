@@ -22,7 +22,7 @@ LOAD_ENV = set -a; [ ! -f .env ] || . ./.env; set +a;
 .PHONY: all help
 .PHONY: install install-dev uninstall
 .PHONY: deps compile release test format format-check dialyzer check check-full
-.PHONY: chat chat-plain chat-local chat-plain-local shell run-ledger run-memory
+.PHONY: chat chat-plain shell run-ledger run-memory
 .PHONY: dev-setup init config-status version clean update
 
 all: compile
@@ -190,16 +190,6 @@ chat: compile
 chat-plain: compile
 	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
 
-## chat-local: Start TUI with an explicitly selected local provider/model
-chat-local: compile
-	@test -n "$(LOCAL_MODEL)" || { echo "error: set LOCAL_MODEL, e.g. make chat-local LOCAL_MODEL=qwen2.5-coder:latest"; exit 1; }
-	$(LOAD_ENV) ACTIVE_PROVIDER=$${LOCAL_PROVIDER:-ollama} API_CHAT_MODEL="$(LOCAL_MODEL)" mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
-
-## chat-plain-local: Start plain chat with an explicit local provider/model
-chat-plain-local: compile
-	@test -n "$(LOCAL_MODEL)" || { echo "error: set LOCAL_MODEL, e.g. make chat-plain-local LOCAL_MODEL=qwen2.5-coder:latest"; exit 1; }
-	$(LOAD_ENV) ACTIVE_PROVIDER=$${LOCAL_PROVIDER:-ollama} API_CHAT_MODEL="$(LOCAL_MODEL)" mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
-
 ## run-ledger: Run ledger service standalone (cluster member)
 run-ledger: compile
 	$(LOAD_ENV) LEDGER_GLOBAL=true elixir --sname ledger -S mix run --no-halt
@@ -269,8 +259,6 @@ help:
 	@echo "  \033[1mRunning:\033[0m"
 	@printf "    \033[36m%-16s\033[0m %s\n" "chat" "Start TUI chat (dev mode)"
 	@printf "    \033[36m%-16s\033[0m %s\n" "chat-plain" "Start plain fallback chat"
-	@printf "    \033[36m%-16s\033[0m %s\n" "chat-ollama" "Start TUI chat using local Ollama"
-	@printf "    \033[36m%-16s\033[0m %s\n" "chat-plain-ollama" "Start plain chat using local Ollama"
 	@printf "    \033[36m%-16s\033[0m %s\n" "run-ledger" "Run ledger service standalone"
 	@printf "    \033[36m%-16s\033[0m %s\n" "run-memory" "Run memory service standalone"
 	@echo ""

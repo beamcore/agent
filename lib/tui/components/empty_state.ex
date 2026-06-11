@@ -22,8 +22,8 @@ defmodule Beamcore.TUI.Components.EmptyState do
       Review project        Generate diagram
       Explain a module      Make a focused change
 
-    /help commands    Tab activity details    autonomous tools
-    Tool calls, plans, and policy blocks appear in Activity.
+    /help commands    @ file search    autonomous tools
+    Tool calls and blocked attempts appear as compact chat/status notices.
 
     Available #{total || 0} memories
     """

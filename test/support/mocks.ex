@@ -99,34 +99,3 @@ defmodule Beamcore.Agent.TestEnv do
     apply_env(env)
   end
 end
-
-defmodule Beamcore.Agent.TestPolicyRoot do
-  def setup(root) do
-    previous = Application.get_env(:agent, :project_policy_root)
-    Application.put_env(:agent, :project_policy_root, root)
-
-    ExUnit.Callbacks.on_exit(fn ->
-      restore(previous)
-    end)
-
-    :ok
-  end
-
-  def with_root(root, fun) do
-    previous = Application.get_env(:agent, :project_policy_root)
-    Application.put_env(:agent, :project_policy_root, root)
-
-    try do
-      fun.()
-    after
-      restore(previous)
-    end
-  end
-
-  def temp_root(prefix \\ "beamcore_policy_root") do
-    Path.join(System.tmp_dir!(), "#{prefix}_#{System.unique_integer([:positive])}")
-  end
-
-  defp restore(nil), do: Application.delete_env(:agent, :project_policy_root)
-  defp restore(root), do: Application.put_env(:agent, :project_policy_root, root)
-end

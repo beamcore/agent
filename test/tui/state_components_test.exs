@@ -2,9 +2,8 @@ defmodule Beamcore.TUI.StateComponentsTest do
   use ExUnit.Case, async: true
 
   alias Beamcore.TUI.State
-  alias Beamcore.TUI.Components.Activity
 
-  test "activity keeps a long visible history instead of only a few actions" do
+  test "internal event buffer keeps compact recent execution notices" do
     state = %State{activity: [], activity_follow_tail?: true}
 
     state =
@@ -16,7 +15,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert hd(state.activity).label =~ "step = 260"
   end
 
-  test "visible activity remains viewport sliced" do
+  test "internal event slices remain bounded for status/debug uses" do
     state = %State{activity: [], activity_follow_tail?: true}
 
     state =
@@ -27,9 +26,10 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert length(State.visible_timeline_items(state, 12)) <= 16
   end
 
-  test "activity renders eeva executions" do
+  test "internal execution notice remains compact" do
     state = %State{activity: [], activity_follow_tail?: true}
     state = State.add_activity(state, "eeva", %{"code" => "File.read!(\"README.md\")"}, :done)
-    assert Activity.compact_text(state) =~ "eeva"
+    assert hd(state.activity).label =~ "eeva"
+    assert hd(state.activity).summary =~ "File.read!"
   end
 end

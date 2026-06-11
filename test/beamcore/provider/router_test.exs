@@ -43,23 +43,6 @@ defmodule Beamcore.Provider.RouterTest do
     assert_receive {:call, "https://api.mistral.ai/v1", "test-mistral-key", "mistral-medium-3-5"}
   end
 
-  test "routes Ollama chat through compatible /v1 without requiring an API key" do
-    parent = self()
-
-    Process.put(:mock_completions_create, fn client, params ->
-      send(parent, {:call, client.base_url, client.token, client.receive_timeout, params.model})
-      {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "local"}}]}}
-    end)
-
-    assert {:ok, %{"choices" => [%{"message" => %{"content" => "local"}}]}} =
-             Router.chat(
-               %{provider: "ollama", model: "gemma4:latest"},
-               %{messages: [%{role: "user", content: "hi"}], tools: []}
-             )
-
-    assert_receive {:call, "http://127.0.0.1:11434/v1", "unused", 120_000, "gemma4:latest"}
-  end
-
   test "routes a custom compatible provider without adding an adapter module" do
     assert :ok =
              Beamcore.Config.put_provider("custom-compatible", %{

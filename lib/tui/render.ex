@@ -3,10 +3,10 @@ defmodule Beamcore.TUI.Render do
   Render composition for the primary TUI.
   """
 
-  alias Beamcore.TUI.Components.{Activity, Chat, Help, Input, StatusBar}
-  alias Beamcore.TUI.{Layout, Theme, State}
+  alias Beamcore.TUI.Components.{Chat, Help, Input, StatusBar}
+  alias Beamcore.TUI.{Layout, Theme}
   alias ExRatatui.Layout.Rect
-  alias ExRatatui.Widgets.{Paragraph, SlashCommands, Block, List, Popup}
+  alias ExRatatui.Widgets.{Block, List, Paragraph, Popup, SlashCommands}
 
   def render(state, frame) do
     area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
@@ -21,11 +21,9 @@ defmodule Beamcore.TUI.Render do
       end
 
     widgets
-    |> maybe_activity_details(state, area)
     |> maybe_help(state, area)
     |> maybe_commands(state, area)
     |> maybe_file_finder(state, area)
-    |> maybe_provider_selector(state, area)
   end
 
   defp tiny(_state, area) do
@@ -43,7 +41,6 @@ defmodule Beamcore.TUI.Render do
   defp wide(state, areas) do
     [
       {Chat.widget(state, areas.chat), areas.chat},
-      {Activity.widget(state, {:sidebar, areas.activity}), areas.activity},
       {Input.widget(state), areas.input},
       {StatusBar.widget(state, areas.status.width), areas.status}
     ]
@@ -52,7 +49,6 @@ defmodule Beamcore.TUI.Render do
   defp medium(state, areas) do
     [
       {Chat.widget(state, areas.chat), areas.chat},
-      {Activity.widget(state, {:strip, areas.activity}), areas.activity},
       {Input.widget(state), areas.input},
       {StatusBar.widget(state, areas.status.width), areas.status}
     ]
@@ -65,11 +61,6 @@ defmodule Beamcore.TUI.Render do
       {StatusBar.widget(state, areas.status.width), areas.status}
     ]
   end
-
-  defp maybe_activity_details(widgets, %{show_activity_details: true} = state, area),
-    do: widgets ++ [{Activity.details_widget(state, area), area}]
-
-  defp maybe_activity_details(widgets, _state, _area), do: widgets
 
   defp maybe_help(widgets, %{show_help: true}, area), do: widgets ++ [{Help.widget(), area}]
   defp maybe_help(widgets, _state, _area), do: widgets
@@ -122,40 +113,6 @@ defmodule Beamcore.TUI.Render do
       },
       percent_width: 50,
       percent_height: 40
-    }
-
-    [{popup, area}]
-  end
-
-  defp maybe_provider_selector(widgets, %{provider_selector_active?: true} = state, area) do
-    widgets ++ render_provider_selector(state, area)
-  end
-
-  defp maybe_provider_selector(widgets, _state, _area), do: widgets
-
-  defp render_provider_selector(state, area) do
-    active_provider = State.provider(state.session)
-
-    formatted_items =
-      Enum.map(state.provider_selector_results, &State.format_provider_item(&1, active_provider))
-
-    list = %List{
-      items: formatted_items,
-      selected: state.provider_selector_selected,
-      highlight_style: Theme.style(:accent),
-      style: Theme.style(:panel)
-    }
-
-    popup = %Popup{
-      content: list,
-      block: %Block{
-        title: "Select API Provider (Ctrl+O to close)",
-        borders: [:all],
-        border_type: :rounded,
-        border_style: Theme.style(:border_hot)
-      },
-      percent_width: 70,
-      percent_height: 35
     }
 
     [{popup, area}]

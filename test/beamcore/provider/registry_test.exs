@@ -31,13 +31,7 @@ defmodule Beamcore.Provider.RegistryTest do
     providers = Registry.list()
 
     assert Enum.any?(providers, &(&1.name == "mistral"))
-
-    ollama = Enum.find(providers, &(&1.name == "ollama"))
-    assert ollama.configured?
-    assert ollama.requires_api_key? == false
-    assert ollama.adapter == Beamcore.Provider.Adapters.OpenAICompatible
-    assert ollama.discovery == Beamcore.Provider.OllamaDiscovery
-    assert %Capabilities{local: true, chat: true} = ollama.capabilities
+    refute Enum.any?(providers, &(&1.name == "ollama"))
 
     mistral = Enum.find(providers, &(&1.name == "mistral"))
     assert mistral.requires_api_key?
@@ -66,7 +60,7 @@ defmodule Beamcore.Provider.RegistryTest do
     assert {:error, %Error{kind: :missing_config, provider: :mistral}} =
              Registry.validate_selection("mistral")
 
-    assert {:ok, %{name: "ollama"}} = Registry.validate_selection("ollama")
+    assert {:error, %Error{kind: :invalid_config}} = Registry.validate_selection("ollama")
   end
 
   defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
