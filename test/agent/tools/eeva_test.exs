@@ -337,4 +337,40 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     # The diagnostic about unused variable should appear in stdout, not on terminal
     assert result["stdout"] =~ "warning" or result["ok"]
   end
+
+  test "truncates multi-line stdout to 200 lines and reports omitted count" do
+    result =
+      Eeva.execute(%{"code" => "Enum.each(1..500, &IO.puts/1)"})
+      |> Jason.decode!()
+
+    assert result["ok"]
+    lines = String.split(result["stdout"], "\n")
+    # 200 kept lines plus the appended truncation notice line.
+    assert length(lines) == 201
+    assert result["stdout"] =~ "output truncated"
+    assert result["stdout"] =~ "301 more line(s) omitted"
+    assert result["summary"] =~ "Output was truncated (301 line(s) omitted)."
+  end
+
+  test "truncates a single long line to 1000 characters and reports omitted count" do
+    result =
+      Eeva.execute(%{"code" => "IO.write(String.duplicate(\"x\", 2500))"})
+      |> Jason.decode!()
+
+    assert result["ok"]
+    [content | _] = String.split(result["stdout"], "\n")
+    assert String.length(content) == 1000
+    assert result["stdout"] =~ "1500 more character(s) omitted"
+    assert result["summary"] =~ "Output was truncated (1500 character(s) omitted)."
+  end
+
+  test "does not truncate output within limits" do
+    result =
+      Eeva.execute(%{"code" => "Enum.each(1..10, &IO.puts/1)"})
+      |> Jason.decode!()
+
+    assert result["ok"]
+    refute result["stdout"] =~ "output truncated"
+    refute result["summary"] =~ "Output was truncated"
+  end
 end
