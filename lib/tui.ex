@@ -5,7 +5,11 @@ defmodule Beamcore.TUI do
 
   use ExRatatui.App
 
-  alias Beamcore.TUI.{Events, FileFinder, MultiScreenState, Render, State}
+  alias Beamcore.TUI.{Events, FileFinder, Layout, MultiScreenState, Render, State}
+  alias ExRatatui.Layout.Rect
+
+  # Statuses whose mascot/spinner animate and therefore require periodic redraws.
+  @animated_statuses [:thinking, :tool_running, :local_search]
 
   # --- Client API ---
 
@@ -80,7 +84,37 @@ defmodule Beamcore.TUI do
       f3_state: f3_state
     }
 
-    {:ok, state}
+    {:ok, init_activity_viewports(state)}
+  end
+
+  # Seed each screen's Activity viewport height from the current terminal size so
+  # timeline paging works before the first resize event arrives.
+  defp init_activity_viewports(state) do
+    {width, height} = ExRatatui.terminal_size()
+    set_activity_viewports(state, width, height)
+  end
+
+  defp set_activity_viewports(state, width, height) do
+    area = %Rect{x: 0, y: 0, width: width, height: height}
+
+    %{
+      state
+      | f1_state:
+          State.set_activity_viewport_height(
+            state.f1_state,
+            Layout.activity_viewport_height(area, state.f1_state.screen_type)
+          ),
+        f2_state:
+          State.set_activity_viewport_height(
+            state.f2_state,
+            Layout.activity_viewport_height(area, state.f2_state.screen_type)
+          ),
+        f3_state:
+          State.set_activity_viewport_height(
+            state.f3_state,
+            Layout.activity_viewport_height(area, state.f3_state.screen_type)
+          )
+    }
   end
 
   @impl true
@@ -118,6 +152,14 @@ defmodule Beamcore.TUI do
           new_state = MultiScreenState.update_active(new_state, &State.mark_dirty/1)
           {:noreply, new_state}
         end
+
+      %ExRatatui.Event.Resize{width: width, height: height} ->
+        new_state =
+          state
+          |> set_activity_viewports(width, height)
+          |> MultiScreenState.update_active(&State.mark_dirty/1)
+
+        {:noreply, new_state}
 
       _ ->
         delegate_event(event, state, state.active_screen)
@@ -170,18 +212,28 @@ defmodule Beamcore.TUI do
 
   defp update_screen_by_session(state, _session_id, _fun), do: {:noreply, state}
 
+  defp animating?(%{status: status}), do: status in @animated_statuses
+  defp animating?(_state), do: false
+
   @impl true
   def handle_info(:tick, state) do
-    now = System.monotonic_time(:millisecond)
+    # The visible screen only animates while its agent is working. When nothing
+    # is animating we skip both the spinner bump and the redraw, so an idle TUI
+    # stops re-rendering 10x/second.
+    if animating?(MultiScreenState.get_active(state)) do
+      now = System.monotonic_time(:millisecond)
 
-    new_state = %{
-      state
-      | f1_state: State.tick(state.f1_state, now),
-        f2_state: State.tick(state.f2_state, now),
-        f3_state: State.tick(state.f3_state, now)
-    }
+      new_state = %{
+        state
+        | f1_state: State.tick(state.f1_state, now),
+          f2_state: State.tick(state.f2_state, now),
+          f3_state: State.tick(state.f3_state, now)
+      }
 
-    {:noreply, new_state}
+      {:noreply, new_state}
+    else
+      {:noreply, state, render?: false}
+    end
   end
 
   @impl true

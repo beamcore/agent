@@ -57,6 +57,19 @@ defmodule Beamcore.TUI.Layout do
     end
   end
 
+  @doc """
+  Returns the inner (content) height of the Activity panel for the given area
+  and screen type, or 0 when no Activity panel is shown (narrow/tiny layouts
+  and the chat/research screens). Mirrors the viewport height the Activity
+  widget renders with, so timeline paging matches what is on screen.
+  """
+  def activity_viewport_height(%Rect{} = area, screen_type \\ :agent) do
+    case areas(area, screen_type) do
+      %{activity: %Rect{height: height}} -> max(height - 2, 1)
+      _ -> 0
+    end
+  end
+
   defp shell(area, header_height, input_height) do
     parts =
       RatLayout.split(area, :vertical, [

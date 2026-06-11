@@ -104,6 +104,26 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
              Layout.areas(%Rect{x: 0, y: 0, width: 40, height: 9})
   end
 
+  test "activity viewport height reflects the rendered Activity panel" do
+    wide = %Rect{x: 0, y: 0, width: 140, height: 36}
+    medium = %Rect{x: 0, y: 0, width: 100, height: 30}
+    narrow = %Rect{x: 0, y: 0, width: 80, height: 24}
+
+    %{activity: %Rect{height: wide_h}} = Layout.areas(wide, :agent)
+    assert Layout.activity_viewport_height(wide, :agent) == max(wide_h - 2, 1)
+
+    %{activity: %Rect{height: medium_h}} = Layout.areas(medium, :agent)
+    assert Layout.activity_viewport_height(medium, :agent) == max(medium_h - 2, 1)
+
+    # Narrow agent layout and the chat screen have no Activity panel.
+    assert Layout.activity_viewport_height(narrow, :agent) == 0
+    assert Layout.activity_viewport_height(wide, :chat) == 0
+
+    # The research screen shares the agent layout, so it does have one.
+    %{activity: %Rect{height: research_h}} = Layout.areas(wide, :research)
+    assert Layout.activity_viewport_height(wide, :research) == max(research_h - 2, 1)
+  end
+
   defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
   defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
 end

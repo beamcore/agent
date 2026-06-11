@@ -24,8 +24,8 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert spec.type == "function"
     assert spec.function.name == "eeva"
     assert spec.function.parameters.required == ["code"]
-    assert spec.function.description =~ "ordinary Elixir"
-    assert spec.function.description =~ "System.cmd"
+    assert spec.function.description =~ "arbitrary Elixir"
+    assert spec.function.parameters.properties.code.description =~ "System.cmd"
   end
 
   test "rejects missing code" do
@@ -200,6 +200,17 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
     refute result["ok"]
     assert result["stderr"] =~ "read-only policy"
+  end
+
+  test "emits eeva_preview event before execution" do
+    parent = self()
+    Process.put(:event_handler, fn event -> send(parent, event) end)
+
+    Eeva.execute(%{"code" => "1 + 1"})
+    assert_received {:eeva_preview, code}
+    assert code == "1 + 1"
+  after
+    Process.delete(:event_handler)
   end
 
   test "failures emit a concise eeva_failed event while success stays quiet" do

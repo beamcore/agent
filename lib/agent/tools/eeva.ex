@@ -14,7 +14,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   alias Beamcore.Agent.Tools.Eeva.{Sandbox, Supervisor, Worker}
   alias Beamcore.Agent.PathSafety
 
-  @default_timeout_ms 30_000
+  @default_timeout_ms 180_000
   @default_max_memory_bytes 256 * 1024 * 1024
   @default_max_reductions 40_000_000
   @default_max_output_bytes 256_000
