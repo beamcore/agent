@@ -45,12 +45,7 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "yolo", description: "Toggle freedom mode"},
     %Command{name: "yolo on", description: "Bypass project policy for this session"},
     %Command{name: "yolo off", description: "Restore project policy for this session"},
-    %Command{name: "stop", description: "Pause the session to add improved direction"},
-    %Command{
-      name: "continue",
-      description: "Resume the paused research session, optional alignment"
-    },
-    %Command{name: "resume", description: "Alias for continue"},
+    %Command{name: "stop", description: "Pause the session; type a message to resume"},
     %Command{
       name: "drop",
       description: "Discard/delete the current research session and restart fresh"
@@ -73,6 +68,8 @@ defmodule Beamcore.TUI.Events do
     mods = event.modifiers
 
     if key_press?(event) do
+      state = maybe_disarm_ctrl_c(code, mods, state)
+
       if code == "enter" and Keyword.get(opts, :paste, false) do
         {:noreply, insert_newline(state)}
       else
@@ -222,11 +219,12 @@ defmodule Beamcore.TUI.Events do
     |> State.add_message(:system, "Agent crashed: #{error_msg}")
     |> Map.put(:worker, nil)
     |> Map.put(:status, :idle)
+    |> Map.put(:ctrl_c_pending, false)
     |> State.mark_dirty()
   end
 
   defp handle_key("c", mods, state) do
-    if ctrl?(mods), do: {:stop, state}, else: handle_text_key("c", mods, state)
+    if ctrl?(mods), do: handle_ctrl_c(state), else: handle_text_key("c", mods, state)
   end
 
   defp handle_key(code, _mods, %{show_help: true} = state)
@@ -640,6 +638,31 @@ defmodule Beamcore.TUI.Events do
   defp ctrl?(nil), do: false
   defp ctrl?(mods), do: "ctrl" in mods
 
+  # Multi-purpose Ctrl+C: the first press arms a context-aware action and the
+  # second matching press confirms it. While a turn is running it pauses the
+  # session; while idle (or paused) it exits the app. Switching context between
+  # presses re-arms with the new action instead of confirming the old one.
+  defp handle_ctrl_c(state) do
+    desired = if worker_running?(state), do: :pause, else: :exit
+
+    if state.ctrl_c_pending == desired do
+      confirm_ctrl_c(desired, State.disarm_ctrl_c(state))
+    else
+      {:noreply, State.arm_ctrl_c(state, desired)}
+    end
+  end
+
+  defp confirm_ctrl_c(:pause, state), do: {:noreply, run_command(state, "stop")}
+  defp confirm_ctrl_c(:exit, state), do: {:stop, state}
+
+  defp worker_running?(%{worker: worker}), do: not is_nil(worker)
+
+  defp maybe_disarm_ctrl_c("c", mods, state) do
+    if ctrl?(mods), do: state, else: State.disarm_ctrl_c(state)
+  end
+
+  defp maybe_disarm_ctrl_c(_code, _mods, state), do: State.disarm_ctrl_c(state)
+
   defp alt?(nil), do: false
   defp alt?(mods), do: "alt" in mods
 
@@ -683,7 +706,6 @@ defmodule Beamcore.TUI.Events do
 
   defp submit(state) do
     if State.paused?(state) do
-      # When paused, don't process regular messages - they'll be handled by /continue
       value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
 
       cond do
@@ -696,8 +718,11 @@ defmodule Beamcore.TUI.Events do
           run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
 
         true ->
-          # Keep the message in the textarea for /continue to pick up
-          state
+          # A plain message while paused resumes the session with the typed text
+          # as the new direction, so users can send again after a Ctrl+C pause.
+          ExRatatui.textarea_set_value(state.textarea, "")
+          state = record_history(state, value)
+          resume_session(%{state | show_commands: false}, value)
       end
     else
       value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
@@ -825,12 +850,12 @@ defmodule Beamcore.TUI.Events do
         session -> Session.interrupt(session, "Execution interrupted by user.")
       end)
       |> State.pause()
-      |> State.add_message(:system, "Execution interrupted. Current branch is paused.")
+      |> State.add_message(:system, "Execution interrupted. Type a message and send to resume.")
     else
       State.add_message(
         state,
         :system,
-        "Session paused. Type your improved direction to resume."
+        "Session paused. Type a message and send to resume."
       )
       |> Map.update!(:session, fn
         nil -> nil
@@ -838,22 +863,6 @@ defmodule Beamcore.TUI.Events do
       end)
       |> State.pause()
     end
-  end
-
-  defp run_command(state, "continue") do
-    handle_continue_command(state, "")
-  end
-
-  defp run_command(state, "continue " <> alignment) do
-    handle_continue_command(state, alignment)
-  end
-
-  defp run_command(state, "resume") do
-    handle_continue_command(state, "")
-  end
-
-  defp run_command(state, "resume " <> alignment) do
-    handle_continue_command(state, alignment)
   end
 
   defp run_command(state, "drop") do
@@ -918,7 +927,7 @@ defmodule Beamcore.TUI.Events do
     apply_command_result(result, state, command)
   end
 
-  defp handle_continue_command(state, alignment) do
+  defp resume_session(state, alignment) do
     alignment = String.trim(alignment)
     state = State.resume(state)
 

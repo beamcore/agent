@@ -59,7 +59,7 @@ defmodule Beamcore.TUI.Components.Help do
     Activity: Enter details, Ctrl+R rewind, Ctrl+F fork, Ctrl+A abandon in details
     Esc              Close suggestions, help, or details
     q                Close this panel
-    Ctrl+C           Exit
+    Ctrl+C           While running: press twice to pause; while idle: press twice to exit
 
     Tools, blocked attempts, validation, and image generation appear in Activity.
     """
