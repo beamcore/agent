@@ -33,6 +33,7 @@ defmodule Beamcore.TUI.State do
             last_animation_tick_ms: 0,
             render_dirty?: true,
             worker: nil,
+            ctrl_c_pending: false,
             pending_login?: false,
             unicode?: true,
             history: [],
@@ -142,6 +143,25 @@ defmodule Beamcore.TUI.State do
 
   def clear_notice(state), do: %{state | notice: nil} |> mark_dirty()
 
+  @doc """
+  Arm the multi-purpose Ctrl+C action.
+
+  `mode` is `:pause` (interrupt a running turn) or `:exit` (quit the app). The
+  first Ctrl+C press arms the action; a matching second press confirms it.
+  """
+  def arm_ctrl_c(state, mode) when mode in [:pause, :exit],
+    do: %{state | ctrl_c_pending: mode} |> mark_dirty()
+
+  @doc "Clear any pending Ctrl+C action (e.g. when another key is pressed)."
+  def disarm_ctrl_c(%{ctrl_c_pending: false} = state), do: state
+  def disarm_ctrl_c(state), do: %{state | ctrl_c_pending: false} |> mark_dirty()
+
+  @doc "Hint text shown while a Ctrl+C action is armed."
+  def ctrl_c_hint(:pause), do: "Press Ctrl+C again to pause the session."
+  def ctrl_c_hint(:exit), do: "Press Ctrl+C again to exit."
+  def ctrl_c_hint(_), do: nil
+
+
   def paused?(%{status: :paused}), do: true
   def paused?(_state), do: false
 
@@ -160,7 +180,8 @@ defmodule Beamcore.TUI.State do
   def start_worker(state, pid), do: %{state | worker: pid, status: :thinking} |> mark_dirty()
 
   def finish_worker(state, session) do
-    %{set_session(state, session) | worker: nil, status: :idle} |> mark_dirty()
+    %{set_session(state, session) | worker: nil, status: :idle, ctrl_c_pending: false}
+    |> mark_dirty()
   end
 
   def mark_dirty(state), do: %{state | render_dirty?: true}

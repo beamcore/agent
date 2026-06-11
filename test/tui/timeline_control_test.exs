@@ -94,15 +94,17 @@ defmodule Beamcore.TUI.TimelineControlTest do
     assert Enum.any?(state.session.timeline, &(&1.type == :interrupted))
   end
 
-  test "TUI can trigger resume", %{state: state} do
+  test "TUI resumes a paused session when a plain message is sent", %{state: state} do
     session = Session.interrupt(state.session, "Paused.")
     state = %{state | session: session, status: :paused}
 
-    state = submit_command(state, "/resume")
+    ExRatatui.textarea_set_value(state.textarea, "try a different approach")
+    {:noreply, state} = Events.handle_event(key("s", ["ctrl"]), state)
 
-    assert state.status == :idle
+    refute state.status == :paused
     refute state.session.interrupted?
     assert Enum.any?(state.session.timeline, &(&1.type == :resumed))
+    assert Enum.any?(state.messages, &(&1.role == :user and &1.content == "try a different approach"))
   end
 
   test "TUI can trigger rewind and fork from a checkpoint", %{state: state} do

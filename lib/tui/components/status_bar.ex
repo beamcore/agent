@@ -20,11 +20,14 @@ defmodule Beamcore.TUI.Components.StatusBar do
       "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
 
     right_text =
-      case state.notice do
-        notice when is_binary(notice) and notice != "" ->
-          notice
+      cond do
+        hint = State.ctrl_c_hint(state.ctrl_c_pending) ->
+          hint
 
-        _ ->
+        is_binary(state.notice) and state.notice != "" ->
+          state.notice
+
+        true ->
           "#{provider_model} · #{tokens} tok#{checkpoint_label}"
       end
 
