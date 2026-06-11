@@ -5,7 +5,6 @@ defmodule Beamcore.TUI.FileFinder do
   against a query using subsequence fuzzy matching.
   """
 
-  alias Beamcore.Agent.Policy.ProjectPolicy
   alias Beamcore.Agent.PathSafety
   alias Beamcore.Agent.SafeCmd
 
@@ -72,7 +71,7 @@ defmodule Beamcore.TUI.FileFinder do
   Loads the list of workspace files and directories, respecting .gitignore.
   Tries git ls-files, then rg --files, then Path.wildcard as fallback.
   Directories are derived from file paths and suffixed with `/`.
-  Filters out denied policy paths.
+  Filters out internal and denied workspace paths.
   """
   @spec load_files() :: [String.t()]
   def load_files do
@@ -87,7 +86,6 @@ defmodule Beamcore.TUI.FileFinder do
     dirs = extract_directories(file_paths)
 
     (file_paths ++ dirs)
-    |> Enum.reject(&ProjectPolicy.denied_path?/1)
     |> Enum.filter(&safe_workspace_entry?/1)
     |> Enum.uniq()
     |> Enum.sort()

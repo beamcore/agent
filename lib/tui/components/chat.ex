@@ -2,11 +2,12 @@ defmodule Beamcore.TUI.Components.Chat do
   @moduledoc false
 
   alias Beamcore.TUI.Components.EmptyState
-  alias Beamcore.TUI.{State, Theme, Wrap}
+  alias Beamcore.TUI.{Theme, Wrap}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.{Block, Paragraph, Throbber, WidgetList}
 
+  @chat_overscan_lines 24
   @whitespace_rx ~r/^\s+/
   @comment_rx ~r/^#[^\n]*/
   @string_rx ~r/^"([^"\\]|\\.)*"/
@@ -20,15 +21,20 @@ defmodule Beamcore.TUI.Components.Chat do
 
   def widget(state, %Rect{} = area) do
     wrap_width = content_width(area)
+    viewport_height = max(area.height - 2, 1)
+
+    {message_state, effective_scroll_offset} =
+      visible_message_state(state, wrap_width, viewport_height)
 
     items =
-      state
+      message_state
       |> message_items(wrap_width)
-      |> append_spinner(state)
+      |> append_spinner(message_state)
+      |> append_bottom_spacer(Map.get(message_state, :bottom_spacer_height, 0))
 
     %WidgetList{
       items: items,
-      scroll_offset: scroll_offset(items, area, state.scroll_offset),
+      scroll_offset: scroll_offset(items, area, effective_scroll_offset),
       block: %Block{
         borders: [],
         padding: {0, 0, 0, 0}
@@ -38,6 +44,96 @@ defmodule Beamcore.TUI.Components.Chat do
 
   def render_message_lines(label, content, width) do
     [label | Wrap.lines(content, width)]
+  end
+
+  def visible_message_window(messages, wrap_width, viewport_height, distance_from_bottom) do
+    visible_message_window(
+      messages,
+      wrap_width,
+      viewport_height,
+      distance_from_bottom,
+      @chat_overscan_lines
+    )
+  end
+
+  def visible_message_window(
+        messages,
+        wrap_width,
+        viewport_height,
+        distance_from_bottom,
+        overscan
+      )
+      when is_list(messages) and (distance_from_bottom == 0 or is_nil(distance_from_bottom)) do
+    body_width = max(wrap_width - 2, 10)
+    viewport_height = max(viewport_height, 1)
+    overscan = max(overscan || 0, 0)
+    upper = viewport_height + overscan
+
+    {selected, _height} =
+      messages
+      |> Enum.reverse()
+      |> Enum.reduce_while({[], 0}, fn message, {selected, height} ->
+        message_height = estimated_message_height(message, body_width)
+        next_height = height + message_height
+
+        if height <= upper do
+          {:cont, {[message | selected], next_height}}
+        else
+          {:halt, {selected, height}}
+        end
+      end)
+
+    {selected, 0, 0}
+  end
+
+  def visible_message_window(
+        messages,
+        wrap_width,
+        viewport_height,
+        distance_from_bottom,
+        overscan
+      )
+      when is_list(messages) do
+    body_width = max(wrap_width - 2, 10)
+    viewport_height = max(viewport_height, 1)
+    distance_from_bottom = max(distance_from_bottom || 0, 0)
+    overscan = max(overscan || 0, 0)
+
+    estimates = Enum.map(messages, &estimated_message_height(&1, body_width))
+    total_height = Enum.sum(estimates)
+    effective_offset = min(distance_from_bottom, max(total_height - viewport_height, 0))
+    lower = max(effective_offset - overscan, 0)
+    upper = effective_offset + viewport_height + overscan
+
+    {selected_rev, _cursor} =
+      messages
+      |> Enum.zip(estimates)
+      |> Enum.reverse()
+      |> Enum.reduce({[], 0}, fn {message, height}, {selected, cursor} ->
+        next_cursor = cursor + height
+
+        if next_cursor >= lower and cursor <= upper do
+          {[message | selected], next_cursor}
+        else
+          {selected, next_cursor}
+        end
+      end)
+
+    bottom_spacer =
+      messages
+      |> Enum.zip(estimates)
+      |> Enum.reverse()
+      |> Enum.reduce_while(0, fn {_message, height}, acc ->
+        next = acc + height
+
+        if next <= lower do
+          {:cont, next}
+        else
+          {:halt, acc}
+        end
+      end)
+
+    {selected_rev, bottom_spacer, effective_offset}
   end
 
   defp message_items(%{messages: []} = state, wrap_width) do
@@ -78,6 +174,23 @@ defmodule Beamcore.TUI.Components.Chat do
         bubble("System", content, Theme.style(:muted), wrap_width, :plain)
     end)
   end
+
+  defp visible_message_state(%{messages: []} = state, _wrap_width, _viewport_height),
+    do: {state, 0}
+
+  defp visible_message_state(state, wrap_width, viewport_height) do
+    {messages, bottom_spacer, effective_offset} =
+      visible_message_window(state.messages, wrap_width, viewport_height, state.scroll_offset)
+
+    {%{state | messages: messages} |> Map.put(:bottom_spacer_height, bottom_spacer),
+     effective_offset}
+  end
+
+  defp append_bottom_spacer(items, height) when is_integer(height) and height > 0 do
+    items ++ [{%Paragraph{text: "", style: Theme.style(:subtle), wrap: false}, height}]
+  end
+
+  defp append_bottom_spacer(items, _height), do: items
 
   defp tool_bubble(label, content, wrap_width) do
     body_width = max(wrap_width - 2, 10)
@@ -253,7 +366,7 @@ defmodule Beamcore.TUI.Components.Chat do
     label =
       case status do
         :tool_running -> "… running tools"
-        :local_search -> "… context helper (#{State.helper_label(state.session)})"
+        :local_search -> "… working"
         _ -> "… thinking"
       end
 
@@ -276,6 +389,31 @@ defmodule Beamcore.TUI.Components.Chat do
   defp line_count(text), do: text |> to_string() |> String.split("\n") |> length()
 
   defp content_width(%Rect{width: width}), do: max(width - 4, 12)
+
+  defp estimated_message_height(%{role: :tool, content: content}, width),
+    do: estimated_text_height(content, width) + 2
+
+  defp estimated_message_height(%{role: :eeva_preview, content: content}, _width),
+    do: newline_count(content) + 2
+
+  defp estimated_message_height(%{content: content}, width),
+    do: estimated_text_height(content, width) + 2
+
+  defp estimated_message_height(_message, _width), do: 2
+
+  defp estimated_text_height(content, width) do
+    text = to_string(content || "")
+    chars = String.length(text)
+    explicit_lines = newline_count(text)
+    max(explicit_lines, div(chars, max(width, 1)) + 1)
+  end
+
+  defp newline_count(text) do
+    text
+    |> to_string()
+    |> String.split("\n", trim: false)
+    |> length()
+  end
 
   defp scroll_offset(items, %Rect{height: height}, distance_from_bottom) do
     content_height =

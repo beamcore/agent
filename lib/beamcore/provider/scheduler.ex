@@ -56,6 +56,7 @@ defmodule Beamcore.Provider.Scheduler do
     interval = Keyword.get(opts, :interval, state.default_interval)
     now = now()
     entry = Map.get(state.keys, key, entry(interval))
+    entry = %{entry | interval: interval}
     earliest = earliest_release(entry, now)
     release_at = max(now, earliest)
     delay = max(release_at - now, 0)

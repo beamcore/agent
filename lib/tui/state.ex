@@ -5,7 +5,6 @@ defmodule Beamcore.TUI.State do
 
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.Core.ToolDisplay
-  alias Beamcore.Agent.Policy.ProjectPolicy
 
   @max_activity 500
 
@@ -20,6 +19,7 @@ defmodule Beamcore.TUI.State do
             activity_follow_tail?: true,
             activity_unseen_count: 0,
             activity_viewport_height: 0,
+            chat_viewport_height: 0,
             status: :idle,
             scroll_offset: 0,
             activity_scroll_offset: 0,
@@ -45,11 +45,6 @@ defmodule Beamcore.TUI.State do
             file_finder_results: [],
             file_finder_selected: 0,
             file_finder_cache: nil,
-            provider_selector_active?: false,
-            provider_selector_results: [],
-            provider_selector_selected: 0,
-            pending_provider_key?: false,
-            pending_provider_name: nil,
             selected_checkpoint_id: nil,
             notice: nil,
             screen_type: :agent
@@ -70,7 +65,7 @@ defmodule Beamcore.TUI.State do
           %{
             role: :system,
             content:
-              "Beamcore is not configured for the selected primary provider. Use Ctrl+O or /api select to choose/configure one."
+              "Beamcore is not configured for the selected primary provider. Use /api list, /api add, or /login to configure one."
           }
         ]
 
@@ -161,7 +156,6 @@ defmodule Beamcore.TUI.State do
   def ctrl_c_hint(:exit), do: "Press Ctrl+C again to exit."
   def ctrl_c_hint(_), do: nil
 
-
   def paused?(%{status: :paused}), do: true
   def paused?(_state), do: false
 
@@ -244,6 +238,24 @@ defmodule Beamcore.TUI.State do
     do: %{state | scroll_offset: max(state.scroll_offset - amount, 0)} |> mark_dirty()
 
   def reset_scroll(state), do: %{state | scroll_offset: 0} |> mark_dirty()
+
+  @doc """
+  Scrolls the chat history by one viewport page. `:up` moves toward older
+  messages, `:down` toward the latest. Works regardless of composer content,
+  so it is the reliable way to page through history while typing.
+  """
+  def chat_page(state, direction) do
+    amount = max(state.chat_viewport_height - 2, 1)
+
+    case direction do
+      :up -> scroll_up(state, amount)
+      :down -> scroll_down(state, amount)
+    end
+  end
+
+  def set_chat_viewport_height(state, height) do
+    %{state | chat_viewport_height: max(height, 0)}
+  end
 
   defp auto_scroll_on_new_message(%{scroll_offset: offset} = state) when offset <= 2,
     do: reset_scroll(state)
@@ -345,12 +357,8 @@ defmodule Beamcore.TUI.State do
   def activity_end(state), do: reset_activity_scroll(state)
 
   def set_activity_viewport_height(state, height) do
-    height = max(height, 0)
-
-    %{state | activity_viewport_height: height}
-    |> clamp_activity_selection()
-    |> ensure_selected_visible()
-    |> mark_dirty()
+    # Keep the legacy field stable without walking the full timeline on resize.
+    %{state | activity_viewport_height: max(height, 0)} |> mark_dirty()
   end
 
   def visible_timeline_items(state, viewport_height, overscan \\ 2) do
@@ -379,15 +387,17 @@ defmodule Beamcore.TUI.State do
 
   def activity_indicator(%{activity_follow_tail?: false}), do: "Paused"
 
-  def yolo?(%{policy_override: nil}), do: true
-  def yolo?(%{policy_override: %{mode: :unrestricted}}), do: true
+  def yolo?(%{runtime_caps: nil}), do: true
+  def yolo?(%{runtime_caps: %{mode: :yolo}}), do: true
   def yolo?(_session), do: false
 
-  def freedom?(%{project_policy_bypassed?: true}), do: true
+  def freedom?(%{autonomous?: true}), do: true
   def freedom?(_session), do: false
 
   def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0, needs_compaction: false}
   def usage(session), do: Session.usage(session)
+
+  def model(nil), do: Beamcore.Agent.Chat.API.default_model()
 
   def model(session) do
     case session.roles do
@@ -396,6 +406,8 @@ defmodule Beamcore.TUI.State do
     end
   end
 
+  def provider(nil), do: Beamcore.Config.active_provider()
+
   def provider(session) do
     case session.roles do
       %{primary: %{provider: provider}} -> provider
@@ -403,26 +415,9 @@ defmodule Beamcore.TUI.State do
     end
   end
 
-  def helper_label(%{roles: roles}) do
-    case Beamcore.Provider.Selection.helper(roles) do
-      %{enabled: true, provider: provider, model: model} -> "#{provider}/#{model}"
-      _ -> "helper"
-    end
-  end
+  def mode_status(session \\ nil)
 
-  def helper_label(_session), do: "helper"
-
-  def policy_status(session \\ nil)
-
-  def policy_status(%{project_policy_bypassed?: true}), do: "policy: bypassed"
-
-  def policy_status(_session) do
-    case ProjectPolicy.load() do
-      %{loaded?: false} -> "policy: default"
-      %{valid?: false} -> "policy: invalid"
-      _policy -> "policy: loaded"
-    end
-  end
+  def mode_status(_session), do: "mode: yolo"
 
   def add_activity(state, name, args, status \\ :queued) do
     event = compact_activity(name, args, status)
@@ -473,6 +468,28 @@ defmodule Beamcore.TUI.State do
   end
 
   def timeline_items(state), do: state.activity
+
+  def timeline_item_count(%{session: %{timeline: timeline}})
+      when is_list(timeline) and length(timeline) > 1 do
+    Enum.count(timeline, &(&1.type != :checkpoint_saved))
+  end
+
+  def timeline_item_count(state), do: length(state.activity || [])
+
+  def timeline_item_at(%{session: %{timeline: timeline}} = state, index)
+      when is_list(timeline) and length(timeline) > 1 and is_integer(index) do
+    timeline
+    |> Stream.reject(&(&1.type == :checkpoint_saved))
+    |> Enum.at(max(index, 0))
+    |> case do
+      nil -> nil
+      event -> timeline_source_to_activity(event, state)
+    end
+  end
+
+  def timeline_item_at(state, index) when is_integer(index) do
+    Enum.at(state.activity || [], max(index, 0))
+  end
 
   defp timeline_source(%{session: %{timeline: timeline}})
        when is_list(timeline) and length(timeline) > 1 do
@@ -641,23 +658,9 @@ defmodule Beamcore.TUI.State do
 
   def compact_args(args), do: args
 
-  defp update_activity_live_follow(state, session) do
-    old_count = length(timeline_items(state))
-    next_state = %{state | session: session}
-    new_count = length(timeline_items(next_state))
-    delta = max(new_count - old_count, 0)
-
-    cond do
-      state.activity_follow_tail? ->
-        %{state | activity_unseen_count: 0, selected_activity: max(new_count - 1, 0)}
-        |> put_selected_event_id(%{state | session: session})
-
-      delta > 0 ->
-        %{state | activity_unseen_count: state.activity_unseen_count + delta}
-
-      true ->
-        state
-    end
+  defp update_activity_live_follow(state, _session) do
+    # Keep old fields stable while keeping this path O(1) for long chats.
+    state
   end
 
   defp maybe_resume_activity_follow(%{activity_scroll_offset: 0} = state),
@@ -669,11 +672,6 @@ defmodule Beamcore.TUI.State do
     max_index = max(length(timeline_items(state)) - 1, 0)
     distance_from_tail = max(max_index - state.selected_activity, 0)
     %{state | activity_scroll_offset: distance_from_tail}
-  end
-
-  defp clamp_activity_selection(state) do
-    max_index = max(length(timeline_items(state)) - 1, 0)
-    %{state | selected_activity: clamp(state.selected_activity, 0, max_index)}
   end
 
   defp put_selected_event_id(state), do: put_selected_event_id(state, state)
@@ -746,72 +744,5 @@ defmodule Beamcore.TUI.State do
     max_index = max(length(state.file_finder_results) - 1, 0)
     selected = state.file_finder_selected + offset
     %{state | file_finder_selected: selected |> max(0) |> min(max_index)} |> mark_dirty()
-  end
-
-  # Provider selector state management
-  def load_providers_list do
-    Beamcore.Provider.Registry.list()
-  end
-
-  def format_provider_item(%{} = provider) do
-    format_provider_item(provider, Beamcore.Config.active_provider())
-  end
-
-  def format_provider_item(%{} = provider, active_provider_name) do
-    helper = Beamcore.Config.helper_selection()
-    is_active? = provider.name == active_provider_name
-
-    roles =
-      [
-        is_active? && "primary",
-        is_map(helper) && helper.provider == provider.name && "helper:#{helper.model}"
-      ]
-      |> Enum.reject(&(&1 in [nil, false]))
-      |> Enum.join(",")
-      |> case do
-        "" -> ""
-        value -> " [#{value}]"
-      end
-
-    prefix = if is_active?, do: "* ", else: "  "
-    state = if provider.configured?, do: "configured", else: "not configured"
-    scope = if provider.capabilities.local, do: "local", else: "remote"
-    tools = if provider.capabilities.tool_calls, do: "tools", else: "text"
-    model = provider.default_model || "choose model"
-    base_url = provider.base_url || "custom endpoint"
-
-    "#{prefix}#{provider.name}#{roles} #{state} · #{scope} · #{tools} · #{model} · #{base_url}"
-  end
-
-  def activate_provider_selector(state) do
-    results = load_providers_list()
-    active_provider = provider(state.session)
-
-    active_idx =
-      Enum.find_index(results, fn provider -> provider.name == active_provider end) || 0
-
-    %{
-      state
-      | provider_selector_active?: true,
-        provider_selector_results: results,
-        provider_selector_selected: active_idx
-    }
-    |> mark_dirty()
-  end
-
-  def deactivate_provider_selector(state) do
-    %{
-      state
-      | provider_selector_active?: false,
-        provider_selector_results: [],
-        provider_selector_selected: 0
-    }
-    |> mark_dirty()
-  end
-
-  def select_provider_selector_result(state, offset) do
-    max_index = max(length(state.provider_selector_results) - 1, 0)
-    selected = state.provider_selector_selected + offset
-    %{state | provider_selector_selected: selected |> max(0) |> min(max_index)} |> mark_dirty()
   end
 end

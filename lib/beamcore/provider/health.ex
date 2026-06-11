@@ -3,8 +3,7 @@ defmodule Beamcore.Provider.Health do
   Supervised provider discovery and health cache.
 
   Network probes run under `Beamcore.Agent.TaskSupervisor`; callers never own
-  discovery processes and repeated requests share a short-lived cache. A local
-  helper failure is isolated from the primary chat runtime.
+  discovery processes and repeated requests share a short-lived cache.
   """
 
   use GenServer

@@ -13,31 +13,23 @@ defmodule Beamcore.TUI.Components.StatusBar do
     provider = State.provider(state.session)
     model = State.model(state.session)
     provider_model = "#{provider}/#{model}"
-    checkpoint = State.active_checkpoint_id(state.session)
-    checkpoint_label = if checkpoint, do: " · chk #{short_checkpoint(checkpoint)}", else: ""
 
     tokens =
       "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
 
+    mode = State.mode_status(state.session)
+
     right_text =
-      cond do
-        hint = State.ctrl_c_hint(state.ctrl_c_pending) ->
-          hint
-
-        is_binary(state.notice) and state.notice != "" ->
-          state.notice
-
-        true ->
-          "#{provider_model} · #{tokens} tok#{checkpoint_label}"
+      case State.ctrl_c_hint(state.ctrl_c_pending) do
+        nil -> "#{mode} · #{provider_model} · tok #{tokens}"
+        hint -> hint
       end
 
-    # Calculate padding
-    # mascot length + " · F1: Dev · F2: Chat · F3: Research · " is mascot_len + 39
-    mascot_len = String.length(mascot)
-    left_len = mascot_len + 39
+    switcher_text = "F1 Agent  F2 Chat"
+    left_len = String.length(mascot) + 3 + String.length(switcher_text) + 3
     right_len = String.length(right_text)
 
-    # Ensure right_text fits in the remaining space
+    # Ensure right_text fits in the remaining space.
     max_right_len = max(0, width - left_len - 2)
 
     right_text =
@@ -50,32 +42,19 @@ defmodule Beamcore.TUI.Components.StatusBar do
     right_len = String.length(right_text)
     padding_len = max(0, width - left_len - right_len - 2)
     padding = String.duplicate(" ", padding_len)
+    active = state.screen_type
 
     spans = [
       %Span{content: mascot, style: Theme.style(:status_hot)},
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{
-        content: "F1: Dev",
-        style:
-          if(state.screen_type == :agent,
-            do: Theme.style(:status_hot),
-            else: Theme.style(:status)
-          )
+        content: "F1 Agent",
+        style: if(active == :agent, do: Theme.style(:status_hot), else: Theme.style(:status))
       },
-      %Span{content: " · ", style: Theme.style(:status)},
+      %Span{content: "  ", style: Theme.style(:status)},
       %Span{
-        content: "F2: Chat",
-        style:
-          if(state.screen_type == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))
-      },
-      %Span{content: " · ", style: Theme.style(:status)},
-      %Span{
-        content: "F3: Research",
-        style:
-          if(state.screen_type == :research,
-            do: Theme.style(:status_hot),
-            else: Theme.style(:status)
-          )
+        content: "F2 Chat",
+        style: if(active == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))
       },
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{content: padding, style: Theme.style(:status)},
@@ -97,11 +76,5 @@ defmodule Beamcore.TUI.Components.StatusBar do
       end
 
     widget(state, width)
-  end
-
-  defp short_checkpoint(checkpoint) when is_binary(checkpoint) do
-    if String.length(checkpoint) > 14,
-      do: String.slice(checkpoint, 0, 14),
-      else: checkpoint
   end
 end

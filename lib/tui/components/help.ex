@@ -8,35 +8,15 @@ defmodule Beamcore.TUI.Components.Help do
     text = """
     Commands
     /help            Show this panel
-    /new             Start a fresh session
-    /context         Show compact session context
-    /context clear   Clear compact session context
-    /policy          Show project policy summary
-    /policy show     Show normalized project policy config
-    /policy init     Create .beamcore/policy.json
-    /policy reload   Reload project policy
-    /policy deny path <pattern>
-    /policy allow-write <pattern>
-    /policy read-only <pattern>
-    /policy tool <tool> allow|deny
-    /timeline        Focus timeline details
-    /timeline last   Open latest timeline item
-    /timeline clear  Clear visible UI activity only
-    /yolo            Toggle session freedom mode
-    /yolo on         Bypass project policy for this session
-    /yolo off        Restore project policy
-    /api select      Open interactive API provider selector
-    /providers       Open interactive API provider selector
+    /clear           Clear visible chat messages
+    /yolo            Return to autonomous mode
     /api list        List all configured API providers
     /api use <name>  Switch active API provider
     /api add <args>  Add or update an API provider config
     /api delete <n>  Delete an API provider config
-    /helper status   Show optional helper selection
-    /helper models <provider>
-    /helper use <provider> <model>
-    /helper off      Disable helper (default)
     /login           Configure default API key
     /logout          Clear stored default login
+    /env             Show redacted environment
     /quit /exit /q   Exit
 
     Keys
@@ -47,21 +27,18 @@ defmodule Beamcore.TUI.Components.Help do
     Ctrl+J / Alt+Enter  Insert newline fallback
     Left/Right       Move cursor
     Up/Down          Move cursor between input lines
+    PgUp/PgDn        Scroll chat history by a page
     /                Open command suggestions
     Up/Down          Choose command suggestion when suggestions are open
     Ctrl+P / Ctrl+N  History, or choose command suggestion
-    Ctrl+O           Toggle interactive API provider selector
     Tab              Complete highlighted command suggestion
-    Tab              Toggle timeline/tool details when suggestions are closed
-    F6               Focus Activity timeline
-    Activity: Up/k previous, Down/j next, PageUp/PageDown page
-    Activity: Home/g oldest, End/G newest and resume live-follow
-    Activity: Enter details, Ctrl+R rewind, Ctrl+F fork, Ctrl+A abandon in details
+    Mouse wheel     Scroll the pane under the cursor
+    Shift+wheel/drag Bypass capture for the terminal's native scroll/selection
     Esc              Close suggestions, help, or details
     q                Close this panel
-    Ctrl+C           While running: press twice to pause; while idle: press twice to exit
+    Ctrl+C           Clear the composer; when empty, press twice to pause (running) or exit (idle)
 
-    Tools, blocked attempts, validation, and image generation appear in Activity.
+    Tool output and blocked attempts appear as compact chat/status notices.
     """
 
     %Popup{

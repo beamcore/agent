@@ -21,35 +21,12 @@ defmodule Beamcore.TUI.Layout do
         %{mode: :narrow, chat: chat, input: input, status: status}
 
       :wide ->
-        [body, input, status] = shell(area, 0, input_height(area.height))
-
-        [chat, activity] =
-          RatLayout.split(body, :horizontal, [{:percentage, 68}, {:percentage, 32}])
-
-        %{
-          mode: :wide,
-          chat: chat,
-          activity: activity,
-          input: input,
-          status: status
-        }
+        [chat, input, status] = shell(area, 0, input_height(area.height))
+        %{mode: :wide, chat: chat, input: input, status: status}
 
       :medium ->
-        [chat, activity, input, status] =
-          RatLayout.split(area, :vertical, [
-            {:min, 8},
-            {:length, compact_activity_height(area.height)},
-            {:length, input_height(area.height)},
-            {:length, 1}
-          ])
-
-        %{
-          mode: :medium,
-          chat: chat,
-          activity: activity,
-          input: input,
-          status: status
-        }
+        [chat, input, status] = shell(area, 0, input_height(area.height))
+        %{mode: :medium, chat: chat, input: input, status: status}
 
       :narrow ->
         [chat, input, status] = shell(area, 0, input_height(area.height))
@@ -57,15 +34,9 @@ defmodule Beamcore.TUI.Layout do
     end
   end
 
-  @doc """
-  Returns the inner (content) height of the Activity panel for the given area
-  and screen type, or 0 when no Activity panel is shown (narrow/tiny layouts
-  and the chat/research screens). Mirrors the viewport height the Activity
-  widget renders with, so timeline paging matches what is on screen.
-  """
-  def activity_viewport_height(%Rect{} = area, screen_type \\ :agent) do
+  def chat_viewport_height(%Rect{} = area, screen_type \\ :agent) do
     case areas(area, screen_type) do
-      %{activity: %Rect{height: height}} -> max(height - 2, 1)
+      %{chat: %Rect{height: height}} -> max(height, 0)
       _ -> 0
     end
   end
@@ -90,7 +61,4 @@ defmodule Beamcore.TUI.Layout do
   defp input_height(height) when height < 18, do: 3
   defp input_height(height) when height < 26, do: 4
   defp input_height(_height), do: 5
-
-  defp compact_activity_height(height) when height < 24, do: 8
-  defp compact_activity_height(_height), do: 12
 end

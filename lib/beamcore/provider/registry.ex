@@ -23,17 +23,6 @@ defmodule Beamcore.Provider.Registry do
       local?: false,
       default_primary?: true
     },
-    "ollama" => %{
-      id: :ollama,
-      adapter: OpenAICompatible,
-      base_url: "http://127.0.0.1:11434/v1",
-      auth: :none,
-      secret_envs: [],
-      default_model: "gemma4:latest",
-      requires_api_key?: false,
-      local?: true,
-      discovery: Beamcore.Provider.OllamaDiscovery
-    },
     "openai" => %{
       id: :openai,
       adapter: OpenAICompatible,
@@ -122,7 +111,7 @@ defmodule Beamcore.Provider.Registry do
   def missing_config_message(name \\ Beamcore.Config.active_provider()) do
     case get(name) do
       nil ->
-        "Unknown provider '#{name}'. Open Ctrl+O or run /api list to choose a configured provider."
+        "Unknown provider '#{name}'. Run /api list to choose a configured provider."
 
       %{requires_api_key?: true} ->
         legacy =
@@ -130,10 +119,10 @@ defmodule Beamcore.Provider.Registry do
             do: " You may also use /login for the legacy Mistral credential flow.",
             else: ""
 
-        "Provider '#{name}' is not configured. Use Ctrl+O or /api add #{name} <token> [<base_url>] [<model>].#{legacy}"
+        "Provider '#{name}' is not configured. Use /api add #{name} <token> [<base_url>] [<model>].#{legacy}"
 
       _provider ->
-        "Provider '#{name}' is unavailable. Check its endpoint/model configuration with Ctrl+O or /api list."
+        "Provider '#{name}' is unavailable. Check its endpoint/model configuration with /api list."
     end
   end
 
@@ -201,18 +190,6 @@ defmodule Beamcore.Provider.Registry do
 
   @spec capabilities(binary(), binary() | nil) :: Capabilities.t()
   def capabilities(provider_name, model \\ nil)
-
-  def capabilities("ollama", _model) do
-    %Capabilities{
-      chat: true,
-      streaming: true,
-      tool_calls: true,
-      structured_output: true,
-      local: true,
-      context_window: nil,
-      latency_class: :low
-    }
-  end
 
   def capabilities("mistral", _model) do
     %Capabilities{
