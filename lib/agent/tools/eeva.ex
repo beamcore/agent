@@ -31,14 +31,14 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Execute ordinary Elixir under OTP supervision. Write any Elixir program needed for the task, including File/Path operations, System.cmd, calculations, parsing, search, tests, Git commands, data transformations, Beamcore.Helpers introspection, Beamcore.Memory access, and multi-step workflows. Runtime policy checks the parsed program and each computed side effect without confirmation prompts. The runtime returns stdout, the expression result, and journaled workspace changes.",
+          "Execute arbitrary Elixir code. This universal tool provides endless capabilities: write Elixir to read/write files, run system commands (git, mix, etc.), parse data, or interact with Beamcore.Memory. The runtime handles policy checks, side effects, and returns stdout, results, and journaled changes.",
         parameters: %{
           type: "object",
           properties: %{
             code: %{
               type: "string",
               description:
-                "Elixir source code to evaluate. Examples: File.read!(\"README.md\"), Path.wildcard(\"lib/**/*.ex\"), System.cmd(\"git\", [\"status\"]), System.cmd(\"mix\", [\"test\"]), or an arbitrary multi-expression Elixir program. A returned zero-arity function is invoked automatically."
+                "Elixir source code to evaluate. You are not limited to simple commands; write any multi-expression program to achieve your goals. Examples: File.read!(\"README.md\"), System.cmd(\"git\", [\"status\"]). A returned zero-arity function is invoked automatically."
             }
           },
           required: ["code"]
