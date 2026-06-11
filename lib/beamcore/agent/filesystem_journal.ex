@@ -154,7 +154,8 @@ defmodule Beamcore.Agent.FilesystemJournal do
       with {:ok, relative_path} <- safe_relative(path, workspace_root),
            :ok <- ensure_not_internal(relative_path),
            {:ok, before_state} <- snapshot_path(path, workspace_root),
-           :ok <- validate_destructive_state(before_state) do
+           :ok <- validate_destructive_state(before_state),
+           :ok <- validate_directory_size(before_state) do
         mutation =
           base_mutation(context, remove_operation(before_state), Keyword.get(opts, :tool, "fs"))
           |> Map.merge(%{
@@ -1544,6 +1545,30 @@ defmodule Beamcore.Agent.FilesystemJournal do
     do: validate_file_state_size(state)
 
   defp validate_destructive_state(_), do: :ok
+
+  defp validate_directory_size(%{"type" => "directory", "entries" => entries}) do
+    file_count = directory_file_count(entries)
+
+    if file_count > limit(:max_directory_files, @max_directory_files) do
+      {:error, "BEAMCORE_SNAPSHOT_MAX_DIRECTORY_FILES"}
+    else
+      :ok
+    end
+  end
+
+  defp validate_directory_size(_), do: :ok
+
+  defp directory_file_count(entries) when is_map(entries) do
+    entries
+    |> Map.values()
+    |> Enum.reduce(0, fn
+      %{"type" => "file"}, acc -> acc + 1
+      %{"type" => "directory", "entries" => sub_entries}, acc -> acc + directory_file_count(sub_entries)
+      _, acc -> acc
+    end)
+  end
+
+  defp directory_file_count(_), do: 0
 
   defp validate_size(before_state, after_state) do
     total = state_size(before_state) + state_size(after_state)
