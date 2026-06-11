@@ -171,6 +171,10 @@ defmodule Beamcore.TUI.Events do
     State.add_message(state, :system, message)
   end
 
+  def handle_runtime_event({:eeva_failed, message}, state) do
+    State.add_message(state, :error, "⚡ EEVA failed: #{message}")
+  end
+
   def handle_runtime_event(_event, state), do: state
 
   def handle_restore_progress(event, state) do

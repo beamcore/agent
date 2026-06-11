@@ -22,6 +22,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   @default_max_code_bytes 128_000
   @default_max_ast_nodes 24_000
   @max_preview_bytes 16_000
+  @max_failure_message_chars 240
   @max_output_lines 200
   @max_single_line_chars 1000
 
@@ -157,6 +158,8 @@ defmodule Beamcore.Agent.Tools.Eeva do
   defp format_result({:ok, %{status: :error} = result}, code, prepared, filesystem_changes) do
     {stdout, dropped} = truncate_output(result.output)
 
+    emit_failure(failure_message(result.kind, result.error))
+
     %{
       "ok" => false,
       "tool" => name(),
@@ -174,6 +177,8 @@ defmodule Beamcore.Agent.Tools.Eeva do
   end
 
   defp format_result({:error, kind, reason}, code, prepared, filesystem_changes) do
+    emit_failure(execution_error_summary(kind, reason))
+
     %{
       "ok" => false,
       "tool" => name(),
@@ -257,6 +262,8 @@ defmodule Beamcore.Agent.Tools.Eeva do
     do: "Eeva execution failed (#{kind}): #{inspect(reason)}"
 
   defp encode_error(message, classification, code \\ nil) do
+    emit_failure(message)
+
     %{
       "ok" => false,
       "tool" => name(),
@@ -282,6 +289,45 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   catch
     _, _ -> :ok
+  end
+
+  # Surfaces a single concise failure message to the TUI. Successful executions
+  # emit nothing, so the activity log stays quiet unless the model's code
+  # actually failed (policy violation, raised exception, timeout, etc.).
+  defp emit_failure(message) do
+    case Process.get(:event_handler) do
+      handler when is_function(handler, 1) ->
+        handler.({:eeva_failed, short_failure(message)})
+
+      _ ->
+        :ok
+    end
+  catch
+    _, _ -> :ok
+  end
+
+  defp short_failure(message) do
+    message
+    |> to_string()
+    |> String.split("\n", trim: true)
+    |> List.first()
+    |> Kernel.||("")
+    |> String.trim()
+    |> String.slice(0, @max_failure_message_chars)
+  end
+
+  defp failure_message(kind, error) do
+    message =
+      try do
+        Exception.message(error)
+      rescue
+        _ -> inspect(error)
+      end
+
+    case kind do
+      :error -> message
+      _ -> "(#{kind}) #{inspect(error)}"
+    end
   end
 
   defp preview_code(code) when byte_size(code) <= @max_preview_bytes, do: code

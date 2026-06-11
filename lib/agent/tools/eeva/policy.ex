@@ -604,7 +604,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
       runtime.policy.mode == :read_only and not read_only_command?(command, args) ->
         {:error, "Command #{command} is not permitted by the read-only policy."}
 
-      not safe_command?(command, args) ->
+      command_safelist_required?(runtime.policy.mode) and not safe_command?(command, args) ->
         {:error,
          "Command #{command} is not permitted inside Eeva unless it is a read-only or validation command. Use File.* APIs for workspace mutations so changes are journaled precisely."}
 
@@ -641,6 +641,14 @@ defmodule Beamcore.Agent.Tools.Eeva.Policy do
   defp safe_command?("cargo", [operation | _]), do: operation in ["test", "check", "clippy"]
   defp safe_command?("go", [operation | _]), do: operation in ["test", "vet"]
   defp safe_command?(command, args), do: command in @read_only_commands and "--version" in args
+
+  # Autonomous modes (the default unrestricted policy and the user-selectable
+  # development mode) let the model run ordinary write commands such as
+  # `git commit`, `git add`, or `mix deps.get`. The hard runtime boundaries
+  # checked earlier in authorize_command/3 (shell interpreters, internal paths,
+  # network access, and paths outside the workspace) still apply. Other modes
+  # remain restricted to the read-only/validation safelist above.
+  defp command_safelist_required?(mode), do: mode not in [:unrestricted, :development]
 
   defp network_command?(command, args) do
     command in @network_commands or

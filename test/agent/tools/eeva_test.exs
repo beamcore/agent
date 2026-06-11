@@ -172,6 +172,51 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["stderr"] =~ "Shell interpreters"
   end
 
+  test "autonomous policy allows git write commands such as squashing commits", %{root: root} do
+    System.cmd("git", ["init", "-q"], cd: root)
+    System.cmd("git", ["config", "user.email", "test@example.com"], cd: root)
+    System.cmd("git", ["config", "user.name", "Test"], cd: root)
+    File.write!(Path.join(root, "a.txt"), "1\n")
+    System.cmd("git", ["add", "."], cd: root)
+    System.cmd("git", ["commit", "-q", "-m", "first"], cd: root)
+    File.write!(Path.join(root, "b.txt"), "2\n")
+
+    add = Eeva.execute(%{"code" => "System.cmd(\"git\", [\"add\", \".\"])"}) |> Jason.decode!()
+    assert add["ok"]
+
+    commit =
+      Eeva.execute(%{"code" => "System.cmd(\"git\", [\"commit\", \"-m\", \"second\"])"})
+      |> Jason.decode!()
+
+    assert commit["ok"]
+  end
+
+  test "read-only policy still rejects git write commands" do
+    policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | mode: :read_only}
+
+    result =
+      Eeva.execute(%{"code" => "System.cmd(\"git\", [\"commit\", \"-m\", \"x\"])"}, policy)
+      |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["stderr"] =~ "read-only policy"
+  end
+
+  test "failures emit a concise eeva_failed event while success stays quiet" do
+    parent = self()
+    Process.put(:event_handler, fn event -> send(parent, event) end)
+
+    Eeva.execute(%{"code" => "System.cmd(\"sh\", [\"-c\", \"echo no\"])"})
+    assert_received {:eeva_failed, message}
+    assert message =~ "Shell interpreters"
+    refute String.contains?(message, "\n")
+
+    Eeva.execute(%{"code" => "1 + 1"})
+    refute_received {:eeva_failed, _}
+  after
+    Process.delete(:event_handler)
+  end
+
   test "network commands obey allow_network" do
     policy = %{Beamcore.Agent.Chat.ToolPolicy.default() | allow_network: false}
 
