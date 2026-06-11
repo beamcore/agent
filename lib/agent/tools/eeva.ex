@@ -22,6 +22,8 @@ defmodule Beamcore.Agent.Tools.Eeva do
   @default_max_code_bytes 128_000
   @default_max_ast_nodes 24_000
   @max_preview_bytes 16_000
+  @max_output_lines 200
+  @max_single_line_chars 1000
 
   def name, do: "eeva"
 
@@ -135,33 +137,38 @@ defmodule Beamcore.Agent.Tools.Eeva do
   defp context_workspace_root(_context), do: PathSafety.workspace_root()
 
   defp format_result({:ok, %{status: :ok} = result}, code, prepared, filesystem_changes) do
+    {stdout, dropped} = truncate_output(result.output)
+
     %{
       "ok" => true,
       "tool" => name(),
       "exit_code" => 0,
-      "stdout" => result.output,
+      "stdout" => stdout,
       "stderr" => "",
       "result" => result.result,
       "code" => code,
       "ast_nodes" => prepared.node_count,
       "filesystem_changes" => filesystem_changes,
-      "summary" => success_summary(filesystem_changes)
+      "summary" => append_truncation(success_summary(filesystem_changes), dropped)
     }
     |> Jason.encode!()
   end
 
   defp format_result({:ok, %{status: :error} = result}, code, prepared, filesystem_changes) do
+    {stdout, dropped} = truncate_output(result.output)
+
     %{
       "ok" => false,
       "tool" => name(),
       "exit_code" => 1,
-      "stdout" => result.output,
+      "stdout" => stdout,
       "stderr" => Exception.format(result.kind, result.error, result.stacktrace),
       "result" => nil,
       "code" => code,
       "ast_nodes" => prepared.node_count,
       "filesystem_changes" => filesystem_changes,
-      "summary" => "Eeva program raised #{inspect(result.error)}."
+      "summary" =>
+        append_truncation("Eeva program raised #{inspect(result.error)}.", dropped)
     }
     |> Jason.encode!()
   end
@@ -186,6 +193,56 @@ defmodule Beamcore.Agent.Tools.Eeva do
     do: "Eeva completed and journaled #{count} changed workspace path(s)."
 
   defp success_summary(_), do: "Eeva completed successfully."
+
+  # Truncates model-facing stdout so a single Eeva response never overwhelms the
+  # model: at most @max_output_lines lines for multi-line output, or
+  # @max_single_line_chars characters when the output is a single line. Returns
+  # the (possibly truncated) text and a description of what was omitted so the
+  # model can align its next action.
+  defp truncate_output(output) when is_binary(output) do
+    lines = String.split(output, "\n")
+
+    cond do
+      length(lines) <= 1 ->
+        truncate_single_line(output)
+
+      length(lines) > @max_output_lines ->
+        kept = Enum.take(lines, @max_output_lines)
+        dropped_lines = length(lines) - @max_output_lines
+
+        notice =
+          "\n...[output truncated: #{dropped_lines} more line(s) omitted; " <>
+            "showing first #{@max_output_lines} of #{length(lines)} lines]"
+
+        {Enum.join(kept, "\n") <> notice, "#{dropped_lines} line(s)"}
+
+      true ->
+        {output, nil}
+    end
+  end
+
+  defp truncate_output(output), do: {output, nil}
+
+  defp truncate_single_line(output) do
+    total = String.length(output)
+
+    if total > @max_single_line_chars do
+      dropped_chars = total - @max_single_line_chars
+
+      notice =
+        "\n...[output truncated: #{dropped_chars} more character(s) omitted; " <>
+          "showing first #{@max_single_line_chars} of #{total} characters]"
+
+      {String.slice(output, 0, @max_single_line_chars) <> notice, "#{dropped_chars} character(s)"}
+    else
+      {output, nil}
+    end
+  end
+
+  defp append_truncation(summary, nil), do: summary
+
+  defp append_truncation(summary, dropped),
+    do: summary <> " Output was truncated (#{dropped} omitted)."
 
   defp execution_error_summary(:timeout, timeout),
     do: "Eeva exceeded the #{timeout}ms execution timeout."
