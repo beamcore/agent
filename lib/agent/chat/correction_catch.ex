@@ -59,7 +59,7 @@ defmodule Beamcore.Agent.Chat.CorrectionCatch do
   def detect_repetition(fingerprints, window \\ 10) do
     recent = Enum.take(fingerprints, -window)
 
-    case Enum.frequencies(recent) |> Enum.find(fn {_fp, count} -> count >= 3 end) do
+    case Enum.frequencies(recent) |> Enum.find(fn {_fp, count} -> count >= 12 end) do
       {{name, _args}, count} ->
         {true, "#{name} called #{count} times with identical arguments"}
 
