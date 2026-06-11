@@ -47,6 +47,7 @@ defmodule Beamcore.TUI.Components.Help do
     Ctrl+J / Alt+Enter  Insert newline fallback
     Left/Right       Move cursor
     Up/Down          Move cursor between input lines
+    PgUp/PgDn        Scroll chat history by a page
     /                Open command suggestions
     Up/Down          Choose command suggestion when suggestions are open
     Ctrl+P / Ctrl+N  History, or choose command suggestion
@@ -57,9 +58,11 @@ defmodule Beamcore.TUI.Components.Help do
     Activity: Up/k previous, Down/j next, PageUp/PageDown page
     Activity: Home/g oldest, End/G newest and resume live-follow
     Activity: Enter details, Ctrl+R rewind, Ctrl+F fork, Ctrl+A abandon in details
+    Mouse wheel     Scroll the pane under the cursor
+    Shift+wheel/drag Bypass capture for the terminal's native scroll/selection
     Esc              Close suggestions, help, or details
     q                Close this panel
-    Ctrl+C           While running: press twice to pause; while idle: press twice to exit
+    Ctrl+C           Clear the composer; when empty, press twice to pause (running) or exit (idle)
 
     Tools, blocked attempts, validation, and image generation appear in Activity.
     """

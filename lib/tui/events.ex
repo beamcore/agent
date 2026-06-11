@@ -82,6 +82,18 @@ defmodule Beamcore.TUI.Events do
 
   def handle_event(%Event.Resize{}, state, _opts), do: {:noreply, State.mark_dirty(state)}
 
+  def handle_event(%Event.Paste{content: content}, state, _opts) do
+    # Bracketed paste (ex_ratatui 0.10.1) delivers the whole payload as one
+    # event instead of a keystroke stream. Insert it in a single NIF call;
+    # textarea_insert_str/2 converts \n / \r\n into real new lines.
+    ExRatatui.textarea_insert_str(state.textarea, content)
+
+    state = %{state | history_index: nil}
+    state = handle_file_finder_key(nil, [], state)
+
+    {:noreply, refresh_commands(state)}
+  end
+
   def handle_event(%Event.Mouse{} = event, state, opts) do
     {width, height} =
       case Keyword.fetch(opts, :terminal_size) do
@@ -485,6 +497,16 @@ defmodule Beamcore.TUI.Events do
     {:noreply, State.activity_home(state)}
   end
 
+  defp handle_key(code, _mods, state)
+       when code in ["page_up", "pageup", "pgup"] do
+    {:noreply, State.chat_page(state, :up)}
+  end
+
+  defp handle_key(code, _mods, state)
+       when code in ["page_down", "pagedown", "pgdown"] do
+    {:noreply, State.chat_page(state, :down)}
+  end
+
   defp handle_key(code, _mods, %{activity_focused?: true} = state)
        when code in ["end", "G"] do
     {:noreply, State.activity_end(state)}
@@ -643,13 +665,27 @@ defmodule Beamcore.TUI.Events do
   # session; while idle (or paused) it exits the app. Switching context between
   # presses re-arms with the new action instead of confirming the old one.
   defp handle_ctrl_c(state) do
-    desired = if worker_running?(state), do: :pause, else: :exit
+    if input_blank?(state) do
+      desired = if worker_running?(state), do: :pause, else: :exit
 
-    if state.ctrl_c_pending == desired do
-      confirm_ctrl_c(desired, State.disarm_ctrl_c(state))
+      if state.ctrl_c_pending == desired do
+        confirm_ctrl_c(desired, State.disarm_ctrl_c(state))
+      else
+        {:noreply, State.arm_ctrl_c(state, desired)}
+      end
     else
-      {:noreply, State.arm_ctrl_c(state, desired)}
+      # First Ctrl+C clears a non-empty composer (shell-style). Once the input
+      # is empty, a subsequent Ctrl+C arms pause/exit via the branch above.
+      {:noreply, clear_input(state)}
     end
+  end
+
+  defp clear_input(state) do
+    ExRatatui.textarea_set_value(state.textarea, "")
+
+    %{state | history_index: nil, file_finder_active?: false, file_finder_results: []}
+    |> State.disarm_ctrl_c()
+    |> refresh_commands()
   end
 
   defp confirm_ctrl_c(:pause, state), do: {:noreply, run_command(state, "stop")}

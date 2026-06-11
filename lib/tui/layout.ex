@@ -70,6 +70,18 @@ defmodule Beamcore.TUI.Layout do
     end
   end
 
+  @doc """
+  Returns the inner (content) height of the Chat panel for the given area and
+  screen type, used to size a chat scroll "page". Zero in the tiny layout where
+  no chat panel is shown.
+  """
+  def chat_viewport_height(%Rect{} = area, screen_type \\ :agent) do
+    case areas(area, screen_type) do
+      %{chat: %Rect{height: height}} -> max(height, 1)
+      _ -> 0
+    end
+  end
+
   defp shell(area, header_height, input_height) do
     parts =
       RatLayout.split(area, :vertical, [
