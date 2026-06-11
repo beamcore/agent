@@ -20,6 +20,7 @@ defmodule Beamcore.TUI.State do
             activity_follow_tail?: true,
             activity_unseen_count: 0,
             activity_viewport_height: 0,
+            chat_viewport_height: 0,
             status: :idle,
             scroll_offset: 0,
             activity_scroll_offset: 0,
@@ -161,7 +162,6 @@ defmodule Beamcore.TUI.State do
   def ctrl_c_hint(:exit), do: "Press Ctrl+C again to exit."
   def ctrl_c_hint(_), do: nil
 
-
   def paused?(%{status: :paused}), do: true
   def paused?(_state), do: false
 
@@ -244,6 +244,24 @@ defmodule Beamcore.TUI.State do
     do: %{state | scroll_offset: max(state.scroll_offset - amount, 0)} |> mark_dirty()
 
   def reset_scroll(state), do: %{state | scroll_offset: 0} |> mark_dirty()
+
+  @doc """
+  Scrolls the chat history by one viewport page. `:up` moves toward older
+  messages, `:down` toward the latest. Works regardless of composer content,
+  so it is the reliable way to page through history while typing.
+  """
+  def chat_page(state, direction) do
+    amount = max(state.chat_viewport_height - 2, 1)
+
+    case direction do
+      :up -> scroll_up(state, amount)
+      :down -> scroll_down(state, amount)
+    end
+  end
+
+  def set_chat_viewport_height(state, height) do
+    %{state | chat_viewport_height: max(height, 0)}
+  end
 
   defp auto_scroll_on_new_message(%{scroll_offset: offset} = state) when offset <= 2,
     do: reset_scroll(state)

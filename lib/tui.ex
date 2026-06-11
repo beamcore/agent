@@ -21,6 +21,12 @@ defmodule Beamcore.TUI do
     old_level = Logger.level()
     Logger.configure(level: :none)
 
+    # Opt into local-terminal mouse capture so wheel scroll reaches our
+    # %Event.Mouse{} handler. As of ex_ratatui 0.10.1 this is off by default;
+    # without it the scroll handler in TUI.Events goes silent. Users who want
+    # the terminal's native text selection can hold Shift to bypass capture.
+    opts = Keyword.put_new(opts, :mouse_capture, true)
+
     try do
       if Process.whereis(Beamcore.TUI.DynamicSupervisor) do
         case DynamicSupervisor.start_child(Beamcore.TUI.DynamicSupervisor, {__MODULE__, opts}) do
@@ -100,19 +106,28 @@ defmodule Beamcore.TUI do
     %{
       state
       | f1_state:
-          State.set_activity_viewport_height(
-            state.f1_state,
+          state.f1_state
+          |> State.set_activity_viewport_height(
             Layout.activity_viewport_height(area, state.f1_state.screen_type)
+          )
+          |> State.set_chat_viewport_height(
+            Layout.chat_viewport_height(area, state.f1_state.screen_type)
           ),
         f2_state:
-          State.set_activity_viewport_height(
-            state.f2_state,
+          state.f2_state
+          |> State.set_activity_viewport_height(
             Layout.activity_viewport_height(area, state.f2_state.screen_type)
+          )
+          |> State.set_chat_viewport_height(
+            Layout.chat_viewport_height(area, state.f2_state.screen_type)
           ),
         f3_state:
-          State.set_activity_viewport_height(
-            state.f3_state,
+          state.f3_state
+          |> State.set_activity_viewport_height(
             Layout.activity_viewport_height(area, state.f3_state.screen_type)
+          )
+          |> State.set_chat_viewport_height(
+            Layout.chat_viewport_height(area, state.f3_state.screen_type)
           )
     }
   end

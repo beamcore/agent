@@ -102,4 +102,36 @@ defmodule Beamcore.TUI.CtrlCTest do
     assert ExRatatui.textarea_get_value(state.textarea) |> String.trim() == ""
     assert Enum.any?(state.messages, &(&1.role == :user and &1.content == "go this way instead"))
   end
+
+  test "first Ctrl+C clears a non-empty composer without arming exit", %{state: state} do
+    ExRatatui.textarea_set_value(state.textarea, "half-typed message")
+
+    {:noreply, state} = Events.handle_event(ctrl_c(), state)
+
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+    assert state.ctrl_c_pending == false
+  end
+
+  test "Ctrl+C after clearing the composer arms exit, then quits", %{state: state} do
+    ExRatatui.textarea_set_value(state.textarea, "draft")
+
+    {:noreply, state} = Events.handle_event(ctrl_c(), state)
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+
+    {:noreply, state} = Events.handle_event(ctrl_c(), state)
+    assert state.ctrl_c_pending == :exit
+
+    assert {:stop, _state} = Events.handle_event(ctrl_c(), state)
+  end
+
+  test "Ctrl+C with text while running clears the composer instead of pausing", %{state: state} do
+    state = %{state | worker: spawn(fn -> Process.sleep(:infinity) end), status: :thinking}
+    ExRatatui.textarea_set_value(state.textarea, "scratch")
+
+    {:noreply, state} = Events.handle_event(ctrl_c(), state)
+
+    assert ExRatatui.textarea_get_value(state.textarea) == ""
+    assert state.ctrl_c_pending == false
+    refute State.paused?(state)
+  end
 end

@@ -55,7 +55,7 @@ defmodule Beamcore.Agent.MixProject do
       {:openai_ex, "~> 0.9.21"},
       {:number, "~> 1.0"},
       {:jason, "~> 1.4"},
-      {:ex_ratatui, "~> 0.10.0"},
+      {:ex_ratatui, "~> 0.10.1"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
     ]
   end
