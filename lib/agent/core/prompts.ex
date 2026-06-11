@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Core.Prompts do
   """
 
   @default_tools [
-    "eeva: executes ordinary Elixir under OTP supervision. See tool description for guidelines."
+    "eeva: Universal Elixir runtime. Write arbitrary code to interact with the system, files, and network. Your capabilities are endless."
   ]
 
   @doc "Returns concise guidance for using the persistent BeamCore memory service from Eeva."
