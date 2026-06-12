@@ -8,6 +8,8 @@ defmodule Beamcore.TUI do
   alias Beamcore.TUI.{Events, FileFinder, Layout, MultiScreenState, Render, State}
   alias ExRatatui.Layout.Rect
 
+  require Logger
+
   @animated_statuses [:thinking, :tool_running, :local_search]
 
   def start(opts \\ []) do
@@ -197,6 +199,7 @@ defmodule Beamcore.TUI do
         {:noreply, %{state | f2_state: Events.handle_runtime_event(event, state.f2_state)}}
 
       true ->
+        Logger.warning("TUI dropping runtime event from unknown worker #{inspect(worker_pid)}")
         {:noreply, state}
     end
   end

@@ -705,7 +705,8 @@ defmodule Beamcore.Agent.Chat.Session do
       branch_id: timeline_state.branch_id,
       active_checkpoint_id: timeline_state.active_checkpoint_id,
       intermediate_state: Map.get(data, "intermediate_state", %{}),
-      interrupted?: Map.get(data, "interrupted", false)
+      # Restoring a session means it is being resumed — always clear the flag.
+      interrupted?: false
     }
     |> append_timeline(:resumed, "Session resumed.",
       role: :system,
@@ -877,28 +878,56 @@ defmodule Beamcore.Agent.Chat.Session do
       |> Enum.map(fn msg -> msg[:tool_call_id] || msg["tool_call_id"] end)
       |> MapSet.new()
 
-    Enum.map(messages, fn msg ->
-      role = msg[:role] || msg["role"]
-      tool_calls = msg["tool_calls"] || msg[:tool_calls]
+    # Inject synthetic "interrupted" tool responses for dangling tool_calls so
+    # the model knows what was requested but never completed.  This preserves
+    # the assistant's intent after a user interruption (Ctrl+C / kill).
+    {result, _answered} =
+      Enum.reduce(messages, {[], answered_ids}, fn msg, {acc, ids} ->
+        role = msg[:role] || msg["role"]
+        tool_calls = msg["tool_calls"] || msg[:tool_calls]
 
-      if role == "assistant" and is_list(tool_calls) and tool_calls != [] do
-        answered =
-          Enum.filter(tool_calls, fn tc ->
-            MapSet.member?(answered_ids, tc["id"] || tc[:id])
-          end)
+        if role == "assistant" and is_list(tool_calls) and tool_calls != [] do
+          {dangling, kept} =
+            Enum.split_with(tool_calls, fn tc ->
+              not MapSet.member?(ids, tc["id"] || tc[:id])
+            end)
 
-        if answered == [] do
-          # No tool_calls answered — strip them, keep content
-          msg |> Map.delete("tool_calls") |> Map.delete(:tool_calls)
+          if dangling == [] do
+            {[msg | acc], ids}
+          else
+            synthetic_responses =
+              Enum.map(dangling, fn tc ->
+                %{
+                  role: "tool",
+                  tool_call_id: tc["id"] || tc[:id],
+                  name: get_in(tc, ["function", "name"]) || get_in(tc, [:function, :name]),
+                  content:
+                    "[Interrupted: tool execution was cancelled before completion]"
+                }
+              end)
+
+            updated_msg =
+              if kept == [] do
+                msg |> Map.delete("tool_calls") |> Map.delete(:tool_calls)
+              else
+                if Map.has_key?(msg, :tool_calls),
+                  do: Map.put(msg, :tool_calls, kept),
+                  else: Map.put(msg, "tool_calls", kept)
+              end
+
+            new_ids =
+              Enum.reduce(dangling, ids, fn tc, s ->
+                MapSet.put(s, tc["id"] || tc[:id])
+              end)
+
+            {Enum.reverse(synthetic_responses) ++ [updated_msg | acc], new_ids}
+          end
         else
-          if Map.has_key?(msg, :tool_calls),
-            do: Map.put(msg, :tool_calls, answered),
-            else: Map.put(msg, "tool_calls", answered)
+          {[msg | acc], ids}
         end
-      else
-        msg
-      end
-    end)
+      end)
+
+    Enum.reverse(result)
   end
 
   defp remove_empty_assistant_messages(messages) do
