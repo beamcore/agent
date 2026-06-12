@@ -387,13 +387,6 @@ defmodule Beamcore.TUI.State do
 
   def activity_indicator(%{activity_follow_tail?: false}), do: "Paused"
 
-  def yolo?(%{runtime_caps: nil}), do: true
-  def yolo?(%{runtime_caps: %{mode: :yolo}}), do: true
-  def yolo?(_session), do: false
-
-  def freedom?(%{autonomous?: true}), do: true
-  def freedom?(_session), do: false
-
   def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0, needs_compaction: false}
   def usage(session), do: Session.usage(session)
 
@@ -414,10 +407,6 @@ defmodule Beamcore.TUI.State do
       _ -> Beamcore.Config.active_provider()
     end
   end
-
-  def mode_status(session \\ nil)
-
-  def mode_status(_session), do: "mode: yolo"
 
   def add_activity(state, name, args, status \\ :queued) do
     event = compact_activity(name, args, status)

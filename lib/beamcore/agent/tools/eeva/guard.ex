@@ -83,7 +83,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
   )a
 
   @memory_read_functions ~w(__info__ detect_org_repo recall list search types overview summary)a
-  @memory_write_functions ~w(remember forget clear)a
+  @memory_write_functions ~w(remember put forget clear)a
 
   @network_commands ~w(curl wget nc ncat netcat ssh scp sftp rsync ftp telnet)
   @shell_commands ~w(sh bash zsh fish dash ksh csh tcsh cmd powershell pwsh osascript)

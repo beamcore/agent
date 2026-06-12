@@ -227,7 +227,7 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert File.exists?(Path.join(root, "blocked.txt"))
   end
 
-  test "default yolo capabilities allow workspace writes", %{root: root} do
+  test "default capabilities allow workspace writes", %{root: root} do
     result =
       Eeva.execute(%{
         "code" => "File.mkdir_p!(\"allowed\"); File.write!(\"allowed/result.txt\", \"ok\")"

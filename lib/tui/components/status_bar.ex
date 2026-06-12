@@ -17,11 +17,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
     tokens =
       "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
 
-    mode = State.mode_status(state.session)
-
     right_text =
       case State.ctrl_c_hint(state.ctrl_c_pending) do
-        nil -> "#{mode} · #{provider_model} · tok #{tokens}"
+        nil -> "#{provider_model} · tok #{tokens}"
         hint -> hint
       end
 

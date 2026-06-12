@@ -22,8 +22,6 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "new", description: "Start a fresh session"},
     %Command{name: "context", description: "Show compact session context"},
     %Command{name: "context clear", description: "Clear compact session context"},
-    %Command{name: "yolo", description: "Return to autonomous mode"},
-    %Command{name: "yolo on", description: "Return to autonomous mode"},
     %Command{name: "stop", description: "Pause the session; type a message to resume"},
     %Command{name: "quit", description: "Exit"},
     %Command{name: "exit", description: "Exit"},
@@ -87,8 +85,7 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event({:assistant, content}, state),
     do: state |> State.clear_notice() |> State.add_message(:assistant, content)
 
-  def handle_runtime_event({:thinking, content}, state),
-    do: state |> State.add_message(:thinking, content)
+  def handle_runtime_event({:thinking, _content}, state), do: state
 
   def handle_runtime_event({:error, content}, state),
     do: state |> State.clear_notice() |> State.add_message(:error, ErrorFormatter.format(content))
@@ -871,8 +868,6 @@ defmodule Beamcore.TUI.Events do
     }
     |> State.add_message(:system, msg)
   end
-
-  defp apply_command_result(session, state, "yolo" <> _), do: State.set_session(state, session)
 
   defp apply_command_result(session, state, _command), do: State.set_session(state, session)
 

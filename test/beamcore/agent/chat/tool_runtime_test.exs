@@ -15,7 +15,7 @@ defmodule Beamcore.Agent.Chat.ToolRuntimeTest do
     end
   end
 
-  test "chat mode exposes the same autonomous eeva surface" do
+  test "chat mode exposes the same eeva surface" do
     caps = ToolRuntime.chat()
     assert ToolRuntime.allowed_tool_names(caps) == ["eeva"]
 
@@ -43,20 +43,13 @@ defmodule Beamcore.Agent.Chat.ToolRuntimeTest do
 
     assert ToolRuntime.allowed_tool_names(caps) == ["eeva"]
     assert caps.allow_network
-    refute ToolRuntime.confirmation_required?(caps)
   end
 
-  test "normal execution never requires confirmation" do
-    for caps <- [
-          ToolRuntime.default(),
-          ToolRuntime.yolo(autonomous?: true),
-          ToolRuntime.chat()
-        ] do
-      refute ToolRuntime.confirmation_required?(caps)
-    end
-  end
-
-  test "yolo bypasses runtime friction while hard runtime safety remains elsewhere" do
-    assert ToolRuntime.yolo(autonomous?: true).autonomous?
+  test "default capabilities allow memory and network" do
+    caps = ToolRuntime.default()
+    assert caps.allow_memory_read
+    assert caps.allow_memory_write
+    assert caps.allow_network
+    refute caps.allow_task
   end
 end
