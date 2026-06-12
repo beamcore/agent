@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       description: "A general-purpose CLI coding agent",
-      license: "AGPL-3.0",
+      license: "MIT",
       links: %{"GitHub" => "https://github.com/beamcore/agent"},
 
       # For advanced users (release)
@@ -28,7 +28,7 @@ defmodule Beamcore.Agent.MixProject do
         ]
       ],
       package: [
-        licenses: ["AGPL-3.0"],
+        licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/beamcore/agent"},
         files: ["lib", "src", "mix.exs", "README.md", "LICENSE"],
         maintainers: ["Beamcore Team"],
