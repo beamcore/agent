@@ -412,10 +412,29 @@ defmodule Beamcore.Agent.Chat.Loop do
 
       {:error, %OpenaiEx.Error{kind: :rate_limit} = error} ->
         message = Beamcore.Agent.Chat.RateLimit.message(error)
+
+        wait_ms =
+          Beamcore.Agent.Chat.RateLimit.retry_after_ms(error) ||
+            Beamcore.Agent.Chat.RateLimit.default_wait_ms()
+
         maybe_print(opts, fn -> Pretty.print_rate_limit_error(error) end)
-        emit(opts, {:error, message})
-        emit(opts, {:status, :error})
-        Session.append_timeline(session, :failed, message)
+        retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
+        emit(opts, {:error, retry_message})
+        emit(opts, {:status, :rate_limited})
+        Process.sleep(wait_ms)
+        emit(opts, {:status, :thinking})
+        process_messages(session, messages, pid, depth, caps, opts)
+
+      {:error, %Beamcore.Provider.Error{kind: :rate_limit} = error} ->
+        wait_ms = error.retry_after_ms || Beamcore.Agent.Chat.RateLimit.default_wait_ms()
+        message = error.message || "Provider rate limit reached."
+        retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
+        maybe_print(opts, fn -> Pretty.print_error(retry_message) end)
+        emit(opts, {:error, retry_message})
+        emit(opts, {:status, :rate_limited})
+        Process.sleep(wait_ms)
+        emit(opts, {:status, :thinking})
+        process_messages(session, messages, pid, depth, caps, opts)
 
       {:error, %OpenaiEx.Error{kind: :api_timeout_error}} ->
         message = timeout_message(session, settings, call_elapsed)

@@ -37,6 +37,7 @@ defmodule Beamcore.Agent.Runtime do
     :active_pid,
     :active_tool_call,
     :generation,
+    :rate_limit_retry_count,
     status: :idle,
     pending_tools: [],
     tool_results: []
@@ -133,7 +134,7 @@ defmodule Beamcore.Agent.Runtime do
 
   @impl true
   def handle_cast(:hard_interrupt, %{status: status} = state)
-      when status in [:running, :paused] do
+      when status in [:running, :paused, :rate_limited] do
     # Kill in-flight task if present
     if state.active_ref do
       Process.demonitor(state.active_ref, [:flush])
@@ -252,6 +253,15 @@ defmodule Beamcore.Agent.Runtime do
     schedule_api_call(state)
   end
 
+  @impl true
+  def handle_info({:retry_api, gen}, %{generation: gen, status: :rate_limited} = state) do
+    emit(state, {:status, :thinking})
+    schedule_api_call(%{state | status: :running, active_ref: nil, active_pid: nil})
+  end
+
+  @impl true
+  def handle_info({:retry_api, _old_gen}, state), do: {:noreply, state}
+
   # Stale step message from old generation
   @impl true
   def handle_info({:next_step, _old_gen}, state) do
@@ -292,6 +302,7 @@ defmodule Beamcore.Agent.Runtime do
         status: :running,
         generation: generation,
         active_ref: nil,
+        rate_limit_retry_count: 0,
         pending_tools: [],
         tool_results: []
     }
@@ -335,6 +346,7 @@ defmodule Beamcore.Agent.Runtime do
               silent: true,
               selection: Beamcore.Provider.Selection.primary(session.roles),
               model: model_name(session),
+              retry_config: retry_config(settings),
               max_tokens: budget_plan.reserved_output_tokens
             )
           end)
@@ -444,17 +456,21 @@ defmodule Beamcore.Agent.Runtime do
     end
   end
 
-  defp handle_api_result({:error, %OpenaiEx.Error{kind: :rate_limit}}, state) do
-    emit_execution_stopped(
-      state,
-      :provider,
-      :rate_limited,
-      "Provider paused: rate limit cooldown is active.",
-      %{}
-    )
+  defp handle_api_result({:error, %OpenaiEx.Error{kind: :rate_limit} = error}, state),
+    do:
+      wait_for_rate_limit(
+        state,
+        rate_limit_wait_ms(error),
+        Beamcore.Agent.Chat.RateLimit.message(error)
+      )
 
-    emit(state, {:status, :error})
-    finish_turn(state)
+  defp handle_api_result(
+         {:error, %Beamcore.Provider.Error{kind: :rate_limit} = error},
+         state
+       ) do
+    message = error.message || "Provider rate limit reached."
+    wait_ms = error.retry_after_ms || Beamcore.Agent.Chat.RateLimit.default_wait_ms()
+    wait_for_rate_limit(state, wait_ms, message)
   end
 
   defp handle_api_result({:error, %OpenaiEx.Error{kind: :api_timeout_error}}, state) do
@@ -607,9 +623,73 @@ defmodule Beamcore.Agent.Runtime do
          active_pid: nil,
          active_tool_call: nil,
          pending_tools: [],
-         tool_results: []
+         tool_results: [],
+         rate_limit_retry_count: 0
      }}
   end
+
+  defp wait_for_rate_limit(state, wait_ms, message) do
+    wait_ms = max(wait_ms || fallback_rate_limit_wait_ms(), 1)
+    retry_count = (state.rate_limit_retry_count || 0) + 1
+
+    emit_execution_stopped(
+      state,
+      :provider,
+      :rate_limited,
+      "#{message} Retrying automatically in #{format_wait(wait_ms)}.",
+      %{retry_after_ms: wait_ms, retry_count: retry_count}
+    )
+
+    emit(state, {:status, :rate_limited})
+    Process.send_after(self(), {:retry_api, state.generation}, wait_ms)
+
+    {:noreply,
+     %{
+       state
+       | status: :rate_limited,
+         active_ref: nil,
+         active_pid: nil,
+         active_tool_call: nil,
+         rate_limit_retry_count: retry_count
+     }}
+  end
+
+  defp rate_limit_wait_ms(error),
+    do:
+      Beamcore.Agent.Chat.RateLimit.retry_after_ms(error) ||
+        fallback_rate_limit_wait_ms()
+
+  defp fallback_rate_limit_wait_ms do
+    Application.get_env(:agent, :rate_limit_retry_wait_ms) ||
+      Beamcore.Agent.Chat.RateLimit.default_wait_ms()
+  end
+
+  defp retry_config(settings) do
+    max_retries = if local_provider?(settings), do: 0, else: settings.retry_limit
+
+    %Beamcore.Retry.Config{
+      max_retries: max_retries,
+      initial_backoff: fallback_rate_limit_wait_ms(),
+      max_backoff: fallback_rate_limit_wait_ms(),
+      backoff_multiplier: 1,
+      retryable_errors: [
+        :rate_limit,
+        :api_timeout_error,
+        :api_connection_error,
+        :internal_server_error
+      ]
+    }
+  end
+
+  defp local_provider?(settings) do
+    function_exported?(Beamcore.Agent.Chat.ModeSettings, :local_provider?, 1) and
+      Beamcore.Agent.Chat.ModeSettings.local_provider?(settings)
+  end
+
+  defp format_wait(ms) when is_integer(ms) and ms >= 1000,
+    do: "#{Float.round(ms / 1000, 1)}s"
+
+  defp format_wait(ms), do: "#{ms}ms"
 
   # --- Helpers ---
 

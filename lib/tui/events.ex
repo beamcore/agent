@@ -168,10 +168,13 @@ defmodule Beamcore.TUI.Events do
       |> Map.take([:source, :reason, :recoverable?, :details])
       |> Map.put(:summary, summary)
 
+    status = if Map.get(event, :reason) == :rate_limited, do: :rate_limited, else: :error
+    role = if status == :rate_limited, do: :system, else: :error
+
     state
-    |> State.set_status(:error)
+    |> State.set_status(status)
     |> State.add_activity("execution_stopped", args, :error)
-    |> State.add_message(:error, summary)
+    |> State.add_message(role, summary)
   end
 
   def handle_runtime_event({:model_context, metadata}, state) when is_map(metadata) do
