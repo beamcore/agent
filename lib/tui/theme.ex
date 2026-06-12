@@ -40,8 +40,7 @@ defmodule Beamcore.TUI.Theme do
     input: %Style{fg: @ice},
     cursor: %Style{fg: @midnight, bg: @cyan},
     status: %Style{fg: @muted},
-    status_hot: %Style{fg: @cyan, modifiers: [:bold]},
-    yolo: %Style{fg: @red, modifiers: [:bold]}
+    status_hot: %Style{fg: @cyan, modifiers: [:bold]}
   }
 
   def style(name), do: Map.fetch!(@styles, name)

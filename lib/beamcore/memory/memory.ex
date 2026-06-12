@@ -77,6 +77,14 @@ defmodule Beamcore.Memory do
   def remember(key, value), do: remember(@default_type, key, value)
 
   @doc """
+  Saves a memory entry under the default `:facts` type.
+
+  This is a convenience alias for `remember/2`. Models that naturally reach
+  for `put/2` can use it interchangeably with `remember/2`.
+  """
+  def put(key, value), do: remember(@default_type, key, value)
+
+  @doc """
   Saves a memory entry.
 
   Preferred forms:
@@ -103,6 +111,14 @@ defmodule Beamcore.Memory do
       remember_validated(org, repo, type, key, value)
     end
   end
+
+  @doc """
+  Saves a memory entry. Convenience alias for `remember/3`.
+
+      put(:facts, "key", "value")
+      put("key", "value")
+  """
+  def put(type, key, value), do: remember(type, key, value)
 
   @doc """
   Recalls a memory by key across all types in the current project scope.

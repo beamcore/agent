@@ -14,57 +14,45 @@ defmodule Beamcore.Agent.Chat.ToolRuntime do
 
   @tool "eeva"
 
-  @type mode :: :yolo
-
   @type t :: %{
-          mode: mode(),
           allow_task: boolean(),
           allow_network: boolean(),
           allowed_tools: [binary()] | nil,
           blocked_tools: [binary()],
           allow_memory_read: boolean(),
-          allow_memory_write: boolean(),
-          autonomous?: boolean()
+          allow_memory_write: boolean()
         }
 
   @doc """
-  BeamCore ignores model-authored capability blocks and always uses autonomous mode.
+  BeamCore ignores model-authored capability blocks.
   """
   @spec from_user_message(binary()) :: t()
   def from_user_message(_content), do: default()
 
   @doc """
-  Fully autonomous execution capabilities.
+  Default autonomous execution capabilities.
 
-  Hard runtime boundaries still apply in the Eeva runtime.
+  Hard runtime boundaries still apply in the Eeva runtime (see `Beamcore.Agent.Tools.Eeva`).
   """
-  @spec yolo(keyword()) :: t()
-  def yolo(_opts \\ []) do
+  @spec default(keyword()) :: t()
+  def default(_opts \\ []) do
     %{
-      mode: :yolo,
       allow_task: false,
       allow_network: true,
       allowed_tools: [@tool],
       blocked_tools: [],
       allow_memory_read: true,
-      allow_memory_write: true,
-      autonomous?: true
+      allow_memory_write: true
     }
   end
-
-  @doc """
-  Default autonomous BeamCore capabilities.
-  """
-  @spec default() :: t()
-  def default, do: yolo()
 
   @doc """
   Chat uses the same autonomous Eeva surface as the rest of BeamCore.
   """
   @spec chat() :: t()
-  def chat do
-    default()
-  end
+  def chat, do: default()
+
+
 
   @doc """
   Builds the capabilities inherited by an internal sub-agent.
@@ -101,19 +89,6 @@ defmodule Beamcore.Agent.Chat.ToolRuntime do
   def allow_tool_call(_caps, name, _args) do
     {:error, "Unknown tool #{inspect(name)}. BeamCore exposes only eeva."}
   end
-
-  @doc """
-  BeamCore never enters a confirmation loop for normal Eeva operations.
-  """
-  @spec confirmation_required?(t()) :: boolean()
-  def confirmation_required?(_caps), do: false
-
-  @spec autonomous?(t()) :: boolean()
-  def autonomous?(caps) when is_map(caps) do
-    Map.get(caps, :autonomous?, true)
-  end
-
-  def autonomous?(_caps), do: true
 
   @spec network_allowed?(t()) :: boolean()
   def network_allowed?(caps) when is_map(caps) do

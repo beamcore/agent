@@ -14,8 +14,7 @@ defmodule Beamcore.TUI.StatusBarTest do
       total_completion_tokens: 0,
       total_tokens: 0,
       last_prompt_tokens: 0,
-      needs_compaction: false,
-      autonomous?: true
+      needs_compaction: false
     }
 
     widget =

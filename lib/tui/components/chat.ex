@@ -5,7 +5,7 @@ defmodule Beamcore.TUI.Components.Chat do
   alias Beamcore.TUI.{Theme, Wrap}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Text.{Line, Span}
-  alias ExRatatui.Widgets.{Block, Paragraph, Throbber, WidgetList}
+  alias ExRatatui.Widgets.{Block, Paragraph, WidgetList}
 
   @chat_overscan_lines 24
   @whitespace_rx ~r/^\s+/
@@ -29,7 +29,6 @@ defmodule Beamcore.TUI.Components.Chat do
     items =
       message_state
       |> message_items(wrap_width)
-      |> append_spinner(message_state)
       |> append_bottom_spacer(Map.get(message_state, :bottom_spacer_height, 0))
 
     %WidgetList{
@@ -148,9 +147,6 @@ defmodule Beamcore.TUI.Components.Chat do
 
       %{role: :assistant, content: content} ->
         bubble("Agent", content, Theme.style(:accent), wrap_width, :markdown)
-
-      %{role: :thinking, content: content} ->
-        bubble("Thinking", content, Theme.style(:subtle), wrap_width, :plain)
 
       %{role: :tool, content: content} ->
         tool_bubble("Modify File", content, wrap_width)
@@ -334,7 +330,6 @@ defmodule Beamcore.TUI.Components.Chat do
 
   defp label_prefix("You"), do: ">"
   defp label_prefix("Agent"), do: "*"
-  defp label_prefix("Thinking"), do: "·"
   defp label_prefix("Tool"), do: "»"
   defp label_prefix("Modify File"), do: "»"
   defp label_prefix("Error"), do: "!"
@@ -360,31 +355,6 @@ defmodule Beamcore.TUI.Components.Chat do
   end
 
   defp split_preserving_width(line, width), do: Wrap.lines(to_string(line), width)
-
-  defp append_spinner(items, %{status: status} = state)
-       when status in [:thinking, :tool_running, :local_search] do
-    label =
-      case status do
-        :tool_running -> "… running tools"
-        :local_search -> "… working"
-        _ -> "… thinking"
-      end
-
-    set = if state.unicode?, do: :braille, else: :ascii
-
-    items ++
-      [
-        {%Throbber{
-           label: label,
-           step: state.spinner_step,
-           throbber_set: set,
-           style: Theme.style(:subtle),
-           throbber_style: Theme.style(:running)
-         }, 1}
-      ]
-  end
-
-  defp append_spinner(items, _state), do: items
 
   defp line_count(text), do: text |> to_string() |> String.split("\n") |> length()
 

@@ -16,7 +16,6 @@ defmodule Beamcore.Agent.Chat.Session do
     :compaction_count,
     :correction_count,
     :runtime_caps,
-    :autonomous?,
     :project_nature,
     :workspace_root,
     :context,
@@ -86,11 +85,7 @@ defmodule Beamcore.Agent.Chat.Session do
           }
       end
 
-    runtime_caps =
-      case screen_type do
-        :chat -> Beamcore.Agent.Chat.ToolRuntime.chat()
-        _ -> Beamcore.Agent.Chat.ToolRuntime.yolo(autonomous?: true)
-      end
+    runtime_caps = Beamcore.Agent.Chat.ToolRuntime.default()
 
     roles =
       if roles_opt = Keyword.get(opts, :roles) do
@@ -121,7 +116,6 @@ defmodule Beamcore.Agent.Chat.Session do
       compaction_count: 0,
       correction_count: 0,
       runtime_caps: runtime_caps,
-      autonomous?: screen_type == :agent,
       project_nature: {language, build_system},
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),
@@ -657,7 +651,6 @@ defmodule Beamcore.Agent.Chat.Session do
         "correction_count" => session.correction_count || 0
       },
       "workspace_root" => session.workspace_root,
-      "autonomous" => session.autonomous? || false,
       "intermediate_state" => session.intermediate_state || %{},
       "interrupted" => session.interrupted? || false
     }
@@ -700,7 +693,6 @@ defmodule Beamcore.Agent.Chat.Session do
           do: Beamcore.Agent.Chat.ToolRuntime.chat(),
           else: nil
         ),
-      autonomous?: Map.get(data, "autonomous", false),
       project_nature: {language, build_system},
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(language, build_system),

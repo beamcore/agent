@@ -24,8 +24,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       "new " <> arg -> handle_new(session, String.trim(arg), output)
       "context" -> handle_context(session, output)
       "context clear" -> handle_context_clear(session, output)
-      "yolo" -> handle_yolo(session, output)
-      "yolo on" -> enable_yolo(session, output)
       "env" -> handle_env(session, output)
       "login" -> handle_login_prompt(session, output)
       "login " <> token -> handle_login_token(token, session, output)
@@ -62,20 +60,6 @@ defmodule Beamcore.Agent.Chat.Commands do
     else
       Session.new(session.client, opts)
     end
-  end
-
-  defp handle_yolo(session, output) do
-    enable_yolo(session, output)
-  end
-
-  defp enable_yolo(session, output) do
-    output.("Autonomous mode enabled: BeamCore will act inside hard workspace boundaries.")
-
-    %{
-      session
-      | runtime_caps: Beamcore.Agent.Chat.ToolRuntime.yolo(autonomous?: true),
-        autonomous?: true
-    }
   end
 
   defp handle_env(session, output) do
@@ -273,8 +257,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       /new  - Start a new chat session
       /context - Show compact session context
       /context clear - Clear compact session context
-      /yolo - Return to autonomous mode inside hard workspace boundaries
-      /yolo on - Return to autonomous mode inside hard workspace boundaries
       /stop - Pause the session to add improved direction
       /api list - List all configured API providers
       /api use <provider> - Switch active API provider

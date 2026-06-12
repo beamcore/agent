@@ -9,7 +9,6 @@ defmodule Beamcore.TUI.Components.Help do
     Commands
     /help            Show this panel
     /clear           Clear visible chat messages
-    /yolo            Return to autonomous mode
     /api list        List all configured API providers
     /api use <name>  Switch active API provider
     /api add <args>  Add or update an API provider config

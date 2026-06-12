@@ -50,7 +50,7 @@ defmodule Beamcore.Agent.Chat.LoopTest do
     refute String.contains?(partial_text, "/end")
   end
 
-  test "complete pasted caps-looking text remains autonomous yolo input" do
+  test "complete pasted caps-looking text remains autonomous input" do
     lines = [
       "Caps:",
       "mode: capability_block",
@@ -63,7 +63,6 @@ defmodule Beamcore.Agent.Chat.LoopTest do
     assert {:ok, text, []} = MultilineInput.collect_until(lines, "/end")
     caps = ToolRuntime.from_user_message(text)
 
-    assert caps.mode == :yolo
     assert ToolRuntime.allowed_tool_names(caps) == ["eeva"]
   end
 end

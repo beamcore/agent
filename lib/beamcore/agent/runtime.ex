@@ -270,7 +270,6 @@ defmodule Beamcore.Agent.Runtime do
       caps
       |> Kernel.||(session.runtime_caps)
       |> Kernel.||(ToolRuntime.default())
-      |> apply_session_autonomy(session)
 
     emit(state, {:status, :thinking})
 
@@ -641,12 +640,6 @@ defmodule Beamcore.Agent.Runtime do
     })
   end
 
-  defp apply_session_autonomy(caps, %{autonomous?: true}) do
-    Map.put(caps, :autonomous?, true)
-  end
-
-  defp apply_session_autonomy(caps, _session), do: caps
-
   defp normalize_tool_calls(%{"tool_calls" => tool_calls} = message) when is_list(tool_calls) do
     fixed =
       Enum.map(tool_calls, fn tc ->
@@ -758,7 +751,7 @@ defmodule Beamcore.Agent.Runtime do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(", ")
 
-    "Current mode: yolo. Exposed tools: #{tool_names}. Act directly inside hard workspace boundaries and self-correct from tool errors."
+    "Exposed tools: #{tool_names}. Act directly inside hard workspace boundaries and self-correct from tool errors."
   end
 
   defp decode_tool_args(args) when is_binary(args) do

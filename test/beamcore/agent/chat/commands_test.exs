@@ -23,10 +23,8 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert output =~ "/help"
   end
 
-  test "new F1 sessions start in autonomous yolo-equivalent mode", %{session: session} do
-    assert session.autonomous?
-    assert session.runtime_caps.mode == :yolo
-    assert session.runtime_caps.autonomous?
+  test "new F1 sessions have runtime caps", %{session: session} do
+    assert session.runtime_caps.allowed_tools == ["eeva"]
   end
 
   test "legacy safety mode command is not part of the simplified command surface", %{
@@ -38,15 +36,11 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert output =~ "Unknown command"
   end
 
-  test "/yolo keeps autonomous execution enabled", %{session: session} do
+  test "legacy yolo command is not part of the command surface", %{session: session} do
     parent = self()
-    yolo = Commands.execute("yolo", session, output: &send(parent, {:out, &1}))
-
+    assert Commands.execute("yolo", session, output: &send(parent, {:out, &1})) == session
     assert_receive {:out, output}
-    assert output =~ "Autonomous mode enabled"
-    assert yolo.autonomous?
-    assert yolo.runtime_caps.mode == :yolo
-    assert yolo.runtime_caps.autonomous?
+    assert output =~ "Unknown command"
   end
 
   test "legacy confirmation commands are not part of the command surface", %{session: session} do

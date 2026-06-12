@@ -167,7 +167,6 @@ defmodule Beamcore.Agent.Chat.Loop do
       runtime_caps
       |> Kernel.||(session.runtime_caps)
       |> Kernel.||(ToolRuntime.default())
-      |> apply_session_autonomy(session)
 
     emit(opts, {:status, :thinking})
 
@@ -180,12 +179,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     process_messages(session, messages, pid, 0, caps, opts)
   end
-
-  defp apply_session_autonomy(caps, %{autonomous?: true}) do
-    Map.put(caps, :autonomous?, true)
-  end
-
-  defp apply_session_autonomy(caps, _session), do: caps
 
   defp process_messages(session, messages, pid, depth, caps, opts)
        when depth >= 0 do
@@ -812,7 +805,7 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(", ")
 
-    "Current mode: yolo. Exposed tools: #{tool_names}. Act directly inside hard workspace boundaries and self-correct from tool errors."
+    "Exposed tools: #{tool_names}. Act directly inside hard workspace boundaries and self-correct from tool errors."
   end
 
   defp decode_tool_args(args) when is_binary(args) do
