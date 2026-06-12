@@ -3,16 +3,16 @@ defmodule Beamcore.Agent.Tools.EevaTest do
   import ExUnit.CaptureIO
 
   alias Beamcore.Agent.FilesystemJournal
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
   alias Beamcore.Agent.Tools.Eeva
 
   setup do
     root = Path.join(System.tmp_dir!(), "beamcore_eeva_#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
-    previous_root = PathSafety.configure_workspace_root(root)
+    previous_root = PathInput.configure_workspace_root(root)
 
     on_exit(fn ->
-      PathSafety.restore_workspace_root(previous_root)
+      PathInput.restore_workspace_root(previous_root)
       File.rm_rf!(root)
       System.delete_env("BEAMCORE_EEVA_TIMEOUT_MS")
     end)
@@ -109,6 +109,7 @@ defmodule Beamcore.Agent.Tools.EevaTest do
   end
 
   test "model-authored stderr does not write to parent stderr" do
+    ensure_standard_error_registered()
     parent = self()
 
     leaked =
@@ -238,12 +239,58 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert File.read!(Path.join(root, "allowed/result.txt")) == "ok"
   end
 
-  test "dynamic traversal is rejected at runtime" do
-    code = "path = Enum.join([\"..\", \"outside.txt\"], \"/\"); File.write!(path, \"no\")"
+  test "destructive File removal requires explicit confirmation", %{root: root} do
+    path = Path.join(root, "delete-me.txt")
+    File.write!(path, "keep until confirmed")
+
+    blocked =
+      Eeva.execute(%{"code" => "File.rm!(\"delete-me.txt\")"})
+      |> Jason.decode!()
+
+    refute blocked["ok"]
+    assert blocked["stderr"] =~ "requires explicit confirmation"
+    assert File.exists?(path)
+
+    confirmed =
+      Eeva.execute(%{
+        "code" => "Beamcore.Agent.Tools.Eeva.remove(\"delete-me.txt\", confirm: true)"
+      })
+      |> Jason.decode!()
+
+    assert confirmed["ok"]
+    refute File.exists?(path)
+
+    dir = Path.join(root, "delete-dir")
+    File.mkdir_p!(Path.join(dir, "nested"))
+    File.write!(Path.join(dir, "nested/file.txt"), "remove when confirmed")
+
+    blocked_dir =
+      Eeva.execute(%{"code" => "File.rm_rf!(\"delete-dir\")"})
+      |> Jason.decode!()
+
+    refute blocked_dir["ok"]
+    assert blocked_dir["stderr"] =~ "requires explicit confirmation"
+    assert File.exists?(Path.join(dir, "nested/file.txt"))
+
+    confirmed_dir =
+      Eeva.execute(%{
+        "code" => "Beamcore.Agent.Tools.Eeva.remove(\"delete-dir\", confirm: true)"
+      })
+      |> Jason.decode!()
+
+    assert confirmed_dir["ok"]
+    refute File.exists?(dir)
+  end
+
+  test "parent directory segments are treated as normal local path navigation", %{root: root} do
+    outside = Path.join(Path.dirname(root), "outside.txt")
+    on_exit(fn -> File.rm(outside) end)
+    File.rm(outside)
+    code = "path = Enum.join([\"..\", \"outside.txt\"], \"/\"); File.write!(path, \"yes\")"
     result = Eeva.execute(%{"code" => code}) |> Jason.decode!()
 
-    refute result["ok"]
-    assert result["stderr"] =~ "traversal"
+    assert result["ok"]
+    assert File.read!(outside) == "yes"
   end
 
   test "shell interpreters are rejected without confirmation" do
@@ -535,5 +582,24 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["ok"]
     refute result["stdout"] =~ "output truncated"
     refute result["summary"] =~ "Output was truncated"
+  end
+
+  defp ensure_standard_error_registered do
+    if is_nil(Process.whereis(:standard_error)) do
+      {:ok, io} = StringIO.open("")
+      Process.register(io, :standard_error)
+
+      on_exit(fn ->
+        if Process.whereis(:standard_error) == io do
+          Process.unregister(:standard_error)
+        end
+
+        if Process.alive?(io), do: GenServer.stop(io)
+      end)
+    end
+
+    :ok
+  rescue
+    ArgumentError -> :ok
   end
 end

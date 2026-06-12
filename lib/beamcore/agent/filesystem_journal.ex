@@ -8,7 +8,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
   state.
   """
 
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
   alias Beamcore.Agent.Timeline
   alias Beamcore.Agent.FilesystemJournal.Server
 
@@ -46,8 +46,8 @@ defmodule Beamcore.Agent.FilesystemJournal do
     end
   end
 
-  def journal_position(workspace_root \\ PathSafety.workspace_root()) do
-    workspace_root = workspace_root || PathSafety.workspace_root()
+  def journal_position(workspace_root \\ PathInput.workspace_root()) do
+    workspace_root = workspace_root || PathInput.workspace_root()
 
     workspace_root
     |> read_journal()
@@ -55,12 +55,12 @@ defmodule Beamcore.Agent.FilesystemJournal do
   end
 
   def changes_since(start_position) when is_integer(start_position) do
-    changes_since(PathSafety.workspace_root(), start_position)
+    changes_since(PathInput.workspace_root(), start_position)
   end
 
   def changes_since(workspace_root, start_position)
       when is_binary(workspace_root) and is_integer(start_position) do
-    workspace_root = workspace_root || PathSafety.workspace_root()
+    workspace_root = workspace_root || PathInput.workspace_root()
 
     mutations =
       workspace_root
@@ -90,15 +90,15 @@ defmodule Beamcore.Agent.FilesystemJournal do
     }
   end
 
-  def snapshot_state(path, workspace_root \\ PathSafety.workspace_root()) when is_binary(path) do
-    with {:ok, relative_path} <- safe_relative(path, workspace_root),
-         :ok <- ensure_not_internal(relative_path) do
+  def snapshot_state(path, workspace_root \\ PathInput.workspace_root()) when is_binary(path) do
+    with key <- path_key(path, workspace_root),
+         :ok <- ensure_not_internal(key) do
       snapshot_path(path, workspace_root)
     end
   end
 
   def revision_summary(workspace_root, checkpoint_id, branch_id, parent_revision_id \\ nil) do
-    workspace_root = workspace_root || PathSafety.workspace_root()
+    workspace_root = workspace_root || PathInput.workspace_root()
     journal = read_journal(workspace_root)
     position = Map.get(journal, "position", 0)
 
@@ -122,7 +122,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
     if context_enabled?(context) do
       workspace_root = context.workspace_root
 
-      with {:ok, relative_path} <- safe_relative(path, workspace_root),
+      with relative_path <- path_key(path, workspace_root),
            :ok <- ensure_not_internal(relative_path),
            {:ok, after_state} <- state_from_written_path(path, after_bytes, workspace_root),
            :ok <- validate_size(before_state, after_state) do
@@ -153,7 +153,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
     if context_enabled?(context) do
       workspace_root = context.workspace_root
 
-      with {:ok, relative_path} <- safe_relative(path, workspace_root),
+      with relative_path <- path_key(path, workspace_root),
            :ok <- ensure_not_internal(relative_path),
            {:ok, before_state} <- snapshot_path(path, workspace_root),
            :ok <- validate_destructive_state(before_state),
@@ -193,7 +193,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
     if context_enabled?(context) do
       workspace_root = context.workspace_root
 
-      with {:ok, relative_path} <- safe_relative(path, workspace_root),
+      with relative_path <- path_key(path, workspace_root),
            :ok <- ensure_not_internal(relative_path),
            {:ok, after_state} <- snapshot_path(path, workspace_root) do
         mutation =
@@ -219,7 +219,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
     if context_enabled?(context) do
       workspace_root = context.workspace_root
 
-      with {:ok, relative_workdir} <- safe_relative(workdir, workspace_root),
+      with relative_workdir <- path_key(workdir, workspace_root),
            :ok <- ensure_not_internal(relative_workdir),
            {:ok, baseline} <- command_manifest(workdir, workspace_root) do
         {:ok,
@@ -276,7 +276,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
   def restore_to_checkpoint_owned(_session, nil, _opts), do: {:error, "Checkpoint was not found."}
 
   def restore_to_checkpoint_owned(session, checkpoint, opts) do
-    workspace_root = session.workspace_root || PathSafety.workspace_root()
+    workspace_root = session.workspace_root || PathInput.workspace_root()
 
     Server.transaction(workspace_root, fn ->
       do_restore_to_checkpoint(session, checkpoint, workspace_root, opts)
@@ -401,8 +401,8 @@ defmodule Beamcore.Agent.FilesystemJournal do
   def exclude_internal_path?(path) when is_binary(path) do
     rel =
       path
-      |> Path.expand(PathSafety.workspace_root())
-      |> Path.relative_to(PathSafety.workspace_root())
+      |> Path.expand(PathInput.workspace_root())
+      |> Path.relative_to(PathInput.workspace_root())
 
     internal_path?(rel)
   end
@@ -1060,12 +1060,9 @@ defmodule Beamcore.Agent.FilesystemJournal do
     File.mkdir_p!(Path.dirname(path))
     remove_path(path)
 
-    if symlink_target_allowed?(path, target, workspace_root) do
-      File.ln_s!(target, path)
-      :ok
-    else
-      raise "symlink target is outside workspace"
-    end
+    if symlink_target_allowed?(path, target, workspace_root), do: :ok
+    File.ln_s!(target, path)
+    :ok
   end
 
   defp restore_state(workspace_root, relative_path, %{"type" => "directory"} = state) do
@@ -1138,7 +1135,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
          "mode" => mode_bits(stat.mode)
        }}
     else
-      false -> {:error, "symlink target is outside workspace"}
+      false -> {:error, "cannot snapshot symlink target"}
       {:error, reason} -> {:error, "cannot read symlink: #{reason}"}
     end
   end
@@ -1156,8 +1153,8 @@ defmodule Beamcore.Agent.FilesystemJournal do
   end
 
   defp command_manifest(workdir, workspace_root) do
-    with {:ok, root_rel} <- safe_relative(workdir, workspace_root),
-         :ok <- ensure_not_internal(root_rel) do
+    with root_key <- path_key(workdir, workspace_root),
+         :ok <- ensure_not_internal(root_key) do
       paths =
         workdir
         |> Path.join("**/*")
@@ -1166,10 +1163,10 @@ defmodule Beamcore.Agent.FilesystemJournal do
 
       with :ok <- validate_command_scan_count(paths) do
         Enum.reduce_while(paths, {:ok, %{}}, fn path, {:ok, acc} ->
-          with {:ok, rel} <- safe_relative(path, workspace_root),
-               {:ok, state} <- command_entry_state(path, workspace_root) do
-            {:cont, {:ok, Map.put(acc, rel, state)}}
-          else
+          rel = path_key(path, workspace_root)
+
+          case command_entry_state(path, workspace_root) do
+            {:ok, state} -> {:cont, {:ok, Map.put(acc, rel, state)}}
             {:error, reason} -> {:halt, {:error, reason}}
           end
         end)
@@ -1292,17 +1289,11 @@ defmodule Beamcore.Agent.FilesystemJournal do
   defp normalize_command_kind(_), do: "validation"
 
   defp command_scan_excluded?(path, workspace_root) do
-    case safe_relative(path, workspace_root) do
-      {:ok, rel} ->
-        normalized = rel |> Path.split() |> Enum.join("/")
+    normalized = path |> path_key(workspace_root) |> Path.split() |> Enum.join("/")
 
-        Enum.any?(@command_scan_excludes, fn excluded ->
-          normalized == excluded or String.starts_with?(normalized, excluded <> "/")
-        end)
-
-      _ ->
-        true
-    end
+    Enum.any?(@command_scan_excludes, fn excluded ->
+      normalized == excluded or String.starts_with?(normalized, excluded <> "/")
+    end)
   end
 
   defp directory_entries(path, workspace_root) do
@@ -1314,10 +1305,10 @@ defmodule Beamcore.Agent.FilesystemJournal do
 
     with :ok <- validate_directory_count(files) do
       Enum.reduce_while(files, {:ok, %{}}, fn child, {:ok, acc} ->
-        with {:ok, rel} <- safe_relative(child, workspace_root),
-             {:ok, state} <- snapshot_path(child, workspace_root) do
-          {:cont, {:ok, Map.put(acc, rel, state)}}
-        else
+        rel = path_key(child, workspace_root)
+
+        case snapshot_path(child, workspace_root) do
+          {:ok, state} -> {:cont, {:ok, Map.put(acc, rel, state)}}
           {:error, reason} -> {:halt, {:error, reason}}
         end
       end)
@@ -1514,8 +1505,8 @@ defmodule Beamcore.Agent.FilesystemJournal do
     }
   end
 
-  defp canonical_workspace_root(nil), do: PathSafety.workspace_root()
-  defp canonical_workspace_root(root) when is_binary(root), do: PathSafety.canonical_path(root)
+  defp canonical_workspace_root(nil), do: PathInput.workspace_root()
+  defp canonical_workspace_root(root) when is_binary(root), do: PathInput.canonical_path(root)
 
   defp context_enabled?(%{session_id: session_id, branch_id: branch_id, workspace_root: root})
        when is_binary(session_id) and is_binary(branch_id) and is_binary(root),
@@ -1900,33 +1891,11 @@ defmodule Beamcore.Agent.FilesystemJournal do
     end
   end
 
-  defp symlink_target_allowed?(path, target, workspace_root) do
-    resolved =
-      if Path.type(target) == :absolute do
-        Path.expand(target)
-      else
-        path |> Path.dirname() |> Path.join(target) |> Path.expand()
-      end
-
-    resolved == workspace_root or String.starts_with?(resolved, workspace_root <> "/")
-  end
+  defp symlink_target_allowed?(_path, _target, _workspace_root), do: true
 
   defp absolute(workspace_root, relative_path), do: Path.expand(relative_path, workspace_root)
 
-  defp safe_relative(path, workspace_root) do
-    relative = path |> Path.expand() |> Path.relative_to(workspace_root)
-
-    cond do
-      Path.type(relative) == :absolute ->
-        {:error, "path outside workspace"}
-
-      ".." in Path.split(relative) ->
-        {:error, "path outside workspace"}
-
-      true ->
-        {:ok, relative}
-    end
-  end
+  defp path_key(path, workspace_root), do: PathInput.display_key(path, workspace_root)
 
   defp ensure_not_internal(relative_path) do
     if internal_path?(relative_path),
@@ -1936,7 +1905,7 @@ defmodule Beamcore.Agent.FilesystemJournal do
 
   defp internal_absolute?(path, workspace_root) do
     path
-    |> Path.relative_to(workspace_root)
+    |> path_key(workspace_root)
     |> internal_path?()
   end
 

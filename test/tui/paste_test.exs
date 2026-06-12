@@ -31,7 +31,7 @@ defmodule Beamcore.TUI.PasteTest do
     %{state: state}
   end
 
-  defp paste(content), do: %{__struct__: ExRatatui.Event.Paste, content: content}
+  defp paste(content), do: %{type: :paste, content: content}
 
   test "bracketed paste inserts the full payload into the composer", %{state: state} do
     {:noreply, state} = Events.handle_event(paste("hello world"), state)

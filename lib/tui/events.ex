@@ -51,19 +51,6 @@ defmodule Beamcore.TUI.Events do
 
   def handle_event(%Event.Resize{}, state, _opts), do: {:noreply, State.mark_dirty(state)}
 
-  def handle_event(%{__struct__: ExRatatui.Event.Paste, content: content}, state, _opts)
-      when is_binary(content) do
-    # Some ex_ratatui releases deliver bracketed paste as a Paste-shaped event,
-    # while the locked 0.10.0 dependency does not define the struct yet. Match
-    # the event shape without expanding a missing struct at compile time.
-    insert_textarea_content(state.textarea, content)
-
-    state = %{state | history_index: nil}
-    state = handle_file_finder_key(nil, [], state)
-
-    {:noreply, refresh_commands(state)}
-  end
-
   def handle_event(%Event.Mouse{} = event, state, _opts) do
     case event.kind do
       "scroll_up" ->
@@ -77,7 +64,47 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
+  def handle_event(event, state, _opts) when is_map(event) do
+    if paste_event?(event) do
+      content =
+        Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
+
+      insert_textarea_content(state.textarea, content)
+
+      state = %{state | history_index: nil}
+      state = handle_file_finder_key(nil, [], state)
+
+      {:noreply, refresh_commands(state)}
+    else
+      {:noreply, state}
+    end
+  end
+
   def handle_event(_event, state, _opts), do: {:noreply, state}
+
+  defp paste_event?(event) when is_map(event) do
+    # Some ex_ratatui releases deliver bracketed paste as a Paste-shaped event,
+    # while the locked 0.10.0 dependency does not define the struct yet. Match
+    # the event shape without expanding a missing struct at compile time.
+    struct_name =
+      event
+      |> Map.get(:__struct__)
+      |> case do
+        nil -> ""
+        module -> Atom.to_string(module)
+      end
+
+    has_content? =
+      is_binary(Map.get(event, :content)) or is_binary(Map.get(event, "content")) or
+        is_binary(Map.get(event, :text))
+
+    has_content? and
+      (String.ends_with?(struct_name, ".Paste") or
+         Map.get(event, :type) in [:paste, "paste"] or
+         Map.get(event, "type") in [:paste, "paste"])
+  end
+
+  defp paste_event?(_event), do: false
 
   def handle_runtime_event({:status, status}, state), do: State.set_status(state, status)
   def handle_runtime_event({:session, session}, state), do: State.set_session(state, session)
@@ -642,7 +669,11 @@ defmodule Beamcore.TUI.Events do
     else
       # Keep the text in the composer so the user doesn't lose their input.
       # They can edit and resubmit once the worker finishes or is stopped.
-      State.add_message(state, :system, "Agent is still working. Press Ctrl+C to stop, or wait for it to finish.")
+      State.add_message(
+        state,
+        :system,
+        "Agent is still working. Press Ctrl+C to stop, or wait for it to finish."
+      )
     end
   end
 

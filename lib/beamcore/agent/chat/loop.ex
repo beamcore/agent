@@ -805,7 +805,7 @@ defmodule Beamcore.Agent.Chat.Loop do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(", ")
 
-    "Exposed tools: #{tool_names}. Act directly inside hard workspace boundaries and self-correct from tool errors."
+    "Exposed tools: #{tool_names}. Act directly in the trusted local runtime and self-correct from tool errors."
   end
 
   defp decode_tool_args(args) when is_binary(args) do

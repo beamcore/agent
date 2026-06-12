@@ -2,7 +2,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.Agent.Chat.Session
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
   alias Beamcore.Agent.Tools.Eeva
 
   setup do
@@ -10,12 +10,12 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
       Path.join(System.tmp_dir!(), "beamcore_workspace_#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
-    root = PathSafety.canonical_path(root)
+    root = PathInput.canonical_path(root)
 
     previous_workspace = Application.get_env(:agent, :workspace_root)
 
     on_exit(fn ->
-      PathSafety.restore_workspace_root(previous_workspace)
+      PathInput.restore_workspace_root(previous_workspace)
       File.rm_rf(root)
     end)
 
@@ -30,7 +30,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
                workspace_root: root,
                client: :test_client,
                plain_start: fn opts ->
-                 send(parent, {:workspace, PathSafety.workspace_root(), opts[:workspace_root]})
+                 send(parent, {:workspace, PathInput.workspace_root(), opts[:workspace_root]})
                  :ok
                end
              )
@@ -57,7 +57,8 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
       assert result["ok"]
       assert result["result"] =~ "hello"
       assert File.read!(Path.join(root, "src/demo.txt")) == "hello\n"
-      assert {:error, _reason} = PathSafety.resolve("../outside.txt")
+      assert {:ok, outside} = PathInput.resolve("../outside.txt")
+      assert outside == Path.join(Path.dirname(root), "outside.txt")
     end)
   end
 
@@ -78,12 +79,12 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
   end
 
   defp with_workspace(root, fun) do
-    previous = PathSafety.configure_workspace_root(root)
+    previous = PathInput.configure_workspace_root(root)
 
     try do
       fun.()
     after
-      PathSafety.restore_workspace_root(previous)
+      PathInput.restore_workspace_root(previous)
     end
   end
 end

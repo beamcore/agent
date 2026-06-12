@@ -2,7 +2,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
   @moduledoc false
 
   alias Beamcore.Agent.FilesystemJournal
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
 
   @process_key {__MODULE__, :runtime}
 
@@ -33,7 +33,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
     Beamcore.Agent.Chat.ToolRuntime,
     Beamcore.Agent.FilesystemJournal,
     Beamcore.Agent.FilesystemJournal.Server,
-    Beamcore.Agent.PathSafety,
+    Beamcore.Agent.Tools.PathInput,
     Beamcore.Agent.RestoreCoordinator,
     Beamcore.Agent.Runtime,
     Beamcore.Agent.Timeline,
@@ -60,7 +60,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
     Beamcore.Agent.Chat.ToolRuntime,
     Beamcore.Agent.FilesystemJournal,
     Beamcore.Agent.FilesystemJournal.Server,
-    Beamcore.Agent.PathSafety,
+    Beamcore.Agent.Tools.PathInput,
     Beamcore.Agent.RestoreCoordinator,
     Beamcore.Agent.Runtime,
     Beamcore.Agent.Timeline,
@@ -99,7 +99,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
   def install(caps, workspace_root) when is_map(caps) and is_binary(workspace_root) do
     Process.put(@process_key, %{
       caps: caps,
-      workspace_root: PathSafety.canonical_path(workspace_root)
+      workspace_root: PathInput.canonical_path(workspace_root)
     })
 
     :ok
@@ -146,7 +146,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
   def wildcard(pattern, opts \\ []) when is_binary(pattern) and is_list(opts) do
     runtime = runtime!()
 
-    with :ok <- PathSafety.validate_pattern(pattern),
+    with :ok <- PathInput.validate_pattern(pattern),
          {:ok, absolute_pattern} <- resolve_pattern(pattern, runtime),
          matches <- Path.wildcard(absolute_pattern, opts) do
       matches
@@ -276,7 +276,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
         ]
 
       network_module?(module) and not Map.get(caps, :allow_network, true) ->
-        ["Network access through #{inspect(module)} is blocked by the runtime capabilities." | errors]
+        [
+          "Network access through #{inspect(module)} is blocked by the runtime capabilities."
+          | errors
+        ]
 
       direct_internal_guard_call?(module) ->
         ["Direct access to Eeva runtime internals is unavailable." | errors]
@@ -442,18 +445,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
     result
   end
 
-  defp call_tracked_file(args, function, _runtime)
+  defp call_tracked_file(_args, function, _runtime)
        when function in [:rm, :rm!, :rm_rf, :rm_rf!] do
-    [path | _rest] = args
-    prepared = prepare_remove(path)
-    result = apply(File, function, args)
-
-    if match?({:ok, _prepared}, prepared) and successful_file_result?(result) do
-      {:ok, prepared} = prepared
-      journal_or_raise(FilesystemJournal.commit_prepared(prepared))
-    end
-
-    result
+    raise ArgumentError,
+          "File.#{function} is destructive and requires explicit confirmation. Use Beamcore.Agent.Tools.Eeva.remove(path, confirm: true)."
   end
 
   defp call_tracked_file(args, function, runtime) when function in [:rename, :rename!] do
@@ -537,8 +532,6 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
     end
   end
 
-  defp prepare_remove(path), do: FilesystemJournal.record_remove(path, tool: "eeva")
-
   defp journal_or_raise(:ok), do: :ok
   defp journal_or_raise({:error, reason}), do: raise(ArgumentError, reason)
 
@@ -581,9 +574,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
     path = to_string(path)
     allow_missing = mode == :write
 
-    with {:ok, absolute} <- PathSafety.resolve(path, allow_missing: allow_missing),
-         :ok <- ensure_inside_workspace(absolute, runtime.workspace_root),
-         relative <- Path.relative_to(absolute, runtime.workspace_root),
+    with {:ok, absolute} <- PathInput.resolve(path, allow_missing: allow_missing),
+         relative <- PathInput.display_key(absolute, runtime.workspace_root),
          :ok <- reject_workspace_root_write(relative, mode),
          :ok <- authorize_runtime_path(relative, mode, runtime.caps) do
       {:ok, absolute}
@@ -614,14 +606,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
          "Shell interpreters are unavailable inside Eeva; invoke the executable directly."}
 
       contains_internal_path?([command | Enum.map(args, &to_string/1)]) ->
-        {:error,
-         "Commands cannot access BeamCore internal safety-journal or memory storage."}
+        {:error, "Commands cannot access BeamCore internal safety-journal or memory storage."}
 
       network_command?(command, args) and not Map.get(runtime.caps, :allow_network, true) ->
         {:error, "Network command #{command} is blocked by the runtime capabilities."}
-
-      unsafe_path_argument?(args, runtime.workspace_root) ->
-        {:error, "Command arguments may not address paths outside the workspace."}
 
       true ->
         :ok
@@ -646,52 +634,13 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
          Enum.any?(args, &(&1 in ["clone", "fetch", "pull", "push", "ls-remote"])))
   end
 
-  defp unsafe_path_argument?(args, workspace_root) do
-    Enum.any?(args, fn arg ->
-      value = to_string(arg)
-
-      cond do
-        value == "" or String.starts_with?(value, "-") ->
-          false
-
-        URI.parse(value).scheme in ["http", "https", "ssh", "git"] ->
-          false
-
-        Path.type(value) == :absolute ->
-          not String.starts_with?(Path.expand(value), workspace_root <> "/")
-
-        String.contains?(value, "../") ->
-          true
-
-        true ->
-          false
-      end
-    end)
-  end
-
-  defp ensure_inside_workspace(absolute, workspace_root) do
-    expanded = Path.expand(absolute)
-
-    if expanded == workspace_root or String.starts_with?(expanded, workspace_root <> "/") do
-      :ok
-    else
-      {:error, "Path escapes the active workspace."}
-    end
-  end
-
   defp resolve_pattern(pattern, runtime) do
-    prefix =
-      pattern
-      |> String.split(~r/[\*\?\[]/, parts: 2)
-      |> hd()
-      |> case do
-        "" -> "."
-        value -> Path.dirname(value)
-      end
-
-    with {:ok, _absolute_prefix} <- authorize_path(prefix, :read, runtime) do
-      {:ok, Path.join(runtime.workspace_root, pattern)}
-    end
+    {:ok,
+     if Path.type(pattern) == :absolute do
+       Path.expand(pattern)
+     else
+       Path.expand(pattern, runtime.workspace_root)
+     end}
   end
 
   defp runtime! do

@@ -8,10 +8,7 @@
 /agent
 .env.*
 !.env.example
-/.beamcore/policy.json
-!/.beamcore/policy.example.json
-/.beamcore/snapshots/
-/.beamcore/recovery/
+/.beamcore/
 erl_crash.dump
 *.ez
 *.beam
