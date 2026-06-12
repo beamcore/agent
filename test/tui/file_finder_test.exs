@@ -1,8 +1,8 @@
 defmodule Beamcore.TUI.FileFinderTest do
   use ExUnit.Case, async: false
 
-  alias Beamcore.TUI.FileFinder
   alias Beamcore.Agent.Tools.PathInput
+  alias Beamcore.TUI.FileFinder
 
   describe "parse/2" do
     test "returns :no_file_query when @ is absent" do
@@ -20,13 +20,14 @@ defmodule Beamcore.TUI.FileFinderTest do
     end
 
     test "returns :no_file_query if cursor is not directly at/in the token" do
-      # Cursor is at the space after @lib
+      # Cursor is at the space after @lib.
       assert FileFinder.parse("@lib ", {0, 5}) == :no_file_query
-      # Cursor is at another word
+
+      # Cursor is at another word.
       assert FileFinder.parse("@lib hello", {0, 10}) == :no_file_query
     end
 
-    test "returns :no_file_query if token is a completed tag (ends with ])" do
+    test "returns :no_file_query if token is a completed tag ending with ]" do
       assert FileFinder.parse("@[lib/tui/file_finder.ex]", {0, 25}) == :no_file_query
       assert FileFinder.parse("@[lib/tui/file_finder.ex] ", {0, 26}) == :no_file_query
     end
@@ -37,6 +38,7 @@ defmodule Beamcore.TUI.FileFinderTest do
       cache = ["lib/tui/file_finder.ex", "lib/tui/events.ex", "test/tui/history_test.exs"]
 
       results = FileFinder.search("[lib", cache)
+
       assert "lib/tui/file_finder.ex" in results
       assert "lib/tui/events.ex" in results
       refute "test/tui/history_test.exs" in results
@@ -44,7 +46,7 @@ defmodule Beamcore.TUI.FileFinderTest do
   end
 
   describe "load_files/0" do
-    test "hides symlinked files from the compact project file finder" do
+    test "includes symlinked files in the compact project file finder" do
       root =
         Path.join(
           System.tmp_dir!(),
@@ -59,9 +61,17 @@ defmodule Beamcore.TUI.FileFinderTest do
 
       File.mkdir_p!(Path.join(root, "lib"))
       File.mkdir_p!(outside)
-      File.write!(Path.join(root, "lib/inside.ex"), "defmodule Inside, do: :ok\n")
-      File.write!(Path.join(outside, "secret.ex"), "secret\n")
-      File.ln_s!(Path.join(outside, "secret.ex"), Path.join(root, "lib/outside_link.ex"))
+
+      inside_file = Path.join(root, "lib/inside.ex")
+      inside_link = Path.join(root, "lib/inside_link.ex")
+      outside_file = Path.join(outside, "secret.ex")
+      outside_link = Path.join(root, "lib/outside_link.ex")
+
+      File.write!(inside_file, "defmodule Inside, do: :ok\n")
+      File.write!(outside_file, "secret\n")
+
+      File.ln_s!(inside_file, inside_link)
+      File.ln_s!(outside_file, outside_link)
 
       previous = PathInput.configure_workspace_root(root)
 
@@ -69,7 +79,8 @@ defmodule Beamcore.TUI.FileFinderTest do
         files = FileFinder.load_files()
 
         assert "lib/inside.ex" in files
-        refute "lib/outside_link.ex" in files
+        assert "lib/inside_link.ex" in files
+        assert "lib/outside_link.ex" in files
       after
         PathInput.restore_workspace_root(previous)
         File.rm_rf(root)
