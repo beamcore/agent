@@ -37,7 +37,8 @@ defmodule Beamcore.Agent.Chat.Context do
         modified_files: context.modified_files,
         decisions: Enum.take(context.decisions, 6),
         blocked_attempts: Enum.take(context.blocked_attempts, 3),
-        known_risks: Enum.take(context.known_risks, 3)
+        known_risks: Enum.take(context.known_risks, 3),
+        current_task: context.current_task
     }
   end
 

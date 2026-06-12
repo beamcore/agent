@@ -640,7 +640,9 @@ defmodule Beamcore.TUI.Events do
       ExRatatui.textarea_set_value(state.textarea, "")
       run_command(%{state | show_commands: false}, "stop")
     else
-      State.add_message(state, :system, "Agent is still working.")
+      # Keep the text in the composer so the user doesn't lose their input.
+      # They can edit and resubmit once the worker finishes or is stopped.
+      State.add_message(state, :system, "Agent is still working. Press Ctrl+C to stop, or wait for it to finish.")
     end
   end
 
