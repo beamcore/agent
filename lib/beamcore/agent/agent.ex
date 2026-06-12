@@ -33,7 +33,6 @@ defmodule Beamcore.Agent do
       Beamcore.Provider.Health,
       Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor,
-      Beamcore.FileMutationQueue,
     ]
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]

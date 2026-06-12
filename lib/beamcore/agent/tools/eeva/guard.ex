@@ -12,7 +12,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Guard do
   )a
 
   @file_write_functions ~w(
-    write write! mkdir mkdir! mkdir_p mkdir_p! rm rm! rm_rf rm_rf!
+    write write! mkdir mkdir! mkdir_p mkdir_p! rm rm! rm_rf rm_rf! rmdir rmdir!
     cp cp! cp_r cp_r! rename rename! touch touch! chmod chmod! ln_s ln_s!
     open open!
   )a
