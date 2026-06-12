@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.Chat.APITest do
       "MISTRAL_BASE_URL" => nil
     })
 
-    client = Beamcore.OpenAI.client()
+    client = Beamcore.Provider.Registry.client()
 
     # Reset mock after each test
     on_exit(fn ->

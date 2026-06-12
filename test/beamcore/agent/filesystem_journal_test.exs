@@ -18,7 +18,7 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
     previous_root = PathSafety.configure_workspace_root(root)
 
     session =
-      Beamcore.OpenAI.client()
+      Beamcore.Provider.Registry.client()
       |> Session.new(
         session_id: "fs-journal-#{System.unique_integer([:positive])}",
         screen_type: :agent,

@@ -10,7 +10,7 @@ defmodule ChatTest do
 
   test "chat session structure" do
     # Test that we can create a chat session with proper structure
-    client = Beamcore.OpenAI.client()
+    client = Beamcore.Provider.Registry.client()
 
     session = %Beamcore.Agent.Chat.Session{
       messages: [],
@@ -23,7 +23,7 @@ defmodule ChatTest do
 
   test "send_message adds user message to session" do
     # Test that send_message properly adds user messages to the session
-    client = Beamcore.OpenAI.client()
+    client = Beamcore.Provider.Registry.client()
 
     session = %Beamcore.Agent.Chat.Session{
       messages: [],
@@ -42,26 +42,26 @@ defmodule ChatTest do
 
   describe "Beamcore.Agent.Chat.API.execute/4 input validation" do
     test "returns error for empty messages list" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       result = Beamcore.Agent.Chat.API.execute(client, [], nil, :main)
       assert result == {:error, "Messages must be a non-empty list."}
     end
 
     test "returns error for non-list messages" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       result = Beamcore.Agent.Chat.API.execute(client, "not a list", nil, :main)
       assert result == {:error, "Messages must be a non-empty list."}
     end
 
     test "returns error for non-list tools" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       messages = [%{role: "user", content: "test"}]
       result = Beamcore.Agent.Chat.API.execute(client, messages, "not a list", :main)
       assert result == {:error, "Tools must be a list."}
     end
 
     test "accepts valid messages and tools" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       messages = [%{role: "user", content: "test"}]
       tools = [%{type: "function", function: %{name: "eeva", description: "test"}}]
       # This test will not fail the validation, but may fail later due to API calls
@@ -74,7 +74,7 @@ defmodule ChatTest do
     end
 
     test "accepts valid messages with nil tools" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       messages = [%{role: "user", content: "test"}]
       # This test will not fail the validation, but may fail later due to API calls
       # We only test that validation passes

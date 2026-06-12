@@ -15,7 +15,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   end
 
   test "new/1 creates a session with log file" do
-    client = Beamcore.OpenAI.client()
+    client = Beamcore.Provider.Registry.client()
     session = Session.new(client)
 
     assert session.session_id != nil
@@ -26,7 +26,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   end
 
   test "log/2 appends data to file" do
-    client = Beamcore.OpenAI.client()
+    client = Beamcore.Provider.Registry.client()
     session = Session.new(client)
 
     data = %{test: "data"}
@@ -38,7 +38,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   end
 
   test "timeline events are stored on the session and state file" do
-    client = Beamcore.OpenAI.client()
+    client = Beamcore.Provider.Registry.client()
     session = Session.new(client, session_id: "timeline-#{System.unique_integer([:positive])}")
 
     session = Session.append_timeline(session, :planning, "Planning next step.")
@@ -54,7 +54,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   end
 
   test "saves and resumes durable session state" do
-    client = Beamcore.OpenAI.client()
+    client = Beamcore.Provider.Registry.client()
     session_id = "resume-#{System.unique_integer([:positive])}"
 
     session =
@@ -74,7 +74,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
   describe "summarize_and_rollover/3" do
     setup do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       session = Session.new(client)
 
       %{client: client, session: session}
@@ -488,7 +488,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
   describe "transparent rollover and grace period" do
     test "update_usage/2 sets needs_compaction flag at grace threshold" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       session = Session.new(client)
 
       # Below threshold
@@ -526,7 +526,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     end
 
     test "needs_rollover_now?/1 correctly identifies hard limit" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       session = Session.new(client)
 
       refute Session.needs_rollover_now?(session)
@@ -588,7 +588,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     end
 
     test "summarize_and_rollover/3 transparently rolls over the session, preserving session_id and context" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       session = Session.new(client)
 
       # 1. Mock the API call
@@ -645,7 +645,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     end
 
     test "summarize_and_rollover/3 performs fallback local compaction if API call fails" do
-      client = Beamcore.OpenAI.client()
+      client = Beamcore.Provider.Registry.client()
       session = Session.new(client)
 
       # 1. Mock API call failure

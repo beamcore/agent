@@ -13,7 +13,7 @@ defmodule Beamcore.TUI.ChatScrollTest do
     File.mkdir_p!(tmp_dir)
 
     session =
-      Beamcore.OpenAI.client()
+      Beamcore.Provider.Registry.client()
       |> Session.new(session_id: session_id, screen_type: :chat)
       |> Map.put(:state_file, Path.join(tmp_dir, "session.state.json"))
       |> Map.put(:checkpoint_file, Path.join(tmp_dir, "session.checkpoints.json"))

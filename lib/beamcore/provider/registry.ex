@@ -133,11 +133,92 @@ defmodule Beamcore.Provider.Registry do
   def resolve_api_key(%{auth: :none}), do: nil
   def resolve_api_key(%{auth: "none"}), do: nil
 
-  def resolve_api_key(%{config: %{"api_key" => key}}) when is_binary(key),
-    do: Beamcore.Config.decrypted_api_key(key)
+  def resolve_api_key(%{config: %{"api_key" => key}, default_config: default}) when is_binary(key) do
+    env_value = env_secret_value(default)
+
+    if env_value do
+      env_value
+    else
+      Beamcore.Config.decrypted_api_key(key)
+    end
+  end
 
   def resolve_api_key(%{default_config: default}) do
-    legacy_secret_value(default) || env_secret_value(default)
+    env_secret_value(default) || legacy_secret_value(default)
+  end
+  @doc """
+  Returns an OpenaiEx client for the active provider.
+
+  Raises if the active provider is not configured.
+  """
+  def client do
+    provider_name = Beamcore.Config.active_provider()
+
+    case validate_selection(provider_name) do
+      {:ok, provider_info} ->
+        token = resolve_api_key(provider_info)
+
+        if is_binary(token) do
+          receive_timeout = Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
+
+          OpenaiEx.new(token)
+          |> OpenaiEx.with_base_url(provider_info.base_url)
+          |> OpenaiEx.with_receive_timeout(receive_timeout)
+        else
+          raise_missing_config!(provider_name)
+        end
+
+      {:error, _reason} ->
+        raise_missing_config!(provider_name)
+    end
+  end
+
+  @doc """
+  Returns `{:ok, client}` for the active provider, or `{:error, message}` if
+  unconfigured.
+  """
+  def client_safe do
+    provider_name = Beamcore.Config.active_provider()
+
+    case validate_selection(provider_name) do
+      {:ok, provider_info} ->
+        token = resolve_api_key(provider_info)
+
+        if is_binary(token) do
+          receive_timeout = Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
+
+          client =
+            OpenaiEx.new(token)
+            |> OpenaiEx.with_base_url(provider_info.base_url)
+            |> OpenaiEx.with_receive_timeout(receive_timeout)
+
+          {:ok, client}
+        else
+          {:error, missing_config_message(provider_name)}
+        end
+
+      {:error, _reason} = error ->
+        error
+    end
+  end
+
+  @doc """
+  Returns true if an environment-variable API key is set for the active provider.
+  """
+  def env_api_key_present? do
+    provider_name = Beamcore.Config.active_provider()
+
+    case get(provider_name) do
+      %{default_config: default} ->
+        env_secret_value(default) != nil
+
+      _ ->
+        false
+    end
+  end
+
+  defp raise_missing_config!(provider_name) do
+    raise RuntimeError, missing_config_message(provider_name)
   end
 
   def validate_selection(name) when is_binary(name) do
@@ -283,7 +364,15 @@ defmodule Beamcore.Provider.Registry do
   defp env_secret_value(default) do
     default
     |> Map.get(:secret_envs, [])
-    |> Enum.find_value(&System.get_env/1)
+    |> Enum.find_value(fn env_key ->
+      case System.get_env(env_key) do
+        nil -> nil
+        "" -> nil
+        value ->
+          trimmed = String.trim(value)
+          if trimmed == "", do: nil, else: trimmed
+      end
+    end)
   end
 
   defp provider_env_key(name) do

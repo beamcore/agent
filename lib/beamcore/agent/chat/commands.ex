@@ -92,7 +92,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     do: Beamcore.Config.put_mistral_api_key(token)
 
   def login_saved_message do
-    if Beamcore.OpenAI.env_api_key_present?() do
+    if Beamcore.Provider.Registry.env_api_key_present?() do
       "Beamcore login saved.\nWarning: MISTRAL_API_KEY is set in this process and will override the stored login until it is unset."
     else
       "Beamcore login saved."
