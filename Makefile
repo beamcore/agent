@@ -22,7 +22,7 @@ LOAD_ENV = set -a; [ ! -f .env ] || . ./.env; set +a;
 .PHONY: all help
 .PHONY: install install-dev uninstall
 .PHONY: deps compile release test format format-check dialyzer check check-full
-.PHONY: chat chat-plain shell run-ledger run-memory
+.PHONY: chat chat-plain shell run-memory
 .PHONY: dev-setup init config-status version clean update
 
 all: compile
@@ -190,10 +190,6 @@ chat: compile
 chat-plain: compile
 	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
 
-## run-ledger: Run ledger service standalone (cluster member)
-run-ledger: compile
-	$(LOAD_ENV) LEDGER_GLOBAL=true elixir --sname ledger -S mix run --no-halt
-
 ## run-memory: Run memory service standalone (cluster member)
 run-memory: compile
 	$(LOAD_ENV) MEMORY_GLOBAL=true elixir --sname memory -S mix run --no-halt
@@ -259,7 +255,6 @@ help:
 	@echo "  \033[1mRunning:\033[0m"
 	@printf "    \033[36m%-16s\033[0m %s\n" "chat" "Start TUI chat (dev mode)"
 	@printf "    \033[36m%-16s\033[0m %s\n" "chat-plain" "Start plain fallback chat"
-	@printf "    \033[36m%-16s\033[0m %s\n" "run-ledger" "Run ledger service standalone"
 	@printf "    \033[36m%-16s\033[0m %s\n" "run-memory" "Run memory service standalone"
 	@echo ""
 	@echo "  \033[1mSetup:\033[0m"
