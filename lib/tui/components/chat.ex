@@ -97,42 +97,37 @@ defmodule Beamcore.TUI.Components.Chat do
     viewport_height = max(viewport_height, 1)
     distance_from_bottom = max(distance_from_bottom || 0, 0)
     overscan = max(overscan || 0, 0)
+    lower = max(distance_from_bottom - overscan, 0)
+    upper = distance_from_bottom + viewport_height + overscan
 
-    estimates = Enum.map(messages, &estimated_message_height(&1, body_width))
-    total_height = Enum.sum(estimates)
-    effective_offset = min(distance_from_bottom, max(total_height - viewport_height, 0))
-    lower = max(effective_offset - overscan, 0)
-    upper = effective_offset + viewport_height + overscan
-
-    {selected_rev, _cursor} =
+    {selected, bottom_spacer, total_height} =
       messages
-      |> Enum.zip(estimates)
       |> Enum.reverse()
-      |> Enum.reduce({[], 0}, fn {message, height}, {selected, cursor} ->
+      |> Enum.reduce_while({[], 0, 0}, fn message, {selected, spacer, cursor} ->
+        height = estimated_message_height(message, body_width)
         next_cursor = cursor + height
 
-        if next_cursor >= lower and cursor <= upper do
-          {[message | selected], next_cursor}
-        else
-          {selected, next_cursor}
+        cond do
+          cursor > upper and selected != [] ->
+            {:halt, {selected, spacer, cursor}}
+
+          next_cursor < lower ->
+            {:cont, {selected, next_cursor, next_cursor}}
+
+          next_cursor >= lower and cursor <= upper ->
+            {:cont, {[message | selected], spacer, next_cursor}}
+
+          true ->
+            {:cont, {selected, spacer, next_cursor}}
         end
       end)
 
-    bottom_spacer =
-      messages
-      |> Enum.zip(estimates)
-      |> Enum.reverse()
-      |> Enum.reduce_while(0, fn {_message, height}, acc ->
-        next = acc + height
-
-        if next <= lower do
-          {:cont, next}
-        else
-          {:halt, acc}
-        end
-      end)
-
-    {selected_rev, bottom_spacer, effective_offset}
+    if selected == [] and messages != [] and distance_from_bottom > 0 do
+      clamped_offset = max(total_height - viewport_height, 0)
+      visible_message_window(messages, wrap_width, viewport_height, clamped_offset, overscan)
+    else
+      {selected, bottom_spacer, distance_from_bottom}
+    end
   end
 
   defp message_items(%{messages: []} = state, wrap_width) do

@@ -88,6 +88,20 @@ defmodule Beamcore.TUI.ChatScrollTest do
     refute List.first(scrolled_visible).content == List.first(tail_visible).content
   end
 
+  test "visible window clamps an oversized scroll offset to existing history" do
+    messages =
+      Enum.map(1..20, fn index ->
+        %{role: :assistant, content: "message #{index}"}
+      end)
+
+    {visible, _bottom_spacer, effective_offset} =
+      Chat.visible_message_window(messages, 80, 10, 100_000)
+
+    assert visible != []
+    assert List.first(visible).content =~ "message 1"
+    assert effective_offset < 100_000
+  end
+
   test "chat widget renders bounded items for thousands of messages", %{state: state} do
     messages =
       Enum.map(1..5_000, fn index ->

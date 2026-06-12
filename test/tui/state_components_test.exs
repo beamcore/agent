@@ -1,6 +1,7 @@
 defmodule Beamcore.TUI.StateComponentsTest do
   use ExUnit.Case, async: true
 
+  alias Beamcore.TUI.Events
   alias Beamcore.TUI.State
 
   test "internal event buffer keeps compact recent execution notices" do
@@ -31,5 +32,26 @@ defmodule Beamcore.TUI.StateComponentsTest do
     state = State.add_activity(state, "eeva", %{"code" => "File.read!(\"README.md\")"}, :done)
     assert hd(state.activity).label =~ "eeva"
     assert hd(state.activity).summary =~ "File.read!"
+  end
+
+  test "rate-limit execution notice stays recoverable and non-error status" do
+    state = %State{activity: [], messages: [], activity_follow_tail?: true, status: :thinking}
+
+    state =
+      Events.handle_runtime_event(
+        {:execution_stopped,
+         %{
+           source: :provider,
+           reason: :rate_limited,
+           summary: "Provider rate limit reached. Retrying automatically in 5ms.",
+           details: %{retry_after_ms: 5},
+           recoverable?: true
+         }},
+        state
+      )
+
+    assert state.status == :rate_limited
+    assert [%{role: :system, content: content}] = state.messages
+    assert content =~ "Retrying automatically"
   end
 end

@@ -60,6 +60,7 @@ defmodule Beamcore.TUI.Components.Mascot do
 
   defp normalize(:thinking), do: :thinking
   defp normalize(:local_search), do: :thinking
+  defp normalize(:rate_limited), do: :thinking
   defp normalize(:tool_running), do: :tool_running
   defp normalize(:generating), do: :generating
   defp normalize(:running), do: :running
