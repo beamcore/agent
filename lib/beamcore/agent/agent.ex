@@ -49,11 +49,9 @@ defmodule Beamcore.Agent do
   end
 
   @doc """
-  Returns the legacy Mistral/OpenaiEx compatibility client.
-
-  New provider-neutral chat code should use `Beamcore.Provider.Router`.
+  Returns an OpenaiEx client for the active provider.
   """
-  def client, do: Beamcore.OpenAI.client()
+  def client, do: Beamcore.Provider.Registry.client()
 
   @doc """
   Start the primary interactive agent chat experience.

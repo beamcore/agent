@@ -11,7 +11,7 @@ defmodule Beamcore.Agent.TimelineTest do
     File.mkdir_p!(tmp_dir)
 
     session =
-      Beamcore.OpenAI.client()
+      Beamcore.Provider.Registry.client()
       |> Session.new(session_id: session_id, screen_type: :chat)
       |> Map.put(:state_file, Path.join(tmp_dir, "session.state.json"))
       |> Map.put(:checkpoint_file, Path.join(tmp_dir, "session.checkpoints.json"))
@@ -130,7 +130,7 @@ defmodule Beamcore.Agent.TimelineTest do
       })
     )
 
-    assert {:ok, resumed} = Session.resume(session_id, Beamcore.OpenAI.client(), [])
+    assert {:ok, resumed} = Session.resume(session_id, Beamcore.Provider.Registry.client(), [])
     assert hd(resumed.timeline).type == :decision
     assert_raise ArgumentError, fn -> String.to_existing_atom(malicious) end
   end
