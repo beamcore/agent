@@ -13,35 +13,19 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   Execute a tool by name with the given arguments.
   """
   def execute(name, args, caps \\ ToolRuntime.default()) do
-    start_time = System.monotonic_time(:millisecond)
-    {org, repo} = Beamcore.Ledger.detect_org_repo()
-
     {name, args} = normalize_tool_call(name, args)
 
     case find_tool(name) do
       nil ->
-        duration = System.monotonic_time(:millisecond) - start_time
-        result = "Function not implemented"
-        Beamcore.Ledger.log_action(org, repo, name, args, result, duration, 0, :error)
-        result
+        "Function not implemented"
 
       tool ->
         case ToolRuntime.allow_tool_call(caps, name, args) do
           :ok ->
-            result = execute_tool(tool, name, args, caps)
-
-            duration = System.monotonic_time(:millisecond) - start_time
-
-            status = tool_result_status(result)
-
-            Beamcore.Ledger.log_action(org, repo, name, args, result, duration, 0, status)
-            result
+            execute_tool(tool, name, args, caps)
 
           {:error, message} ->
-            duration = System.monotonic_time(:millisecond) - start_time
-            result = "Error: #{message}"
-            Beamcore.Ledger.log_action(org, repo, name, args, result, duration, 0, :error)
-            result
+            "Error: #{message}"
         end
     end
   end
@@ -89,21 +73,6 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
       end
     end
   end
-
-  defp tool_result_status(result) when is_binary(result) do
-    cond do
-      String.starts_with?(String.trim_leading(result), "Error:") ->
-        :error
-
-      true ->
-        case Jason.decode(result) do
-          {:ok, %{"ok" => false}} -> :error
-          _ -> :ok
-        end
-    end
-  end
-
-  defp tool_result_status(_result), do: :ok
 
   defp find_tool(name) do
     Enum.find(@tools, fn tool ->

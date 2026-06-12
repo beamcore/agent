@@ -20,11 +20,8 @@ defmodule Beamcore.Agent do
   """
   def start(_type, _args) do
     remember_initial_workspace()
-    maybe_connect_ledger_node()
-
     children = [
       Beamcore.Config,
-      Beamcore.Ledger,
       Beamcore.Memory,
       Beamcore.RateLimiter,
       Beamcore.Provider.Scheduler,
@@ -37,7 +34,6 @@ defmodule Beamcore.Agent do
       Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor,
       Beamcore.FileMutationQueue,
-      Beamcore.Alignment
     ]
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
@@ -50,25 +46,6 @@ defmodule Beamcore.Agent do
         {:ok, cwd} -> Application.put_env(:agent, :initial_workspace_root, Path.expand(cwd))
         {:error, _reason} -> :ok
       end
-    end
-  end
-
-  defp maybe_connect_ledger_node do
-    case System.get_env("LEDGER_NODE") do
-      nil ->
-        :ok
-
-      node_str ->
-        node_atom = String.to_atom(node_str)
-
-        case Node.connect(node_atom) do
-          true ->
-            Process.sleep(100)
-            :ok
-
-          false ->
-            :ok
-        end
     end
   end
 

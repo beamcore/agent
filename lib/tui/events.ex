@@ -662,7 +662,7 @@ defmodule Beamcore.TUI.Events do
 
         true ->
           # A plain message while paused resumes the session with the typed text
-          # as the new direction, so users can send again after a Ctrl+C pause.
+          # so users can send again after a Ctrl+C pause.
           ExRatatui.textarea_set_value(state.textarea, "")
           state = record_history(state, value)
           resume_session(%{state | show_commands: false}, value)
@@ -787,8 +787,8 @@ defmodule Beamcore.TUI.Events do
     apply_command_result(result, state, command)
   end
 
-  defp resume_session(state, alignment) do
-    alignment = String.trim(alignment)
+  defp resume_session(state, message) do
+    message = String.trim(message)
     state = State.resume(state)
 
     state =
@@ -798,10 +798,10 @@ defmodule Beamcore.TUI.Events do
       end)
 
     cond do
-      alignment != "" ->
+      message != "" ->
         state
-        |> State.add_message(:user, alignment)
-        |> start_turn(alignment, nil)
+        |> State.add_message(:user, message)
+        |> start_turn(message, nil)
 
       true ->
         state

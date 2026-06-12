@@ -4,7 +4,7 @@ defmodule Beamcore.Agent.Runtime do
 
   Acts as a non-blocking state machine:
     :idle → :running → :idle (normal flow)
-    :running → :paused → :running (pause/resume with alignment)
+    :running → :paused → :running (pause/resume)
 
   All blocking work (API calls, tool execution) is delegated to async tasks.
   The GenServer only manages state transitions and checks for pause signals
@@ -13,8 +13,7 @@ defmodule Beamcore.Agent.Runtime do
   ## Pause/Resume
 
   Pause takes effect at batch boundaries — after all tool_calls from one
-  assistant message are executed, but before the next LLM API call. On resume,
-  the user's alignment text is injected as a user message and the loop continues.
+  assistant message are executed, but before the next LLM API call.
   """
 
   use GenServer
@@ -38,7 +37,6 @@ defmodule Beamcore.Agent.Runtime do
     :active_pid,
     :active_tool_call,
     :generation,
-    :alignment_text,
     status: :idle,
     pending_tools: [],
     tool_results: []
@@ -66,10 +64,10 @@ defmodule Beamcore.Agent.Runtime do
   end
 
   @doc """
-  Resume a paused agent loop, injecting alignment text before the next API call.
+  Resume a paused agent loop.
   """
-  def resume(pid, alignment_text) do
-    GenServer.cast(pid, {:resume, alignment_text})
+  def resume(pid) do
+    GenServer.cast(pid, :resume)
   end
 
   @doc """
@@ -124,14 +122,14 @@ defmodule Beamcore.Agent.Runtime do
   def handle_cast(:pause, state), do: {:noreply, state}
 
   @impl true
-  def handle_cast({:resume, alignment_text}, %{status: :paused} = state) do
-    state = %{state | status: :running, alignment_text: alignment_text}
+  def handle_cast(:resume, %{status: :paused} = state) do
+    state = %{state | status: :running}
     send(self(), {:next_step, state.generation})
     {:noreply, state}
   end
 
   @impl true
-  def handle_cast({:resume, _text}, state), do: {:noreply, state}
+  def handle_cast(:resume, state), do: {:noreply, state}
 
   @impl true
   def handle_cast(:hard_interrupt, %{status: status} = state)
@@ -239,17 +237,8 @@ defmodule Beamcore.Agent.Runtime do
   # Step driver — checks pause before proceeding
   @impl true
   def handle_info({:next_step, gen}, %{generation: gen, status: :paused} = state) do
-    # Paused at batch boundary. Inject alignment if we have one and resume.
-    case state.alignment_text do
-      nil ->
-        # Stay paused, waiting for resume
-        {:noreply, state}
-
-      text ->
-        # Inject alignment and continue
-        state = inject_alignment(state, text)
-        schedule_api_call(state)
-    end
+    # Paused at batch boundary, stay paused waiting for resume
+    {:noreply, state}
   end
 
   @impl true
@@ -306,7 +295,6 @@ defmodule Beamcore.Agent.Runtime do
         active_ref: nil,
         pending_tools: [],
         tool_results: [],
-        alignment_text: nil
     }
 
     schedule_api_call(new_state)
@@ -622,17 +610,6 @@ defmodule Beamcore.Agent.Runtime do
          pending_tools: [],
          tool_results: []
      }}
-  end
-
-  defp inject_alignment(state, text) do
-    alignment_message = %{role: "user", content: text}
-    Session.log(state.session, alignment_message)
-
-    %{
-      state
-      | messages: state.messages ++ [alignment_message],
-        alignment_text: nil
-    }
   end
 
   # --- Helpers ---
