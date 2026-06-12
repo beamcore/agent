@@ -1,3 +1,5 @@
+# Eeva: run arbitrary Elixir code via OTP-supervised worker; always use `fn x -> ... end`, never `&Mod.fun/1` (captures bypass instrumentation).
+
 defmodule Beamcore.Agent.Tools.Eeva do
   @moduledoc """
   The single model-facing execution tool in BeamCore.
@@ -34,7 +36,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Execute arbitrary Elixir code. This universal tool provides endless capabilities: write Elixir to read/write files, run system commands (git, mix, etc.), parse data, or interact with Beamcore.Memory. The runtime handles runtime checks, side effects, and returns stdout, results, and journaled changes.",
+          "Execute arbitrary Elixir code. This universal tool provides endless capabilities: write Elixir to read/write files, run system commands (git, mix, etc.), parse data, or interact with Beamcore.Memory. The runtime handles runtime checks, side effects, and returns stdout, results, and journaled changes. Prefer anonymous functions (fn x -> ... end) over function captures (&Mod.fun/1) — captures bypass runtime instrumentation and will be blocked.",
         parameters: %{
           type: "object",
           properties: %{
