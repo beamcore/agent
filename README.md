@@ -1,6 +1,3 @@
-# Beamcore Agent
-
-![AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
 
 Beamcore is a small terminal coding agent built on Elixir/OTP. It runs one
 straight chat loop, uses one provider routing path, and executes work through
