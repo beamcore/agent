@@ -5,7 +5,7 @@ defmodule Beamcore.TUI.FileFinder do
   against a query using subsequence fuzzy matching.
   """
 
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
   alias Beamcore.Agent.SafeCmd
 
   @max_results 15
@@ -71,11 +71,11 @@ defmodule Beamcore.TUI.FileFinder do
   Loads the list of workspace files and directories, respecting .gitignore.
   Tries git ls-files, then rg --files, then Path.wildcard as fallback.
   Directories are derived from file paths and suffixed with `/`.
-  Filters out internal and denied workspace paths.
+  Filters out noisy internal/build paths.
   """
   @spec load_files() :: [String.t()]
   def load_files do
-    root = PathSafety.workspace_root()
+    root = PathInput.workspace_root()
 
     file_paths =
       case git_ls_files(root) do
@@ -188,12 +188,26 @@ defmodule Beamcore.TUI.FileFinder do
   end
 
   defp safe_workspace_entry?(path) do
-    path = String.trim_trailing(path, "/")
+    normalized =
+      path
+      |> String.trim_trailing("/")
+      |> Path.split()
+      |> Enum.join("/")
+      |> String.downcase()
 
-    case PathSafety.resolve(path) do
-      {:ok, _absolute} -> true
-      {:error, _reason} -> false
-    end
+    not Enum.any?(
+      [
+        ".git",
+        "_build",
+        "deps",
+        "node_modules",
+        ".elixir_ls",
+        ".beamcore/snapshots",
+        ".beamcore/recovery",
+        ".beamcore/memory"
+      ],
+      fn hidden -> normalized == hidden or String.starts_with?(normalized, hidden <> "/") end
+    )
   end
 
   @doc """

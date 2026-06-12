@@ -133,7 +133,8 @@ defmodule Beamcore.Provider.Registry do
   def resolve_api_key(%{auth: :none}), do: nil
   def resolve_api_key(%{auth: "none"}), do: nil
 
-  def resolve_api_key(%{config: %{"api_key" => key}, default_config: default}) when is_binary(key) do
+  def resolve_api_key(%{config: %{"api_key" => key}, default_config: default})
+      when is_binary(key) do
     env_value = env_secret_value(default)
 
     if env_value do
@@ -146,6 +147,7 @@ defmodule Beamcore.Provider.Registry do
   def resolve_api_key(%{default_config: default}) do
     env_secret_value(default) || legacy_secret_value(default)
   end
+
   @doc """
   Returns an OpenaiEx client for the active provider.
 
@@ -366,8 +368,12 @@ defmodule Beamcore.Provider.Registry do
     |> Map.get(:secret_envs, [])
     |> Enum.find_value(fn env_key ->
       case System.get_env(env_key) do
-        nil -> nil
-        "" -> nil
+        nil ->
+          nil
+
+        "" ->
+          nil
+
         value ->
           trimmed = String.trim(value)
           if trimmed == "", do: nil, else: trimmed

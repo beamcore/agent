@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.FileFinderTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.TUI.FileFinder
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
 
   describe "parse/2" do
     test "returns :no_file_query when @ is absent" do
@@ -44,7 +44,7 @@ defmodule Beamcore.TUI.FileFinderTest do
   end
 
   describe "load_files/0" do
-    test "does not return symlinks that resolve outside the workspace" do
+    test "hides symlinked files from the compact project file finder" do
       root =
         Path.join(
           System.tmp_dir!(),
@@ -63,7 +63,7 @@ defmodule Beamcore.TUI.FileFinderTest do
       File.write!(Path.join(outside, "secret.ex"), "secret\n")
       File.ln_s!(Path.join(outside, "secret.ex"), Path.join(root, "lib/outside_link.ex"))
 
-      previous = PathSafety.configure_workspace_root(root)
+      previous = PathInput.configure_workspace_root(root)
 
       try do
         files = FileFinder.load_files()
@@ -71,7 +71,7 @@ defmodule Beamcore.TUI.FileFinderTest do
         assert "lib/inside.ex" in files
         refute "lib/outside_link.ex" in files
       after
-        PathSafety.restore_workspace_root(previous)
+        PathInput.restore_workspace_root(previous)
         File.rm_rf(root)
         File.rm_rf(outside)
       end

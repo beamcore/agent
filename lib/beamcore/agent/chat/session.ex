@@ -65,8 +65,8 @@ defmodule Beamcore.Agent.Chat.Session do
 
     workspace_root =
       opts
-      |> Keyword.get(:workspace_root, Beamcore.Agent.PathSafety.workspace_root())
-      |> Beamcore.Agent.PathSafety.canonical_path()
+      |> Keyword.get(:workspace_root, Beamcore.Agent.Tools.PathInput.workspace_root())
+      |> Beamcore.Agent.Tools.PathInput.canonical_path()
 
     {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root)
 
@@ -901,8 +901,7 @@ defmodule Beamcore.Agent.Chat.Session do
                   role: "tool",
                   tool_call_id: tc["id"] || tc[:id],
                   name: get_in(tc, ["function", "name"]) || get_in(tc, [:function, :name]),
-                  content:
-                    "[Interrupted: tool execution was cancelled before completion]"
+                  content: "[Interrupted: tool execution was cancelled before completion]"
                 }
               end)
 

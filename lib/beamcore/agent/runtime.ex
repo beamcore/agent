@@ -293,7 +293,7 @@ defmodule Beamcore.Agent.Runtime do
         generation: generation,
         active_ref: nil,
         pending_tools: [],
-        tool_results: [],
+        tool_results: []
     }
 
     schedule_api_call(new_state)
@@ -751,7 +751,7 @@ defmodule Beamcore.Agent.Runtime do
       |> Enum.reject(&is_nil/1)
       |> Enum.join(", ")
 
-    "Exposed tools: #{tool_names}. Act directly inside hard workspace boundaries and self-correct from tool errors."
+    "Exposed tools: #{tool_names}. Act directly in the trusted local runtime and self-correct from tool errors."
   end
 
   defp decode_tool_args(args) when is_binary(args) do

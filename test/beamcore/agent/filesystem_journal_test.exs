@@ -4,7 +4,7 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
   alias Beamcore.Agent.Chat.Session
   alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.FilesystemJournal.Server
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
   alias Beamcore.Agent.Tools.Eeva
 
   setup do
@@ -14,8 +14,8 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
       Path.join(System.tmp_dir!(), "beamcore_fs_journal_#{System.unique_integer([:positive])}")
 
     File.mkdir_p!(root)
-    root = PathSafety.canonical_path(root)
-    previous_root = PathSafety.configure_workspace_root(root)
+    root = PathInput.canonical_path(root)
+    previous_root = PathInput.configure_workspace_root(root)
 
     session =
       Beamcore.Provider.Registry.client()
@@ -28,7 +28,7 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
       |> Map.put(:checkpoint_file, Path.join(root, ".beamcore/session.checkpoints.json"))
 
     on_exit(fn ->
-      PathSafety.restore_workspace_root(previous_root)
+      PathInput.restore_workspace_root(previous_root)
       File.rm_rf!(workspace_store_root(root))
       File.rm_rf!(root)
     end)
@@ -287,7 +287,14 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
 
     assert {:ok, _rewound} = Session.rewind(checkpoint_a.session, checkpoint_a.id)
 
-    [intent] = restore_intents(root)
+    intent =
+      root
+      |> restore_intents()
+      |> Enum.find(
+        &(&1["target_journal_position"] == checkpoint_a.filesystem_revision["journal_position"])
+      )
+
+    assert is_map(intent)
     assert intent["status"] == "completed"
     assert intent["result"]["status"] == "completed"
     refute File.exists?(Path.join(root, ".beamcore/snapshots"))
@@ -486,18 +493,24 @@ defmodule Beamcore.Agent.FilesystemJournalTest do
     assert {:ok, "target.txt"} = File.read_link(Path.join(root, "link.txt"))
   end
 
-  test "symlink escape is rejected before deletion", %{root: root, session: session} do
+  test "symlink to an external target can be deleted and restored explicitly", %{
+    root: root,
+    session: session
+  } do
     outside =
       Path.join(System.tmp_dir!(), "beamcore_outside_#{System.unique_integer([:positive])}")
 
     File.write!(outside, "outside\n")
     File.ln_s!(outside, Path.join(root, "escape.txt"))
+    checkpoint_a = checkpoint!(session, "A")
 
     try do
       result =
         fs_agent!(session, %{"operation" => "remove", "path" => "escape.txt", "confirm" => true})
 
-      assert result =~ "outside workspace"
+      assert result =~ "Successfully removed"
+      refute File.exists?(Path.join(root, "escape.txt"))
+      assert {:ok, _rewound} = Session.rewind(checkpoint_a.session, checkpoint_a.id)
       assert {:ok, ^outside} = File.read_link(Path.join(root, "escape.txt"))
     after
       File.rm(outside)

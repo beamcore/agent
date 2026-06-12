@@ -52,8 +52,6 @@ defmodule Beamcore.Agent.Chat.ToolRuntime do
   @spec chat() :: t()
   def chat, do: default()
 
-
-
   @doc """
   Builds the capabilities inherited by an internal sub-agent.
   """

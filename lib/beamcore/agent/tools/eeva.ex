@@ -14,7 +14,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   alias Beamcore.Agent.Chat.ToolRuntime
   alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.Tools.Eeva.{Sandbox, Supervisor, Worker}
-  alias Beamcore.Agent.PathSafety
+  alias Beamcore.Agent.Tools.PathInput
 
   @default_timeout_ms 180_000
   @default_max_memory_bytes 256 * 1024 * 1024
@@ -87,6 +87,28 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   def execute(_params, _caps),
     do: encode_error("Parameters must be an object", "invalid_request")
+
+  @doc """
+  Removes a file or directory when the caller explicitly confirms the destructive action.
+  """
+  def remove(path, opts \\ [])
+
+  def remove(path, opts) when is_binary(path) and is_list(opts) do
+    if Keyword.get(opts, :confirm) == true do
+      with {:ok, absolute} <- PathInput.resolve(path),
+           {:ok, prepared} <- FilesystemJournal.record_remove(absolute, tool: "eeva"),
+           :ok <- do_remove(absolute),
+           :ok <- FilesystemJournal.commit_prepared(prepared) do
+        :ok
+      else
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:error, "Removal requires confirm: true."}
+    end
+  end
+
+  def remove(path, _opts), do: {:error, "Removal path must be a string, got: #{inspect(path)}"}
 
   defp normalize_code(code) when is_binary(code) do
     code
@@ -173,9 +195,9 @@ defmodule Beamcore.Agent.Tools.Eeva do
   end
 
   defp context_workspace_root(%{workspace_root: root}) when is_binary(root),
-    do: PathSafety.canonical_path(root)
+    do: PathInput.canonical_path(root)
 
-  defp context_workspace_root(_context), do: PathSafety.workspace_root()
+  defp context_workspace_root(_context), do: PathInput.workspace_root()
 
   defp format_result({:ok, %{status: :ok} = result}, code, prepared, filesystem_changes) do
     {stdout, dropped} = truncate_output(result.output)
@@ -355,6 +377,20 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   catch
     _, _ -> :ok
+  end
+
+  defp do_remove(path) do
+    if File.dir?(path) and File.lstat!(path).type != :symlink do
+      File.rm_rf(path)
+    else
+      File.rm(path)
+    end
+    |> case do
+      :ok -> :ok
+      {:ok, _paths} -> :ok
+      {:error, reason} -> {:error, "remove failed: #{reason}"}
+      {:error, reason, _path} -> {:error, "remove failed: #{reason}"}
+    end
   end
 
   defp reason_for_classification("guard_violation", _message), do: :guard_blocked

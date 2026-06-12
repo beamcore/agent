@@ -20,6 +20,7 @@ defmodule Beamcore.Agent do
   """
   def start(_type, _args) do
     remember_initial_workspace()
+
     children = [
       Beamcore.Config,
       Beamcore.Memory,
@@ -32,7 +33,7 @@ defmodule Beamcore.Agent do
       {DynamicSupervisor, strategy: :one_for_one, name: Beamcore.Agent.RestoreSupervisor},
       Beamcore.Provider.Health,
       Beamcore.Agent.Core.StatusBar,
-      Beamcore.TUI.DynamicSupervisor,
+      Beamcore.TUI.DynamicSupervisor
     ]
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
@@ -149,15 +150,15 @@ defmodule Beamcore.Agent do
     workspace_root =
       opts
       |> Keyword.get(:workspace_root, File.cwd!())
-      |> Beamcore.Agent.PathSafety.canonical_path()
+      |> Beamcore.Agent.Tools.PathInput.canonical_path()
 
-    previous = Beamcore.Agent.PathSafety.configure_workspace_root(workspace_root)
+    previous = Beamcore.Agent.Tools.PathInput.configure_workspace_root(workspace_root)
     opts = Keyword.put(opts, :workspace_root, workspace_root)
 
     try do
       fun.(opts)
     after
-      Beamcore.Agent.PathSafety.restore_workspace_root(previous)
+      Beamcore.Agent.Tools.PathInput.restore_workspace_root(previous)
     end
   end
 end

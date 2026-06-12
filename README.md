@@ -14,7 +14,7 @@ normal work.
 - provider-neutral chat requests through `Beamcore.Provider.Router`;
 - provider/model switching through `/api`;
 - Eeva as the only model-facing execution layer;
-- workspace-bound `PathSafety`;
+- trusted-local path handling for relative, absolute, and symlinked paths;
 - internal `.beamcore` storage protection;
 - journaled filesystem mutations;
 - captured Eeva stdout/stderr so raw IO cannot corrupt the TUI;
@@ -68,9 +68,8 @@ make install-dev
 
 Eeva accepts ordinary Elixir code from the model and runs it under OTP
 supervision. It captures stdout/stderr, bounds large outputs, journals workspace
-file changes, and blocks hard runtime boundary violations such as workspace
-escape, internal storage access, unsafe runtime modules, and shell interpreter
-entry points.
+file changes, and blocks hard runtime boundary violations such as internal
+storage access, unsafe runtime modules, and shell interpreter entry points.
 
 Permitted operations run autonomously. If compilation, command execution,
 runtime guards, provider calls, or rate limits fail, Beamcore surfaces a compact
@@ -95,7 +94,8 @@ Beamcore labels estimates explicitly.
 
 Beamcore is autonomous by default, but not unbounded. These checks stay on:
 
-- paths must remain inside the active workspace;
+- relative paths resolve from the active workspace and absolute paths are
+  allowed for trusted local workflows;
 - internal Beamcore state directories are not exposed as normal workspace files;
 - filesystem mutations are recorded by the journal;
 - Eeva cannot call blocked runtime internals directly;
