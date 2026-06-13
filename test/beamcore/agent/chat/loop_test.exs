@@ -61,7 +61,7 @@ defmodule Beamcore.Agent.Chat.LoopTest do
     ]
 
     assert {:ok, text, []} = MultilineInput.collect_until(lines, "/end")
-    caps = ToolRuntime.from_user_message(text)
+    caps = ToolRuntime.default()
 
     assert ToolRuntime.allowed_tool_names(caps) == ["eeva"]
   end

@@ -47,7 +47,6 @@ defmodule Beamcore.Agent.FilesystemJournal do
   end
 
   def journal_position(workspace_root \\ PathInput.workspace_root()) do
-    workspace_root = workspace_root || PathInput.workspace_root()
 
     workspace_root
     |> read_journal()
@@ -60,7 +59,6 @@ defmodule Beamcore.Agent.FilesystemJournal do
 
   def changes_since(workspace_root, start_position)
       when is_binary(workspace_root) and is_integer(start_position) do
-    workspace_root = workspace_root || PathInput.workspace_root()
 
     mutations =
       workspace_root
@@ -98,7 +96,6 @@ defmodule Beamcore.Agent.FilesystemJournal do
   end
 
   def revision_summary(workspace_root, checkpoint_id, branch_id, parent_revision_id \\ nil) do
-    workspace_root = workspace_root || PathInput.workspace_root()
     journal = read_journal(workspace_root)
     position = Map.get(journal, "position", 0)
 
@@ -1060,7 +1057,6 @@ defmodule Beamcore.Agent.FilesystemJournal do
     File.mkdir_p!(Path.dirname(path))
     remove_path(path)
 
-    if symlink_target_allowed?(path, target, workspace_root), do: :ok
     File.ln_s!(target, path)
     :ok
   end
@@ -1126,7 +1122,6 @@ defmodule Beamcore.Agent.FilesystemJournal do
 
   defp snapshot_symlink(path, workspace_root) do
     with {:ok, target} <- File.read_link(path),
-         true <- symlink_target_allowed?(path, target, workspace_root),
          {:ok, stat} <- File.lstat(path, time: :posix) do
       {:ok,
        %{
@@ -1135,7 +1130,6 @@ defmodule Beamcore.Agent.FilesystemJournal do
          "mode" => mode_bits(stat.mode)
        }}
     else
-      false -> {:error, "cannot snapshot symlink target"}
       {:error, reason} -> {:error, "cannot read symlink: #{reason}"}
     end
   end

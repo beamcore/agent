@@ -378,7 +378,6 @@ defmodule Beamcore.Config do
     hostname =
       case :inet.gethostname() do
         {:ok, host} -> to_string(host)
-        _ -> "unknown-host"
       end
 
     username = System.get_env("USER") || System.get_env("USERNAME") || "unknown-user"
@@ -389,7 +388,6 @@ defmodule Beamcore.Config do
     hostname =
       case :inet.gethostname() do
         {:ok, host} -> to_string(host)
-        _ -> "unknown-host"
       end
 
     username = System.get_env("USER") || System.get_env("USERNAME") || "unknown"

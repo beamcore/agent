@@ -151,7 +151,7 @@ defmodule Beamcore.Agent.Chat.Budget do
        when is_integer(context_window) and context_window > 0 do
     context_window
     |> Kernel.-(reserved || 0)
-    |> Kernel.-(margin || 0)
+    |> Kernel.-(margin)
     |> max(@min_message_chars)
     |> min(mode_budget)
   end
