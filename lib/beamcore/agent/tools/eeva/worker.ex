@@ -199,7 +199,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
       end
     end
 
-    run.()
+    File.cd!(workspace_root, fn -> run.() end)
   end
 
   # Temporarily replace the global :standard_error process with our IODevice.
