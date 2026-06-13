@@ -349,11 +349,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
                     session = maybe_pre_tool_checkpoint(session, name, args)
 
-                    content =
-                      Beamcore.Agent.FilesystemJournal.with_context(
-                        filesystem_context(session),
-                        fn -> Dispatcher.execute(name, args, caps) end
-                      )
+                    content = Dispatcher.execute(name, args, caps)
 
                     maybe_print(opts, fn -> print_tool_execution(name, args, content) end)
                     event_content = compact_event_content(content)
@@ -602,9 +598,7 @@ defmodule Beamcore.Agent.Chat.Loop do
         title: "F1 Eeva mutation completed",
         metadata: %{
           mode: "F1 Dev",
-          tool: "eeva",
-          journal_position:
-            Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
+          tool: "eeva"
         }
       )
     else
@@ -643,16 +637,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp short_text(_), do: ""
-
-  defp filesystem_context(session) do
-    %{
-      session_id: session.session_id,
-      branch_id: session.branch_id,
-      checkpoint_id: session.active_checkpoint_id,
-      generation_id: "turn-#{System.unique_integer([:positive, :monotonic])}",
-      workspace_root: session.workspace_root
-    }
-  end
 
   defp timeout_message(session, settings, elapsed_ms) do
     role = model_call_role(session) |> to_string() |> String.capitalize()
