@@ -3,10 +3,10 @@ defmodule Beamcore.TUI.Components.Mascot do
 
   @unicode_frames %{
     idle: [
-      "ᕕ(◢▣◣)ᕗ ▱▱▱",
-      "ᕕ(◢▣◣)ᕗ ▱▱▱",
-      "ᕕ(◢▣◣)ᕗ ▱▱▱",
-      "ᕕ(◢▣◣)ᕗ ▱▱▱"
+      "  ◢▣◣  ▱▱▱",
+      "  ◢▣◣  ▱▱▱",
+      "  ◢▣◣  ▱▱▱",
+      "  ◢▣◣  ▱▱▱"
     ],
     thinking: [
       "  ◢▣◣  ·   ",
@@ -15,22 +15,16 @@ defmodule Beamcore.TUI.Components.Mascot do
       "  ◢▣◣  ····"
     ],
     running: [
-      "ᕕ(◢▣◣)ᕗ ▱▱▱",
-      "ᕙ(◢▣◣)ᕗ ▰▱▱",
-      "ᕕ(◢▣◣)ᕗ ▰▰▱",
-      "ᕙ(◢▣◣)ᕘ ▰▰▰"
+      "  ◢▣◣  ▱▱▱",
+      "  ◢▣◣  ▰▱▱",
+      "  ◢▣◣  ▰▰▱",
+      "  ◢▣◣  ▰▰▰"
     ],
     tool_running: [
-      "ᕕ(◢▣◣)ᕗ   ⚙",
-      "ᕕ(◢▣◣)ᕗ   ⚙",
-      "ᕙ(◢▣◣)ᕘ ⚙  ",
-      "ᕙ(◢▣◣)ᕘ ⚙  "
-    ],
-    generating: [
-      "ᕕ(◢▣◣)ᕗ ▱ img",
-      "ᕙ(◢▣◣)ᕗ ▰ img",
-      "ᕕ(◢▣◣)ᕗ ▰ img",
-      "ᕙ(◢▣◣)ᕘ ▰ img"
+      "  ◢▣◣    ⚙",
+      "  ◢▣◣    ⚙",
+      "  ◢▣◣  ⚙  ",
+      "  ◢▣◣  ⚙  "
     ],
     error: [
       "  ◢▣◣  !   ",
@@ -43,7 +37,6 @@ defmodule Beamcore.TUI.Components.Mascot do
     thinking: ["[b] scan .  ", "[b] scan .. ", "[b] scan ..."],
     running: ["o[b]o ...", "o[b]o #..", "o[b]o ##.", "<[b]> ###"],
     tool_running: ["* o[b]>   ", " * o[b]>  ", "  * <[b] "],
-    generating: ["[b] img .  ", "[b] img .. ", "[b] img ..."],
     error: ["[!]   ", "[x]   "]
   }
 
@@ -62,7 +55,6 @@ defmodule Beamcore.TUI.Components.Mascot do
   defp normalize(:local_search), do: :thinking
   defp normalize(:rate_limited), do: :thinking
   defp normalize(:tool_running), do: :tool_running
-  defp normalize(:generating), do: :generating
   defp normalize(:running), do: :running
   defp normalize(:error), do: :error
   defp normalize(_status), do: :idle
