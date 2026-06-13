@@ -159,7 +159,7 @@ defmodule Beamcore.TUI.FileFinder do
   end
 
   defp rg_files_fallback(root) do
-    case SafeCmd.run("rg", ["--files", root], stderr_to_stdout: true, timeout: 10_000) do
+    case SafeCmd.run("rg", ["--files", "--follow", root], stderr_to_stdout: true, timeout: 10_000) do
       {:ok, output, 0} ->
         output
         |> String.split("\n", trim: true)
