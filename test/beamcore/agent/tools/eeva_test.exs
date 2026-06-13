@@ -2,7 +2,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
   use ExUnit.Case, async: false
   import ExUnit.CaptureIO
 
-  alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.Tools.PathInput
   alias Beamcore.Agent.Tools.Eeva
 
@@ -171,31 +170,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["ok"]
     assert result["result"] =~ "cmd out"
     assert result["result"] =~ "cmd err"
-  end
-
-  test "journals all workspace mutations caused by arbitrary code", %{root: root} do
-    context = %{
-      session_id: "eeva-session",
-      branch_id: "branch-main",
-      checkpoint_id: "checkpoint-before-eeva",
-      generation_id: "generation-1",
-      workspace_root: root
-    }
-
-    code = """
-    File.mkdir_p!("generated")
-    File.write!("generated/a.txt", "one")
-    File.write!("generated/b.txt", "two")
-    Path.wildcard("generated/*.txt") |> Enum.sort()
-    """
-
-    result =
-      FilesystemJournal.with_context(context, fn -> Eeva.execute(%{"code" => code}) end)
-      |> Jason.decode!()
-
-    assert result["ok"]
-    assert File.read!(Path.join(root, "generated/a.txt")) == "one"
-    assert result["filesystem_changes"]["changed_path_count"] >= 3
   end
 
   test "a returned zero-arity function is invoked" do
@@ -429,7 +403,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
     assert written["ok"]
     assert written["result"] =~ "yes"
-    assert written["filesystem_changes"]["changed_path_count"] == 0
   end
 
   test "memory writes stay concise and clear is model-facing for explicit forget-all requests" do
@@ -452,7 +425,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
     assert remembered["ok"]
     assert remembered["result"] =~ "nil"
-    assert remembered["filesystem_changes"]["changed_path_count"] == 0
   end
 
   test "memory API tolerates model-style recall and clamps runaway limits" do
@@ -467,7 +439,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
     assert result["ok"]
     assert result["result"] =~ "stored description"
-    assert result["filesystem_changes"]["changed_path_count"] == 0
 
     search =
       Eeva.execute(%{
@@ -497,7 +468,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
     assert remembered["ok"]
     assert remembered["result"] =~ "yes"
-    assert remembered["filesystem_changes"]["changed_path_count"] == 0
 
     File.write!(Path.join(root, "sample.txt"), "chat file")
 

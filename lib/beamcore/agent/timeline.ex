@@ -70,20 +70,8 @@ defmodule Beamcore.Agent.Timeline do
       user_request: clean(Map.get(attrs, :user_request) || user_request(session)),
       messages: normalize_messages(session.messages || []),
       workflow_state: Map.get(attrs, :workflow_state, session.intermediate_state || %{}),
-      tool_state:
-        Map.get(attrs, :tool_state, %{})
-        |> Map.put_new(
-          "filesystem_journal_position",
-          Beamcore.Agent.FilesystemJournal.journal_position(session.workspace_root)
-        ),
-      filesystem_revision:
-        Map.get(attrs, :filesystem_revision) ||
-          Beamcore.Agent.FilesystemJournal.revision_summary(
-            session.workspace_root,
-            checkpoint_id,
-            session.branch_id || initial_branch_id(),
-            active_filesystem_revision_id(session)
-          ),
+      tool_state: Map.get(attrs, :tool_state, %{}),
+      filesystem_revision: Map.get(attrs, :filesystem_revision, %{}),
       changed_files_snapshot_or_patch_refs:
         Map.get(attrs, :changed_files_snapshot_or_patch_refs, changed_files(session)),
       usage: usage(session),
@@ -262,10 +250,7 @@ defmodule Beamcore.Agent.Timeline do
       messages: safe_messages(Map.get(checkpoint, "messages", [])),
       workflow_state: safe_metadata(Map.get(checkpoint, "workflow_state", %{})),
       tool_state: safe_metadata(Map.get(checkpoint, "tool_state", %{})),
-      filesystem_revision:
-        Beamcore.Agent.FilesystemJournal.safe_restore(
-          Map.get(checkpoint, "filesystem_revision", %{})
-        ),
+      filesystem_revision: safe_metadata(Map.get(checkpoint, "filesystem_revision", %{})),
       changed_files_snapshot_or_patch_refs:
         safe_list(Map.get(checkpoint, "changed_files_snapshot_or_patch_refs", [])),
       usage: safe_metadata(Map.get(checkpoint, "usage", %{})),
@@ -399,19 +384,6 @@ defmodule Beamcore.Agent.Timeline do
   end
 
   defp changed_files(_), do: []
-
-  defp active_filesystem_revision_id(session) do
-    session.checkpoints
-    |> List.wrap()
-    |> Enum.reverse()
-    |> Enum.find_value(fn checkpoint ->
-      case Map.get(checkpoint, :filesystem_revision) do
-        %{"revision_id" => id} when is_binary(id) -> id
-        %{revision_id: id} when is_binary(id) -> id
-        _ -> nil
-      end
-    end)
-  end
 
   defp usage(session) do
     %{

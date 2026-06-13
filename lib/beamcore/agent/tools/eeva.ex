@@ -12,7 +12,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
   """
 
   alias Beamcore.Agent.Chat.ToolRuntime
-  alias Beamcore.Agent.FilesystemJournal
   alias Beamcore.Agent.Tools.Eeva.{Sandbox, Supervisor, Worker}
   alias Beamcore.Agent.Tools.PathInput
 
@@ -36,7 +35,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Execute arbitrary Elixir code. This universal tool provides endless capabilities: write Elixir to read/write files, run system commands (git, mix, etc.), parse data, or interact with Beamcore.Memory. The runtime handles runtime checks, side effects, and returns stdout, results, and journaled changes. Prefer anonymous functions (fn x -> ... end) over function captures (&Mod.fun/1) — captures bypass runtime instrumentation and will be blocked.",
+          "Execute arbitrary Elixir code. This universal tool provides endless capabilities: write Elixir to read/write files, run system commands (git, mix, etc.), parse data, or interact with Beamcore.Memory. The runtime handles runtime checks, side effects, and returns stdout and results. Prefer anonymous functions (fn x -> ... end) over function captures (&Mod.fun/1) — captures bypass runtime instrumentation and will be blocked.",
         parameters: %{
           type: "object",
           properties: %{
@@ -96,9 +95,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   def remove(path, opts) when is_binary(path) and is_list(opts) do
     if Keyword.get(opts, :confirm) == true do
       with {:ok, absolute} <- PathInput.resolve(path),
-           {:ok, prepared} <- FilesystemJournal.record_remove(absolute, tool: "eeva"),
-           :ok <- do_remove(absolute),
-           :ok <- FilesystemJournal.commit_prepared(prepared) do
+           :ok <- do_remove(absolute) do
         :ok
       else
         {:error, reason} -> {:error, reason}
@@ -160,23 +157,19 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   defp execute_prepared(code, prepared, caps) do
     owner = self()
-    filesystem_context = FilesystemJournal.context()
-    workspace_root = context_workspace_root(filesystem_context)
+    workspace_root = PathInput.workspace_root()
 
-    start_position = FilesystemJournal.journal_position(workspace_root)
-    result = run(prepared.quoted, caps, owner, workspace_root, filesystem_context)
-    filesystem_changes = FilesystemJournal.changes_since(workspace_root, start_position)
+    result = run(prepared.quoted, caps, owner, workspace_root)
 
-    format_result(result, code, prepared, filesystem_changes)
+    format_result(result, code, prepared)
   end
 
-  defp run(quoted, caps, owner, workspace_root, filesystem_context) do
+  defp run(quoted, caps, owner, workspace_root) do
     opts = [
       quoted: quoted,
       owner: owner,
       runtime_caps: caps,
       workspace_root: workspace_root,
-      filesystem_context: filesystem_context,
       timeout_ms: limit(:timeout_ms, @default_timeout_ms),
       max_memory_bytes: limit(:max_memory_bytes, @default_max_memory_bytes),
       max_reductions: limit(:max_reductions, @default_max_reductions),
@@ -191,12 +184,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   end
 
-  defp context_workspace_root(%{workspace_root: root}) when is_binary(root),
-    do: PathInput.canonical_path(root)
-
-  defp context_workspace_root(_context), do: PathInput.workspace_root()
-
-  defp format_result({:ok, %{status: :ok} = result}, code, prepared, filesystem_changes) do
+  defp format_result({:ok, %{status: :ok} = result}, code, prepared) do
     {stdout, dropped} = truncate_output(result.output)
 
     %{
@@ -208,13 +196,12 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "result" => result.result,
       "code" => code,
       "ast_nodes" => prepared.node_count,
-      "filesystem_changes" => filesystem_changes,
-      "summary" => append_truncation(success_summary(filesystem_changes), dropped)
+      "summary" => append_truncation("Eeva completed successfully.", dropped)
     }
     |> Jason.encode!()
   end
 
-  defp format_result({:ok, %{status: :error} = result}, code, prepared, filesystem_changes) do
+  defp format_result({:ok, %{status: :error} = result}, code, prepared) do
     {stdout, dropped} = truncate_output(result.output)
 
     emit_failure(failure_message(result.kind, result.error))
@@ -228,13 +215,12 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "result" => nil,
       "code" => code,
       "ast_nodes" => prepared.node_count,
-      "filesystem_changes" => filesystem_changes,
       "summary" => append_truncation("Eeva program raised #{inspect(result.error)}.", dropped)
     }
     |> Jason.encode!()
   end
 
-  defp format_result({:error, kind, reason}, code, prepared, filesystem_changes) do
+  defp format_result({:error, kind, reason}, code, prepared) do
     emit_failure(execution_error_summary(kind, reason))
 
     %{
@@ -246,16 +232,10 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "result" => nil,
       "code" => code,
       "ast_nodes" => prepared.node_count,
-      "filesystem_changes" => filesystem_changes,
       "summary" => execution_error_summary(kind, reason)
     }
     |> Jason.encode!()
   end
-
-  defp success_summary(%{"changed_path_count" => count}) when is_integer(count) and count > 0,
-    do: "Eeva completed and journaled #{count} changed workspace path(s)."
-
-  defp success_summary(_), do: "Eeva completed successfully."
 
   # Truncates model-facing stdout so a single Eeva response never overwhelms the
   # model: at most @max_output_lines lines for multi-line output, or
@@ -331,7 +311,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "result" => nil,
       "code" => code,
       "classification" => classification,
-      "filesystem_changes" => %{"changed_path_count" => 0},
       "summary" => message
     }
     |> Jason.encode!()

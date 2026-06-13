@@ -139,8 +139,6 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
     Process.put(:workspace_root, workspace_root)
     Process.put(:beamcore_tool_runtime, caps)
 
-    filesystem_context = Keyword.get(opts, :filesystem_context)
-
     run = fn ->
       max_output = Keyword.fetch!(opts, :max_output_bytes)
 
@@ -201,11 +199,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
       end
     end
 
-    if filesystem_context do
-      Beamcore.Agent.FilesystemJournal.with_context(filesystem_context, run)
-    else
-      run.()
-    end
+    run.()
   end
 
   # Temporarily replace the global :standard_error process with our IODevice.

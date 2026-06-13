@@ -29,8 +29,6 @@ defmodule Beamcore.Agent do
       {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
       Beamcore.Agent.Tools.Eeva.AtomBudget,
       Beamcore.Agent.Tools.Eeva.Supervisor,
-      Beamcore.Agent.FilesystemJournal.Server,
-      {DynamicSupervisor, strategy: :one_for_one, name: Beamcore.Agent.RestoreSupervisor},
       Beamcore.Provider.Health,
       Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor

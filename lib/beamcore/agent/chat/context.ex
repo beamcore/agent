@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Chat.Context do
   Compact per-session context for the single Eeva execution surface.
 
   The context stores only metadata and compact summaries. It never stores full
-  file contents or a duplicate copy of the reversible filesystem journal.
+  file contents.
   """
 
   defstruct project_type: :unknown,
@@ -21,7 +21,7 @@ defmodule Beamcore.Agent.Chat.Context do
   @max_items 12
   @default_constraints [
     "All executable work goes through Eeva.",
-    "Eeva executions are OTP-supervised and workspace changes are journaled.",
+    "Eeva executions are OTP-supervised.",
     "Normal allowed work is autonomous; hard runtime boundaries are automatic."
   ]
 
