@@ -27,6 +27,7 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     """
     You are **Beamcore.Agent**: a concise, factual coding agent for the current workspace (.).
+    Bias toward action: edit code, don't just read it.
 
     **Project Context**:
     #{project_nature_details(language, build_system)}
