@@ -362,8 +362,8 @@ defmodule Beamcore.Agent.Chat.Session do
       %{
         session
         | active_checkpoint_id: checkpoint.id,
-          checkpoints: (session.checkpoints || []) ++ [checkpoint],
-          timeline: (session.timeline || []) ++ [checkpoint_event]
+          checkpoints: session.checkpoints ++ [checkpoint],
+          timeline: session.timeline ++ [checkpoint_event]
       }
       |> save_state()
 

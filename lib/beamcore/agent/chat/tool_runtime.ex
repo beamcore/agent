@@ -15,19 +15,12 @@ defmodule Beamcore.Agent.Chat.ToolRuntime do
   @tool "eeva"
 
   @type t :: %{
-          allow_task: boolean(),
           allow_network: boolean(),
           allowed_tools: [binary()] | nil,
           blocked_tools: [binary()],
           allow_memory_read: boolean(),
           allow_memory_write: boolean()
         }
-
-  @doc """
-  BeamCore ignores model-authored capability blocks.
-  """
-  @spec from_user_message(binary()) :: t()
-  def from_user_message(_content), do: default()
 
   @doc """
   Default autonomous execution capabilities.
@@ -37,7 +30,6 @@ defmodule Beamcore.Agent.Chat.ToolRuntime do
   @spec default(keyword()) :: t()
   def default(_opts \\ []) do
     %{
-      allow_task: false,
       allow_network: true,
       allowed_tools: [@tool],
       blocked_tools: [],
@@ -51,12 +43,6 @@ defmodule Beamcore.Agent.Chat.ToolRuntime do
   """
   @spec chat() :: t()
   def chat, do: default()
-
-  @doc """
-  Builds the capabilities inherited by an internal sub-agent.
-  """
-  @spec subagent(binary()) :: t()
-  def subagent(_prompt), do: default()
 
   @doc """
   Returns the model-facing tools permitted by the runtime.

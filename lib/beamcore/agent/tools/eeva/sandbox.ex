@@ -78,8 +78,6 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
     end
   end
 
-  defp unsafe_atom_name(_reason), do: :error
-
   defp count_nodes(quoted, max_ast_nodes) do
     {_quoted, count} = Macro.prewalk(quoted, 0, fn node, count -> {node, count + 1} end)
 
@@ -91,9 +89,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   end
 
   defp format_parse_error({location, message, token}) do
-    line = if is_list(location), do: Keyword.get(location, :line, 1), else: location
+    line = Keyword.get(location, :line, 1)
     "Elixir parse error on line #{line}: #{to_string(message)}#{to_string(token)}"
   end
 
-  defp format_parse_error(reason), do: inspect(reason)
 end

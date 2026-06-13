@@ -10,6 +10,10 @@ defmodule Beamcore.TUI do
 
   require Logger
 
+  # :none is a valid logger level at runtime (Elixir 1.19+) but not yet in the
+  # typespec. Suppress the false positive until upstream updates the spec.
+  @dialyzer {:nowarn_function, start: 1}
+
   @animated_statuses [:thinking, :tool_running, :local_search]
 
   def start(opts \\ []) do

@@ -106,7 +106,7 @@ defmodule Beamcore.Agent.Chat.RateLimit do
       |> String.to_charlist()
       |> :httpd_util.convert_request_date()
       |> case do
-        :undefined ->
+        :bad_date ->
           nil
 
         {{year, month, day}, {hour, minute, second}} ->

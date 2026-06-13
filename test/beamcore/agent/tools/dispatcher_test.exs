@@ -4,10 +4,6 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
   alias Beamcore.Agent.Chat.ToolRuntime
   alias Beamcore.Agent.Tools.Dispatcher
 
-  test "registers only eeva" do
-    assert Dispatcher.registered_tool_names() == ["eeva"]
-  end
-
   test "provider tool specs contain only eeva" do
     specs = Dispatcher.tool_specs(ToolRuntime.default())
     assert Enum.map(specs, & &1.function.name) == ["eeva"]

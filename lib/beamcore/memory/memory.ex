@@ -282,8 +282,6 @@ defmodule Beamcore.Memory do
     end
   end
 
-  def summary, do: overview()
-
   @doc """
   Clears all memory entries from ETS and DETS.
 
@@ -408,7 +406,6 @@ defmodule Beamcore.Memory do
              :ok <- :dets.sync(state.dets_name) do
           :ok
         else
-          false -> {:error, :ets_insert_failed}
           {:error, reason} -> {:error, reason}
         end
       end
@@ -758,7 +755,6 @@ defmodule Beamcore.Memory do
       case operation.() do
         :ok -> :dets.sync(:beamcore_memory_store)
         {:error, reason} -> {:error, reason}
-        other -> other
       end
     rescue
       error -> {:error, Exception.message(error)}

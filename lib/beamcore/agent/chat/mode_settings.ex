@@ -72,7 +72,6 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
   def normalize_mode(nil), do: :agent
   def normalize_mode(:f1), do: :agent
   def normalize_mode(:f2), do: :chat
-  def normalize_mode(:f3), do: :agent
   def normalize_mode(mode) when mode in [:agent, :chat], do: mode
 
   def normalize_mode(mode) when is_binary(mode) do

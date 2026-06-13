@@ -28,28 +28,10 @@ defmodule Beamcore.Agent.Chat.ToolRuntimeTest do
     assert caps.allow_network
   end
 
-  test "model-authored capability blocks do not change the runtime surface" do
-    caps =
-      ToolRuntime.from_user_message("""
-      Caps:
-      mode: development
-      allowed_tools:
-      - eeva
-      - modify_file
-      blocked_tools:
-      - git
-      allow_network: true
-      """)
-
-    assert ToolRuntime.allowed_tool_names(caps) == ["eeva"]
-    assert caps.allow_network
-  end
-
   test "default capabilities allow memory and network" do
     caps = ToolRuntime.default()
     assert caps.allow_memory_read
     assert caps.allow_memory_write
     assert caps.allow_network
-    refute caps.allow_task
   end
 end

@@ -104,7 +104,6 @@ defmodule Beamcore.TUI.Events do
          Map.get(event, "type") in [:paste, "paste"])
   end
 
-  defp paste_event?(_event), do: false
 
   def handle_runtime_event({:status, status}, state), do: State.set_status(state, status)
   def handle_runtime_event({:session, session}, state), do: State.set_session(state, session)

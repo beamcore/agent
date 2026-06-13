@@ -13,8 +13,6 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
   Execute a tool by name with the given arguments.
   """
   def execute(name, args, caps \\ ToolRuntime.default()) do
-    {name, args} = normalize_tool_call(name, args)
-
     case find_tool(name) do
       nil ->
         "Function not implemented"
@@ -39,18 +37,6 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     @tools
     |> Enum.filter(fn tool -> tool.name() in allowed_names end)
     |> Enum.map(fn tool -> tool.spec() end)
-  end
-
-  @doc """
-  Get the list of conductor tool specs for main loop API calls.
-  """
-  def conductor_tool_specs(caps \\ ToolRuntime.default()) do
-    tool_specs(caps)
-  end
-
-  @doc false
-  def registered_tool_names do
-    Enum.map(@tools, & &1.name())
   end
 
   defp execute_tool(tool, name, args, caps) do
@@ -80,6 +66,4 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
     end)
   end
 
-  @doc false
-  def normalize_tool_call(name, args), do: {name, args}
 end
