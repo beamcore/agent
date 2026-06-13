@@ -9,6 +9,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
 
   alias Beamcore.Agent.Tools.Eeva.AtomBudget
 
+  @shell_interceptors ~w(sh bash zsh csh ksh dash fish tcsh ash)
+
   @type prepared :: %{quoted: Macro.t(), node_count: non_neg_integer()}
 
   @spec prepare(binary(), map(), keyword()) :: {:ok, prepared()} | {:error, binary()}
@@ -25,6 +27,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
       true ->
         with :ok <- AtomBudget.admit(code),
              {:ok, quoted} <- parse(code),
+             :ok <- check_shell_interceptors(quoted),
              {:ok, node_count} <- count_nodes(quoted, max_ast_nodes),
              {:ok, quoted} do
           {:ok, %{quoted: quoted, node_count: node_count}}
@@ -77,6 +80,32 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
       :error
     end
   end
+
+  # Checks AST for System.cmd calls targeting shell interpreters.
+  defp check_shell_interceptors(quoted) do
+    Macro.prewalk(quoted, :ok, fn
+      node, :ok ->
+        if shell_cmd?(node) do
+          {:error, "Shell interpreters (sh, bash, zsh, etc.) are not allowed in Eeva. Use direct Elixir functions instead."}
+        else
+          {node, :ok}
+        end
+
+      node, acc ->
+        {node, acc}
+    end)
+    |> case do
+      {:error, _} = err -> err
+      {_, :ok} -> :ok
+    end
+  end
+
+  # Matches System.cmd("sh", [...]) style calls with 2 or 3 args
+  defp shell_cmd?({{:., _, [{:__aliases__, _, [:System]}, :cmd]}, _, [cmd | _]}) when is_binary(cmd) do
+    cmd in @shell_interceptors
+  end
+
+  defp shell_cmd?(_node), do: false
 
   defp count_nodes(quoted, max_ast_nodes) do
     {_quoted, count} = Macro.prewalk(quoted, 0, fn node, count -> {node, count + 1} end)

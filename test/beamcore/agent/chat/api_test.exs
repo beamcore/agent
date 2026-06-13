@@ -183,6 +183,7 @@ defmodule Beamcore.Agent.Chat.APITest do
   end
 
   test "execute/5 passes requested max_tokens through provider selection" do
+
     assert :ok =
              Beamcore.Config.put_provider("custom-compatible", %{
                api_key: "secret",

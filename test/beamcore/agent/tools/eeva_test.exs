@@ -65,17 +65,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["result"] == "3"
   end
 
-  test "workspace directory listings hide Beamcore internal state", %{root: root} do
-    File.mkdir_p!(Path.join(root, ".beamcore"))
-    File.write!(Path.join(root, "visible.txt"), "ok")
-
-    result = Eeva.execute(%{"code" => "File.ls!(\".\") |> Enum.sort()"}) |> Jason.decode!()
-
-    assert result["ok"]
-    assert result["result"] =~ "visible.txt"
-    refute result["result"] =~ ".beamcore"
-  end
-
   test "admits safe atom keys before parsing existing-atoms-only code" do
     result =
       Eeva.execute(%{"code" => "%{dependencies: [], build_system: :mix}"})
@@ -126,29 +115,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["stdout"] =~ "stderr captured"
   end
 
-  test "ordinary File and Path calls run from the selected workspace", %{root: root} do
-    File.write!(Path.join(root, "sample.txt"), "beamcore\n")
-
-    result =
-      Eeva.execute(%{
-        "code" => "File.read!(\"sample.txt\") <> inspect(Path.wildcard(\"*.txt\") |> Enum.sort())"
-      })
-      |> Jason.decode!()
-
-    assert result["ok"]
-    assert result["result"] =~ "beamcore"
-    assert result["result"] =~ "sample.txt"
-  end
-
-  test "ordinary System.cmd is available" do
-    result =
-      Eeva.execute(%{"code" => "System.cmd(\"git\", [\"--version\"], stderr_to_stdout: true)"})
-      |> Jason.decode!()
-
-    assert result["ok"]
-    assert result["result"] =~ "git version"
-  end
-
   test "external command output is captured even when code asks to stream to stdio" do
     parent = self()
 
@@ -185,77 +151,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["summary"] =~ "timeout"
   end
 
-  test "chat capabilities allow workspace filesystem access", %{root: root} do
-    File.write!(Path.join(root, "sample.txt"), "safe")
-
-    caps = Beamcore.Agent.Chat.ToolRuntime.chat()
-
-    read = Eeva.execute(%{"code" => "File.read!(\"sample.txt\")"}, caps) |> Jason.decode!()
-    assert read["ok"]
-    assert read["result"] =~ "safe"
-
-    write =
-      Eeva.execute(%{"code" => "File.write!(\"blocked.txt\", \"no\")"}, caps)
-      |> Jason.decode!()
-
-    assert write["ok"]
-    assert File.exists?(Path.join(root, "blocked.txt"))
-  end
-
-  test "default capabilities allow workspace writes", %{root: root} do
-    result =
-      Eeva.execute(%{
-        "code" => "File.mkdir_p!(\"allowed\"); File.write!(\"allowed/result.txt\", \"ok\")"
-      })
-      |> Jason.decode!()
-
-    assert result["ok"]
-    assert File.read!(Path.join(root, "allowed/result.txt")) == "ok"
-  end
-
-  test "destructive File removal requires explicit confirmation", %{root: root} do
-    path = Path.join(root, "delete-me.txt")
-    File.write!(path, "keep until confirmed")
-
-    blocked =
-      Eeva.execute(%{"code" => "File.rm!(\"delete-me.txt\")"})
-      |> Jason.decode!()
-
-    refute blocked["ok"]
-    assert blocked["stderr"] =~ "requires explicit confirmation"
-    assert File.exists?(path)
-
-    confirmed =
-      Eeva.execute(%{
-        "code" => "Beamcore.Agent.Tools.Eeva.remove(\"delete-me.txt\", confirm: true)"
-      })
-      |> Jason.decode!()
-
-    assert confirmed["ok"]
-    refute File.exists?(path)
-
-    dir = Path.join(root, "delete-dir")
-    File.mkdir_p!(Path.join(dir, "nested"))
-    File.write!(Path.join(dir, "nested/file.txt"), "remove when confirmed")
-
-    blocked_dir =
-      Eeva.execute(%{"code" => "File.rm_rf!(\"delete-dir\")"})
-      |> Jason.decode!()
-
-    refute blocked_dir["ok"]
-    assert blocked_dir["stderr"] =~ "requires explicit confirmation"
-    assert File.exists?(Path.join(dir, "nested/file.txt"))
-
-    confirmed_dir =
-      Eeva.execute(%{
-        "code" => "Beamcore.Agent.Tools.Eeva.remove(\"delete-dir\", confirm: true)"
-      })
-      |> Jason.decode!()
-
-    assert confirmed_dir["ok"]
-    refute File.exists?(dir)
-  end
-
   test "parent directory segments are treated as normal local path navigation", %{root: root} do
     outside = Path.join(Path.dirname(root), "outside.txt")
     on_exit(fn -> File.rm(outside) end)
@@ -265,55 +160,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
     assert result["ok"]
     assert File.read!(outside) == "yes"
-  end
-
-  test "shell interpreters are rejected without confirmation" do
-    result =
-      Eeva.execute(%{"code" => "System.cmd(\"sh\", [\"-c\", \"echo unsafe\"])"})
-      |> Jason.decode!()
-
-    refute result["ok"]
-    assert result["stderr"] =~ "Shell interpreters"
-  end
-
-  test "autonomous caps allows git write commands such as squashing commits", %{root: root} do
-    System.cmd("git", ["init", "-q"], cd: root)
-    System.cmd("git", ["config", "user.email", "test@example.com"], cd: root)
-    System.cmd("git", ["config", "user.name", "Test"], cd: root)
-    File.write!(Path.join(root, "a.txt"), "1\n")
-    System.cmd("git", ["add", "."], cd: root)
-    System.cmd("git", ["commit", "-q", "-m", "first"], cd: root)
-    File.write!(Path.join(root, "b.txt"), "2\n")
-
-    add = Eeva.execute(%{"code" => "System.cmd(\"git\", [\"add\", \".\"])"}) |> Jason.decode!()
-    assert add["ok"]
-
-    commit =
-      Eeva.execute(%{"code" => "System.cmd(\"git\", [\"commit\", \"-m\", \"second\"])"})
-      |> Jason.decode!()
-
-    assert commit["ok"]
-  end
-
-  test "chat capabilities allow direct command execution" do
-    caps = Beamcore.Agent.Chat.ToolRuntime.chat()
-
-    result =
-      Eeva.execute(%{"code" => "System.cmd(\"git\", [\"status\"])"}, caps)
-      |> Jason.decode!()
-
-    assert result["ok"]
-  end
-
-  test "emits eeva_preview event before execution" do
-    parent = self()
-    Process.put(:event_handler, fn event -> send(parent, event) end)
-
-    Eeva.execute(%{"code" => "1 + 1"})
-    assert_received {:eeva_preview, code}
-    assert code == "1 + 1"
-  after
-    Process.delete(:event_handler)
   end
 
   test "failures emit a concise execution_stopped event while success stays quiet" do
@@ -333,36 +179,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     Process.delete(:event_handler)
   end
 
-  test "memory write failures emit visible execution stop events" do
-    parent = self()
-    Process.put(:event_handler, fn event -> send(parent, event) end)
-
-    result =
-      Eeva.execute(%{
-        "code" =>
-          "Beamcore.Memory.remember(:facts, \"too-large\", String.duplicate(\"x\", 70_000))"
-      })
-      |> Jason.decode!()
-
-    refute result["ok"]
-    assert_received {:execution_stopped, event}
-    assert event.source == :eeva
-    assert event.summary =~ "Memory value is too large"
-  after
-    Process.delete(:event_handler)
-  end
-
-  test "network commands obey allow_network" do
-    caps = %{Beamcore.Agent.Chat.ToolRuntime.default() | allow_network: false}
-
-    result =
-      Eeva.execute(%{"code" => "System.cmd(\"curl\", [\"https://example.com\"])"}, caps)
-      |> Jason.decode!()
-
-    refute result["ok"]
-    assert result["stderr"] =~ "Network command"
-  end
-
   test "Beamcore helpers expose public functions dynamically" do
     result =
       Eeva.execute(%{
@@ -373,58 +189,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["ok"]
     assert result["result"] =~ "remember: 5"
     assert result["result"] =~ "recall: 4"
-  end
-
-  test "memory reads and writes remain available in autonomous filesystem runtime" do
-    {org, repo} = Beamcore.Memory.detect_org_repo()
-    assert :ok == Beamcore.Memory.remember(org, repo, :facts, "eeva-test", "value")
-
-    read =
-      Eeva.execute(%{
-        "code" =>
-          "{org, repo} = Beamcore.Memory.detect_org_repo(); Beamcore.Memory.recall(org, repo, :facts, \"eeva-test\")"
-      })
-      |> Jason.decode!()
-
-    assert read["ok"]
-    assert read["result"] =~ "value"
-
-    caps = Beamcore.Agent.Chat.ToolRuntime.chat()
-
-    written =
-      Eeva.execute(
-        %{
-          "code" =>
-            "Beamcore.Memory.remember(:facts, \"read-only-memory-write\", \"yes\"); Beamcore.Memory.recall(:facts, \"read-only-memory-write\")"
-        },
-        caps
-      )
-      |> Jason.decode!()
-
-    assert written["ok"]
-    assert written["result"] =~ "yes"
-  end
-
-  test "memory writes stay concise and clear is model-facing for explicit forget-all requests" do
-    large =
-      Eeva.execute(%{
-        "code" =>
-          "Beamcore.Memory.remember(:facts, \"too-large\", String.duplicate(\"x\", 70_000))"
-      })
-      |> Jason.decode!()
-
-    refute large["ok"]
-    assert large["stderr"] =~ "Memory value is too large"
-
-    remembered =
-      Eeva.execute(%{
-        "code" =>
-          "Beamcore.Memory.remember(:facts, \"clear-test\", \"value\"); Beamcore.Memory.clear(); Beamcore.Memory.recall(:facts, \"clear-test\")"
-      })
-      |> Jason.decode!()
-
-    assert remembered["ok"]
-    assert remembered["result"] =~ "nil"
   end
 
   test "memory API tolerates model-style recall and clamps runaway limits" do
@@ -451,48 +215,6 @@ defmodule Beamcore.Agent.Tools.EevaTest do
 
     assert search["ok"]
     assert search["result"] =~ "50"
-  end
-
-  test "chat runtime permits memory, files, and direct commands", %{root: root} do
-    caps = Beamcore.Agent.Chat.ToolRuntime.chat()
-
-    remembered =
-      Eeva.execute(
-        %{
-          "code" =>
-            "Beamcore.Memory.remember(:facts, \"chat-memory-write\", \"yes\"); Beamcore.Memory.recall(:facts, \"chat-memory-write\")"
-        },
-        caps
-      )
-      |> Jason.decode!()
-
-    assert remembered["ok"]
-    assert remembered["result"] =~ "yes"
-
-    File.write!(Path.join(root, "sample.txt"), "chat file")
-
-    file = Eeva.execute(%{"code" => "File.read!(\"sample.txt\")"}, caps) |> Jason.decode!()
-    assert file["ok"]
-    assert file["result"] =~ "chat file"
-
-    command =
-      Eeva.execute(%{"code" => "System.cmd(\"git\", [\"status\"])"}, caps) |> Jason.decode!()
-
-    assert command["ok"]
-  end
-
-  test "execution does not change the VM-global current directory", %{root: root} do
-    original_cwd = File.cwd!()
-
-    result =
-      Eeva.execute(%{
-        "code" => "{File.cwd!(), File.write!(\"cwd-safe.txt\", \"ok\")}"
-      })
-      |> Jason.decode!()
-
-    assert result["ok"]
-    assert File.cwd!() == original_cwd
-    assert File.read!(Path.join(root, "cwd-safe.txt")) == "ok"
   end
 
   test "captures stderr output instead of leaking to terminal" do

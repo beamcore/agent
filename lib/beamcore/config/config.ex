@@ -363,7 +363,14 @@ defmodule Beamcore.Config do
     error -> {:error, error}
   end
 
-  defp expanded_path, do: path() |> Path.expand()
+  defp expanded_path do
+    p = path()
+
+    case File.cwd() do
+      {:ok, cwd} -> Path.expand(p, cwd)
+      {:error, _} -> Path.expand(p, System.user_home!())
+    end
+  end
 
   defp chmod_owner_only(path) do
     case File.chmod(path, 0o600) do

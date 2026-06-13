@@ -151,7 +151,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
       previous_group_leader = Process.group_leader()
       Process.group_leader(self(), io)
 
-      previous_stderr = swap_standard_error(stderr_io)
+      previous_stdin = swap_registered_name(:standard_io, io)
+      previous_stderr = swap_registered_name(:standard_error, stderr_io)
 
       try do
         {eval_result, diagnostics} =
@@ -193,56 +194,63 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
           }
       after
         Process.group_leader(self(), previous_group_leader)
-        restore_standard_error(previous_stderr, stderr_io)
+        restore_registered_name(:standard_io, previous_stdin)
+        restore_registered_name(:standard_error, previous_stderr)
         stop_io_device(io)
         stop_io_device(stderr_io)
       end
     end
 
-    File.cd!(workspace_root, fn -> run.() end)
+    old_cwd = File.cwd()
+    File.cd!(workspace_root)
+
+    try do
+      run.()
+    after
+      case old_cwd do
+        {:ok, dir} -> File.cd!(dir)
+        {:error, _} -> :ok
+      end
+    end
   end
 
-  # Temporarily replace the global :standard_error process with our IODevice.
-  # Returns the previous :standard_error pid (or nil if not registered).
-  # This is the same pattern ExUnit.CaptureIO uses for :stderr capture.
-  defp swap_standard_error(new_pid) do
-    previous = Process.whereis(:standard_error)
+  # Temporarily replace a named process (e.g. :standard_io, :standard_error)
+  # with new_pid. Returns the previous pid, or nil if none was registered.
+  defp swap_registered_name(name, new_pid) do
+    previous = Process.whereis(name)
 
     if previous do
-      Process.unregister(:standard_error)
+      Process.unregister(name)
     end
 
-    Process.register(new_pid, :standard_error)
+    Process.register(new_pid, name)
     previous
   rescue
-    # If another process races us (unlikely in practice since eeva executions
-    # are serialized), fall back gracefully — stderr just won't be captured.
     _ -> nil
   end
 
-  defp restore_standard_error(nil, stderr_io) do
+  defp restore_registered_name(name, nil) do
     try do
-      Process.unregister(:standard_error)
+      Process.unregister(name)
     rescue
       _ -> :ok
     end
 
-    _ = stderr_io
-    register_standard_error_fallback()
+    register_fallback(name)
     :ok
   end
 
-  defp restore_standard_error(previous, _stderr_io) do
+  defp restore_registered_name(name, previous) do
     try do
-      Process.unregister(:standard_error)
+      Process.unregister(name)
     rescue
       _ -> :ok
     end
 
     if Process.alive?(previous) do
-      Process.register(previous, :standard_error)
+      Process.register(previous, name)
     else
-      register_standard_error_fallback()
+      register_fallback(name)
     end
 
     :ok
@@ -250,11 +258,11 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
     _ -> :ok
   end
 
-  defp register_standard_error_fallback do
+  defp register_fallback(name) do
     fallback = Process.group_leader()
 
     if is_pid(fallback) and Process.alive?(fallback) do
-      Process.register(fallback, :standard_error)
+      Process.register(fallback, name)
     end
 
     :ok
