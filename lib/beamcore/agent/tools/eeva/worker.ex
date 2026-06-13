@@ -138,7 +138,6 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
 
     Process.put(:workspace_root, workspace_root)
     Process.put(:beamcore_tool_runtime, caps)
-    Beamcore.Agent.Tools.Eeva.Guard.install(caps, workspace_root)
 
     filesystem_context = Keyword.get(opts, :filesystem_context)
 
@@ -202,14 +201,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
       end
     end
 
-    try do
-      if filesystem_context do
-        Beamcore.Agent.FilesystemJournal.with_context(filesystem_context, run)
-      else
-        run.()
-      end
-    after
-      Beamcore.Agent.Tools.Eeva.Guard.clear()
+    if filesystem_context do
+      Beamcore.Agent.FilesystemJournal.with_context(filesystem_context, run)
+    else
+      run.()
     end
   end
 

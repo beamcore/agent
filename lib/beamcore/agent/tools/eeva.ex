@@ -153,9 +153,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
       {:ok, prepared} ->
         execute_prepared(code, prepared, caps)
 
-      {:error, "Guard violation:" <> _rest = reason} ->
-        encode_error(reason, "guard_violation", code)
-
       {:error, reason} ->
         encode_error(reason, "execution_guard", code)
     end
@@ -393,7 +390,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   end
 
-  defp reason_for_classification("guard_violation", _message), do: :guard_blocked
   defp reason_for_classification("execution_guard", _message), do: :guard_blocked
 
   defp reason_for_classification(_classification, message) do
