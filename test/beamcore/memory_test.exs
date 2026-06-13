@@ -5,15 +5,22 @@ defmodule Beamcore.MemoryTest do
 
   @test_dets_path "tmp/test_memory.dets"
 
+  defp safe_expand(path) do
+    case File.cwd() do
+      {:ok, cwd} -> Path.expand(path, cwd)
+      {:error, _} -> Path.expand(path, System.user_home!())
+    end
+  end
+
   setup do
     # Clean up any existing test DETS files
-    File.rm_rf!(Path.expand(@test_dets_path))
+    File.rm_rf!(safe_expand(@test_dets_path))
 
     # Restart a test Memory instance with a clean file
     Memory.clear()
 
     on_exit(fn ->
-      File.rm_rf!(Path.expand(@test_dets_path))
+      File.rm_rf!(safe_expand(@test_dets_path))
     end)
 
     :ok
@@ -99,7 +106,7 @@ defmodule Beamcore.MemoryTest do
   test "persists data across restarts using DETS" do
     # Start a dynamic memory process with custom DETS path
     custom_dets = "tmp/another_test_memory.dets"
-    File.rm_rf!(Path.expand(custom_dets))
+    File.rm_rf!(safe_expand(custom_dets))
 
     {:ok, pid} =
       GenServer.start_link(Memory,
@@ -128,13 +135,13 @@ defmodule Beamcore.MemoryTest do
     assert "value_a" == GenServer.call(pid2, {:recall, org, repo, :context, "key_a"})
 
     GenServer.stop(pid2)
-    File.rm_rf!(Path.expand(custom_dets))
+    File.rm_rf!(safe_expand(custom_dets))
   end
 
   test "fallback memory uses isolated configured DETS path when no GenServer is running" do
     fallback_dets = "tmp/fallback_test_memory.dets"
-    File.rm_rf!(Path.expand(fallback_dets))
-    real_default = Path.expand("~/.beamcore/memory.dets")
+    File.rm_rf!(safe_expand(fallback_dets))
+    real_default = safe_expand("~/.beamcore/memory.dets")
     real_default_mtime = file_mtime(real_default)
 
     with_app_env(:memory_dets_path, fallback_dets, fn ->
@@ -159,12 +166,12 @@ defmodule Beamcore.MemoryTest do
                  :context
                )
 
-        assert File.exists?(Path.expand(fallback_dets))
+        assert File.exists?(safe_expand(fallback_dets))
         assert file_mtime(real_default) == real_default_mtime
       after
         stop_memory!()
         close_fallback_memory_store()
-        File.rm_rf!(Path.expand(fallback_dets))
+        File.rm_rf!(safe_expand(fallback_dets))
       end
     end)
 

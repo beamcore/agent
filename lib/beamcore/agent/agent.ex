@@ -145,9 +145,15 @@ defmodule Beamcore.Agent do
   defp call_start(fun, _opts) when is_function(fun, 0), do: fun.()
 
   defp with_workspace(opts, fun) do
+    default_root =
+      case File.cwd() do
+        {:ok, cwd} -> cwd
+        {:error, _} -> System.user_home!()
+      end
+
     workspace_root =
       opts
-      |> Keyword.get(:workspace_root, File.cwd!())
+      |> Keyword.get(:workspace_root, default_root)
       |> Beamcore.Agent.Tools.PathInput.canonical_path()
 
     previous = Beamcore.Agent.Tools.PathInput.configure_workspace_root(workspace_root)

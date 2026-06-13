@@ -84,9 +84,13 @@ defmodule Beamcore.Agent.Tools.PathInput do
     do: Application.put_env(:agent, :workspace_root, canonical_path(root))
 
   def canonical_path(path) when is_binary(path) do
-    path
-    |> Path.expand()
-    |> physical_path()
+    expanded =
+      case File.cwd() do
+        {:ok, cwd} -> Path.expand(path, cwd)
+        {:error, _} -> Path.expand(path, System.user_home!())
+      end
+
+    physical_path(expanded)
   end
 
   @doc """
@@ -153,8 +157,12 @@ defmodule Beamcore.Agent.Tools.PathInput do
     expanded = Path.expand(path)
 
     if File.dir?(expanded) do
-      case System.cmd("pwd", ["-P"], cd: expanded, stderr_to_stdout: true) do
-        {resolved, 0} -> String.trim(resolved)
+      try do
+        case System.cmd("pwd", ["-P"], cd: expanded, stderr_to_stdout: true) do
+          {resolved, 0} -> String.trim(resolved)
+          _ -> expanded
+        end
+      rescue
         _ -> expanded
       end
     else
