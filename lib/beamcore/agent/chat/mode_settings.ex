@@ -25,7 +25,7 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
       input_budget: 32_000,
       output_budget: 4_000,
       history_limit: 304,
-      tool_depth_limit: 80,
+      tool_depth_limit: 200,
       retry_limit: 3
     },
     chat: %{

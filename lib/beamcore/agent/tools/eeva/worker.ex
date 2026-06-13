@@ -312,8 +312,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
 
     Process.flag(:max_heap_size, %{
       size: max_words,
-      kill: true,
-      error_logger: false
+      kill: true
     })
   end
 
