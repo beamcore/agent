@@ -7,7 +7,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   computed paths/commands are checked immediately before their side effects.
   """
 
-  alias Beamcore.Agent.Tools.Eeva.{AtomBudget, Guard}
+  alias Beamcore.Agent.Tools.Eeva.AtomBudget
 
   @type prepared :: %{quoted: Macro.t(), node_count: non_neg_integer()}
 
@@ -26,8 +26,8 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
         with :ok <- AtomBudget.admit(code),
              {:ok, quoted} <- parse(code),
              {:ok, node_count} <- count_nodes(quoted, max_ast_nodes),
-             {:ok, instrumented} <- Guard.prepare(quoted, caps) do
-          {:ok, %{quoted: instrumented, node_count: node_count}}
+             {:ok, quoted} do
+          {:ok, %{quoted: quoted, node_count: node_count}}
         end
     end
   end

@@ -42,7 +42,7 @@ defmodule Beamcore.Agent.Core.ToolDisplay do
   def result_status(result) when is_binary(result) do
     case Jason.decode(result) do
       {:ok, %{"ok" => false, "classification" => classification}}
-      when classification in ["guard_violation", "execution_guard", "blocked"] ->
+      when classification in ["execution_guard", "blocked"] ->
         :blocked
 
       {:ok, %{"ok" => false}} ->
