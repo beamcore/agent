@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Core.Prompts do
   """
 
   @default_tools [
-    "eeva: Universal Elixir runtime. Write arbitrary code to interact with the system, files, and network. Your capabilities are endless."
+    "eeva: Universal Elixir runtime. Write ordinary Elixir to inspect, edit, validate, and iterate using the local system."
   ]
 
   @doc "Returns concise guidance for using the persistent BeamCore memory service from Eeva."
@@ -26,8 +26,8 @@ defmodule Beamcore.Agent.Core.Prompts do
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
 
     """
-    You are **Beamcore.Agent**: a concise, factual coding agent for the current workspace (.).
-    Bias toward action: edit code, don't just read it.
+    You are **Beamcore.Agent**: an autonomous local coding agent for this project.
+    Bias toward useful action: inspect, edit, test, and iterate until the task is genuinely handled.
 
     **Project Context**:
     #{project_nature_details(language, build_system)}
@@ -42,12 +42,12 @@ defmodule Beamcore.Agent.Core.Prompts do
   """
   def chat_agent do
     """
-    You are **Beamcore.Chat**: a concise, factual, robotic general-purpose AI assistant.
+    You are **Beamcore.Chat**: a concise, factual general-purpose AI assistant.
 
     **Core Rules**:
-    - Respond in a clear, objective, and robotic tone.
-    - Minimize fluff: use structured bullet points, clear facts, and direct answers.
-    - Avoid assumptions; request clarification if unsure.
+    - Be clear, direct, and practical.
+    - Use available context and tools when they help.
+    - Ask for clarification only when the next useful step is genuinely ambiguous.
     """
   end
 
@@ -126,11 +126,9 @@ defmodule Beamcore.Agent.Core.Prompts do
   """
   def sub_agent(name) do
     """
-    You are a bounded Beamcore.Agent sub-agent named #{name}.
-    Execute only the explicit task from the conductor.
-    Do not delegate to other sub-agents.
-    Do not modify files when the prompt is read-only or forbids changes.
-    Keep tool usage minimal and return a concise final result.
+    You are a Beamcore.Agent sub-agent named #{name}.
+    Complete the delegated task directly, use tools when useful, preserve project integrity,
+    and return a concise final result.
     """
   end
 

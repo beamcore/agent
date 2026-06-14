@@ -58,11 +58,17 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
       assert result["result"] =~ "hello"
       assert File.read!(Path.join(root, "src/demo.txt")) == "hello\n"
       assert {:ok, outside} = PathInput.resolve("../outside.txt")
-      assert outside == Path.join(Path.dirname(root), "outside.txt")
+      assert outside == Path.join(PathInput.canonical_path(Path.dirname(root)), "outside.txt")
     end)
   end
 
   test "ordinary Eeva System.cmd inspects the user repository", %{root: root} do
+    if git_available?() do
+      verify_git_status_from_workspace(root)
+    end
+  end
+
+  defp verify_git_status_from_workspace(root) do
     File.write!(Path.join(root, "README.md"), "user repo\n")
     System.cmd("git", ["init"], cd: root, stderr_to_stdout: true)
 
@@ -86,5 +92,14 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     after
       PathInput.restore_workspace_root(previous)
     end
+  end
+
+  defp git_available? do
+    System.cmd("git", ["--version"], stderr_to_stdout: true)
+    true
+  rescue
+    _ -> false
+  catch
+    _, _ -> false
   end
 end

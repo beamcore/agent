@@ -102,7 +102,7 @@ defmodule Beamcore.Agent.Chat.API do
             end
           end)
 
-        Beamcore.Provider.Router.chat(selection, request)
+        Beamcore.Provider.Router.chat(selection, request, opts)
 
       _ ->
         Beamcore.RateLimiter.wait()

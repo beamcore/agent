@@ -1,14 +1,13 @@
-# Eeva: run arbitrary Elixir code via OTP-supervised worker; always use `fn x -> ... end`, never `&Mod.fun/1` (captures bypass instrumentation).
+# Eeva: run arbitrary Elixir code via an OTP-supervised worker.
 
 defmodule Beamcore.Agent.Tools.Eeva do
   @moduledoc """
   The single model-facing execution tool in BeamCore.
 
   Eeva accepts ordinary Elixir code, starts an OTP-supervised execution worker,
-  captures stdout and the returned value, and records workspace changes in the
-  reversible filesystem journal. It intentionally does not expose prepared
-  read/write/search/git/test sub-tools: the model writes the Elixir program it
-  needs, using the language and runtime directly.
+  captures stdout and the returned value. It intentionally does not expose
+  prepared read/write/search/git/test sub-tools: the model writes the Elixir
+  program it needs, using the language and runtime directly.
   """
 
   alias Beamcore.Agent.Chat.ToolRuntime
@@ -35,7 +34,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description:
-          "Execute arbitrary Elixir code. This universal tool provides endless capabilities: write Elixir to read/write files, run system commands (git, mix, etc.), parse data, or interact with Beamcore.Memory. The runtime handles runtime checks, side effects, and returns stdout and results. Prefer anonymous functions (fn x -> ... end) over function captures (&Mod.fun/1) — captures bypass runtime instrumentation and will be blocked.",
+          "Execute arbitrary Elixir code. This universal tool can inspect and edit files, run direct system commands such as git or mix, parse data, and interact with Beamcore.Memory. The runtime captures stdout/stderr and returns structured results.",
         parameters: %{
           type: "object",
           properties: %{
@@ -86,6 +85,18 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   def execute(_params, _caps),
     do: encode_error("Parameters must be an object", "invalid_request")
+
+  @doc false
+  def system_cmd(command, args, opts \\ [])
+
+  def system_cmd(command, args, opts) when is_list(args) and is_list(opts) do
+    opts =
+      opts
+      |> Keyword.drop([:into, :stderr_to_stdout])
+      |> Keyword.put(:stderr_to_stdout, true)
+
+    System.cmd(command, args, opts)
+  end
 
   @doc """
   Removes a file or directory when the caller explicitly confirms the destructive action.
@@ -204,6 +215,12 @@ defmodule Beamcore.Agent.Tools.Eeva do
   defp format_result({:ok, %{status: :error} = result}, code, prepared) do
     {stdout, dropped} = truncate_output(result.output)
 
+    summary =
+      append_truncation(
+        recoverable_summary("Eeva program raised #{inspect(result.error)}."),
+        dropped
+      )
+
     emit_failure(failure_message(result.kind, result.error))
 
     %{
@@ -215,13 +232,17 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "result" => nil,
       "code" => code,
       "ast_nodes" => prepared.node_count,
-      "summary" => append_truncation("Eeva program raised #{inspect(result.error)}.", dropped)
+      "recoverable" => true,
+      "session_active" => true,
+      "next_step" => recoverable_next_step(),
+      "summary" => summary
     }
     |> Jason.encode!()
   end
 
   defp format_result({:error, kind, reason}, code, prepared) do
     emit_failure(execution_error_summary(kind, reason))
+    summary = recoverable_summary(execution_error_summary(kind, reason))
 
     %{
       "ok" => false,
@@ -232,7 +253,10 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "result" => nil,
       "code" => code,
       "ast_nodes" => prepared.node_count,
-      "summary" => execution_error_summary(kind, reason)
+      "recoverable" => true,
+      "session_active" => true,
+      "next_step" => recoverable_next_step(),
+      "summary" => summary
     }
     |> Jason.encode!()
   end
@@ -301,6 +325,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   defp encode_error(message, classification, code \\ nil) do
     emit_failure(message, classification)
+    summary = recoverable_summary(message)
 
     %{
       "ok" => false,
@@ -311,7 +336,10 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "result" => nil,
       "code" => code,
       "classification" => classification,
-      "summary" => message
+      "recoverable" => true,
+      "session_active" => true,
+      "next_step" => recoverable_next_step(),
+      "summary" => summary
     }
     |> Jason.encode!()
   end
@@ -416,6 +444,14 @@ defmodule Beamcore.Agent.Tools.Eeva do
   end
 
   defp add_common_hint(message, _error), do: message
+
+  defp recoverable_summary(message) do
+    "Tool call failed, but the session is still active. #{message} " <>
+      recoverable_next_step()
+  end
+
+  defp recoverable_next_step,
+    do: "Inspect the error, adjust the approach, and retry or choose another path."
 
   defp preview_code(code) when byte_size(code) <= @max_preview_bytes, do: code
 

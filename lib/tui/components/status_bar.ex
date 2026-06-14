@@ -19,7 +19,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
 
     right_text =
       case State.ctrl_c_hint(state.ctrl_c_pending) do
-        nil -> "#{provider_model} · tok #{tokens}"
+        nil -> State.wait_status_text(state) || "#{provider_model} · tok #{tokens}"
         hint -> hint
       end
 

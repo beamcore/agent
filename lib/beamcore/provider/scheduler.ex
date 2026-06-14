@@ -17,17 +17,25 @@ defmodule Beamcore.Provider.Scheduler do
 
   @spec wait(key(), keyword()) :: :ok
   def wait(key, opts \\ []) do
+    delay = reserve(key, opts)
+
+    if delay > 0 do
+      wait_fun = Keyword.get(opts, :wait_fun) || (&Process.sleep/1)
+      wait_fun.(delay)
+    end
+
+    :ok
+  end
+
+  @spec reserve(key(), keyword()) :: non_neg_integer()
+  def reserve(key, opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
 
-    delay =
-      if Process.whereis(name) do
-        GenServer.call(name, {:reserve, key, opts}, :infinity)
-      else
-        0
-      end
-
-    if delay > 0, do: Process.sleep(delay)
-    :ok
+    if Process.whereis(name) do
+      GenServer.call(name, {:reserve, key, opts}, :infinity)
+    else
+      0
+    end
   end
 
   @spec cooldown(key(), non_neg_integer(), keyword()) :: :ok

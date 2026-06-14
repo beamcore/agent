@@ -28,6 +28,7 @@ defmodule Beamcore.Agent.Chat.Commands do
       "login" -> handle_login_prompt(session, output)
       "login " <> token -> handle_login_token(token, session, output)
       "logout" -> handle_logout(session, output)
+      "yolo" -> handle_yolo(session, output)
       "api" -> handle_api(["list"], session, output)
       "api " <> args -> handle_api(String.split(args, " ", trim: true), session, output)
       "help" -> handle_help(session, output)
@@ -106,6 +107,11 @@ defmodule Beamcore.Agent.Chat.Commands do
   defp handle_logout(session, output) do
     :ok = Beamcore.Config.delete_mistral_api_key()
     output.("Beamcore login cleared.")
+    session
+  end
+
+  defp handle_yolo(session, output) do
+    output.("Beamcore is already running in autonomous yolo mode.")
     session
   end
 
@@ -264,6 +270,7 @@ defmodule Beamcore.Agent.Chat.Commands do
       /api delete <provider> - Delete a provider config
       /login - Configure your default API key
       /logout - Clear stored default login
+      /yolo - Reaffirm the default autonomous mode
       /env  - Print env variables with secrets redacted
       /help - Show this help message
     """)

@@ -57,4 +57,24 @@ defmodule Beamcore.Provider.SchedulerTest do
     refute_receive :remote_released, 100
     assert_receive :remote_released, 1_500
   end
+
+  test "wait callback receives scheduler delay instead of sleeping internally" do
+    name = :"scheduler_#{System.unique_integer([:positive])}"
+    {:ok, _pid} = Scheduler.start_link(name: name, default_interval: 1_000)
+    key = {:mistral, "default", "mistral-medium"}
+    parent = self()
+
+    assert :ok == Scheduler.wait(key, name: name)
+
+    assert :ok ==
+             Scheduler.wait(key,
+               name: name,
+               wait_fun: fn delay ->
+                 send(parent, {:scheduler_wait, delay})
+               end
+             )
+
+    assert_receive {:scheduler_wait, delay}
+    assert delay > 0
+  end
 end

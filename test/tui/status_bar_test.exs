@@ -36,4 +36,39 @@ defmodule Beamcore.TUI.StatusBarTest do
     assert text =~ "F1 Agent"
     assert text =~ "F2 Chat"
   end
+
+  test "status bar shows retry countdown while waiting" do
+    session = %Session{
+      roles: %Beamcore.Provider.Selection{
+        primary: %{provider: "mistral", model: "test-model", enabled: true}
+      },
+      total_prompt_tokens: 0,
+      total_completion_tokens: 0,
+      total_tokens: 0,
+      last_prompt_tokens: 0,
+      needs_compaction: false
+    }
+
+    state =
+      %State{
+        screen_type: :agent,
+        session: session,
+        status: :thinking,
+        spinner_step: 0,
+        unicode?: true,
+        ctrl_c_pending: false,
+        notice: nil
+      }
+      |> State.set_wait_status(%{
+        reason: :rate_limit,
+        wait_ms: 12_000,
+        now_ms: System.monotonic_time(:millisecond)
+      })
+
+    widget = StatusBar.widget(state, 120)
+    text = widget.text |> hd() |> Map.fetch!(:spans) |> Enum.map_join(& &1.content)
+
+    assert text =~ "Rate limited"
+    assert text =~ "retrying in"
+  end
 end

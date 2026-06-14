@@ -23,6 +23,7 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
             execute_tool(tool, name, args, caps)
 
           {:error, message} ->
+            Beamcore.AppLog.warn("Tool call rejected", tool: name, reason: message)
             "Error: #{message}"
         end
     end
@@ -50,7 +51,13 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
         tool.execute(args)
       end
     rescue
-      e -> "Error executing tool #{name}: #{inspect(e)}"
+      e ->
+        Beamcore.AppLog.exception(:error, e, __STACKTRACE__, tool: name)
+
+        "Tool call failed, but the session is still active. " <>
+          "Error executing tool #{name}: #{inspect(e)}. " <>
+          "Details were written to #{Beamcore.AppLog.log_path()}. " <>
+          "Inspect the error, adjust the approach, and retry or choose another path."
     after
       if previous_caps do
         Process.put(:beamcore_tool_runtime, previous_caps)
@@ -65,5 +72,4 @@ defmodule Beamcore.Agent.Tools.Dispatcher do
       tool.name() == name
     end)
   end
-
 end

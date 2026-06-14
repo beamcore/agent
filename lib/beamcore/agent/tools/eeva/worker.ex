@@ -201,16 +201,29 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
       end
     end
 
-    old_cwd = File.cwd()
-    File.cd!(workspace_root)
+    with_serialized_cwd(workspace_root, run)
+  end
 
-    try do
-      run.()
-    after
-      case old_cwd do
-        {:ok, dir} -> File.cd!(dir)
-        {:error, _} -> :ok
+  defp with_serialized_cwd(workspace_root, fun) do
+    :global.trans({__MODULE__, :cwd}, fn ->
+      old_cwd = safe_cwd()
+      File.cd!(workspace_root)
+
+      try do
+        fun.()
+      after
+        File.cd!(old_cwd)
       end
+    end)
+  end
+
+  defp safe_cwd do
+    case File.cwd() do
+      {:ok, cwd} ->
+        cwd
+
+      {:error, _reason} ->
+        Beamcore.Agent.Tools.PathInput.workspace_root()
     end
   end
 

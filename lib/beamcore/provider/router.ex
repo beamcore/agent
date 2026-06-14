@@ -17,7 +17,8 @@ defmodule Beamcore.Provider.Router do
 
       Scheduler.wait(key,
         interval: scheduler_interval(provider_info),
-        name: Keyword.get(opts, :scheduler, Scheduler)
+        name: Keyword.get(opts, :scheduler, Scheduler),
+        wait_fun: Keyword.get(opts, :wait_fun)
       )
 
       request = Map.put(request, :model, model)
