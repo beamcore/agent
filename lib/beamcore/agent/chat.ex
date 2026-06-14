@@ -29,6 +29,7 @@ defmodule Beamcore.Agent.Chat do
             nil
 
           {:error, _reason} ->
+            Beamcore.AppLog.warn("Provider configuration missing for chat startup")
             IO.puts(Beamcore.Provider.Registry.missing_config_message())
             nil
         end

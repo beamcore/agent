@@ -162,21 +162,44 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert File.read!(outside) == "yes"
   end
 
+  test "shell interpreters are ordinary explicit local commands in freedom mode" do
+    result =
+      Eeva.execute(%{
+        "code" => ~S"""
+        System.cmd("sh", ["-c", "printf shell-ok"])
+        """
+      })
+      |> Jason.decode!()
+
+    assert result["ok"]
+    assert result["result"] =~ "shell-ok"
+  end
+
   test "failures emit a concise execution_stopped event while success stays quiet" do
     parent = self()
     Process.put(:event_handler, fn event -> send(parent, event) end)
 
-    Eeva.execute(%{"code" => "System.cmd(\"sh\", [\"-c\", \"echo no\"])"})
+    Eeva.execute(%{"code" => "raise \"boom\""})
     assert_received {:execution_stopped, event}
     assert event.source == :eeva
-    assert event.reason == :guard_blocked
-    assert event.summary =~ "Shell interpreters"
+    assert event.reason == :execution_failed
+    assert event.summary =~ "boom"
     refute String.contains?(event.summary, "\n")
 
     Eeva.execute(%{"code" => "1 + 1"})
     refute_received {:execution_stopped, _}
   after
     Process.delete(:event_handler)
+  end
+
+  test "model-facing failures are recoverable and suggest retry" do
+    result = Eeva.execute(%{"code" => "raise \"boom\""}) |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["recoverable"]
+    assert result["session_active"]
+    assert result["summary"] =~ "Tool call failed, but the session is still active"
+    assert result["next_step"] =~ "retry"
   end
 
   test "Beamcore helpers expose public functions dynamically" do
@@ -286,12 +309,18 @@ defmodule Beamcore.Agent.Tools.EevaTest do
           Process.unregister(:standard_error)
         end
 
-        if Process.alive?(io), do: GenServer.stop(io)
+        if Process.alive?(io), do: safe_stop(io)
       end)
     end
 
     :ok
   rescue
     ArgumentError -> :ok
+  end
+
+  defp safe_stop(pid) do
+    GenServer.stop(pid)
+  catch
+    _, _ -> :ok
   end
 end

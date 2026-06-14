@@ -8,7 +8,10 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
       "BEAMCORE_CHAT_PROVIDER" => nil,
       "BEAMCORE_CHAT_MODEL" => nil,
       "BEAMCORE_AGENT_PROVIDER" => nil,
-      "BEAMCORE_AGENT_MODEL" => nil
+      "BEAMCORE_AGENT_MODEL" => nil,
+      "BEAMCORE_MAX_TOOL_CALLS" => nil,
+      "BEAMCORE_CHAT_TOOL_DEPTH_LIMIT" => nil,
+      "BEAMCORE_AGENT_TOOL_DEPTH_LIMIT" => nil
     })
   end
 
@@ -47,5 +50,17 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
   test "unknown screen resolves to agent settings" do
     settings = ModeSettings.resolve(:unknown_screen)
     assert settings.mode == :agent
+  end
+
+  test "freedom mode does not impose a tiny default tool loop" do
+    assert ModeSettings.resolve(:agent).tool_depth_limit == 10_000
+    assert ModeSettings.resolve(:chat).tool_depth_limit == 10_000
+  end
+
+  test "global tool-call limit is explicit configuration" do
+    Beamcore.Agent.TestEnv.with_env(%{"BEAMCORE_MAX_TOOL_CALLS" => "42"}, fn ->
+      assert ModeSettings.resolve(:agent).tool_depth_limit == 42
+      assert ModeSettings.resolve(:chat).tool_depth_limit == 42
+    end)
   end
 end

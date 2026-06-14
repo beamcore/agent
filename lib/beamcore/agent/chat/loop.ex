@@ -240,9 +240,17 @@ defmodule Beamcore.Agent.Chat.Loop do
           selection: Beamcore.Provider.Selection.primary(session.roles),
           model: model_name(session),
           silent: Keyword.get(opts, :silent, false),
-          retry_config: Keyword.get(opts, :retry_config) || retry_config(settings),
+          retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
           temperature: Keyword.get(opts, :temperature),
-          max_tokens: budget_plan.reserved_output_tokens
+          max_tokens: budget_plan.reserved_output_tokens,
+          wait_fun: fn wait_ms ->
+            sleep_before_retry(
+              opts,
+              :cooldown,
+              wait_ms,
+              "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
+            )
+          end
         )
 
       call_elapsed = System.monotonic_time(:millisecond) - call_started
@@ -415,10 +423,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         maybe_print(opts, fn -> Pretty.print_rate_limit_error(error) end)
         retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
-        emit(opts, {:error, retry_message})
-        emit(opts, {:status, :rate_limited})
-        Process.sleep(wait_ms)
-        emit(opts, {:status, :thinking})
+        sleep_before_retry(opts, :rate_limit, wait_ms, retry_message)
         process_messages(session, messages, pid, depth, caps, opts)
 
       {:error, %Beamcore.Provider.Error{kind: :rate_limit} = error} ->
@@ -426,10 +431,7 @@ defmodule Beamcore.Agent.Chat.Loop do
         message = error.message || "Provider rate limit reached."
         retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
         maybe_print(opts, fn -> Pretty.print_error(retry_message) end)
-        emit(opts, {:error, retry_message})
-        emit(opts, {:status, :rate_limited})
-        Process.sleep(wait_ms)
-        emit(opts, {:status, :thinking})
+        sleep_before_retry(opts, :rate_limit, wait_ms, retry_message)
         process_messages(session, messages, pid, depth, caps, opts)
 
       {:error, %OpenaiEx.Error{kind: :api_timeout_error}} ->
@@ -540,16 +542,12 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp tool_depth_limit(session) do
-    settings = mode_settings(session)
-
-    if ModeSettings.local_provider?(settings) do
-      min(settings.tool_depth_limit, 6)
-    else
-      settings.tool_depth_limit
-    end
+    session
+    |> mode_settings()
+    |> Map.fetch!(:tool_depth_limit)
   end
 
-  defp retry_config(settings) do
+  defp retry_config(settings, opts) do
     max_retries = if ModeSettings.local_provider?(settings), do: 0, else: settings.retry_limit
 
     %Beamcore.Retry.Config{
@@ -562,8 +560,35 @@ defmodule Beamcore.Agent.Chat.Loop do
         :api_timeout_error,
         :api_connection_error,
         :internal_server_error
-      ]
+      ],
+      sleep_fun: fn wait_ms ->
+        sleep_before_retry(
+          opts,
+          :backoff,
+          wait_ms,
+          "Provider is temporarily unavailable. Retrying automatically in #{format_ms(wait_ms)}."
+        )
+      end
     }
+  end
+
+  defp sleep_before_retry(opts, reason, wait_ms, message) do
+    wait_ms = max(wait_ms, 0)
+
+    Beamcore.AppLog.warn("Provider retry scheduled",
+      reason: reason,
+      wait_ms: wait_ms
+    )
+
+    emit(opts, {:retry_wait, %{reason: reason, wait_ms: wait_ms, message: message}})
+    Process.sleep(wait_ms)
+    emit(opts, {:retry_resumed, %{reason: reason}})
+    emit(opts, {:status, :thinking})
+
+    Beamcore.AppLog.info("Provider retry resumed",
+      reason: reason,
+      wait_ms: wait_ms
+    )
   end
 
   defp model_call_role(_session), do: :agent

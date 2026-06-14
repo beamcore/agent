@@ -104,9 +104,16 @@ defmodule Beamcore.TUI.Events do
          Map.get(event, "type") in [:paste, "paste"])
   end
 
-
   def handle_runtime_event({:status, status}, state), do: State.set_status(state, status)
   def handle_runtime_event({:session, session}, state), do: State.set_session(state, session)
+
+  def handle_runtime_event({:retry_wait, event}, state) when is_map(event) do
+    state
+    |> State.clear_notice()
+    |> State.set_wait_status(event)
+  end
+
+  def handle_runtime_event({:retry_resumed, _event}, state), do: State.clear_wait_status(state)
 
   def handle_runtime_event({:assistant, content}, state),
     do: state |> State.clear_notice() |> State.add_message(:assistant, content)
@@ -114,7 +121,10 @@ defmodule Beamcore.TUI.Events do
   def handle_runtime_event({:thinking, _content}, state), do: state
 
   def handle_runtime_event({:error, content}, state),
-    do: state |> State.clear_notice() |> State.add_message(:error, ErrorFormatter.format(content))
+    do:
+      state
+      |> State.clear_notice()
+      |> State.add_message(:error, recoverable_error_text(ErrorFormatter.format(content)))
 
   # Helper progress is transient status, not chat history. Keeping it out of the
   # transcript prevents nested provider errors and inspected terms from flooding
@@ -167,13 +177,18 @@ defmodule Beamcore.TUI.Events do
       |> Map.take([:source, :reason, :recoverable?, :details])
       |> Map.put(:summary, summary)
 
-    status = if Map.get(event, :reason) == :rate_limited, do: :rate_limited, else: :error
+    rate_limited? = Map.get(event, :reason) == :rate_limited
+    recoverable? = Map.get(event, :recoverable?, Map.get(event, "recoverable?", true))
+    status = if rate_limited?, do: :rate_limited, else: :error
     role = if status == :rate_limited, do: :system, else: :error
+
+    message =
+      if role == :error and recoverable?, do: recoverable_error_text(summary), else: summary
 
     state
     |> State.set_status(status)
     |> State.add_activity("execution_stopped", args, :error)
-    |> State.add_message(role, summary)
+    |> State.add_message(role, message)
   end
 
   def handle_runtime_event({:model_context, metadata}, state) when is_map(metadata) do
@@ -264,12 +279,29 @@ defmodule Beamcore.TUI.Events do
   def finish_worker(state, session), do: State.finish_worker(state, session)
 
   def fail_worker(state, error_msg) do
+    message =
+      error_msg
+      |> ErrorFormatter.format()
+      |> then(&"Agent worker crashed. #{&1}")
+      |> then(
+        &recoverable_error_text(&1, "Details were written to #{Beamcore.AppLog.log_path()}.")
+      )
+
     state
-    |> State.add_message(:system, "Agent crashed: #{error_msg}")
+    |> State.clear_wait_status()
+    |> State.add_message(:error, message)
     |> Map.put(:worker, nil)
     |> Map.put(:status, :idle)
     |> Map.put(:ctrl_c_pending, false)
     |> State.mark_dirty()
+  end
+
+  defp recoverable_error_text(message, extra \\ nil) do
+    hint = "Session is still active. You can continue or ask the agent to retry."
+
+    [message, extra, hint]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join("\n")
   end
 
   defp handle_key("c", mods, state) do

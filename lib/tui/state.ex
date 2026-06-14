@@ -31,6 +31,7 @@ defmodule Beamcore.TUI.State do
             command_selected: 0,
             spinner_step: 0,
             last_animation_tick_ms: 0,
+            wait_status: nil,
             render_dirty?: true,
             worker: nil,
             ctrl_c_pending: false,
@@ -121,7 +122,50 @@ defmodule Beamcore.TUI.State do
     end
   end
 
-  def set_status(state, status), do: %{state | status: status} |> mark_dirty()
+  def set_status(state, status) do
+    state =
+      if status in [:idle, :thinking, :tool_running, :paused, :error] do
+        clear_wait_status(state)
+      else
+        state
+      end
+
+    %{state | status: status} |> mark_dirty()
+  end
+
+  def set_wait_status(state, attrs) when is_map(attrs) do
+    now_ms = Map.get(attrs, :now_ms, System.monotonic_time(:millisecond))
+    wait_ms = attrs |> Map.get(:wait_ms, 0) |> normalize_wait_ms()
+
+    wait_status = %{
+      reason: Map.get(attrs, :reason, :retry_wait),
+      message: Map.get(attrs, :message),
+      started_at_ms: now_ms,
+      retry_at_ms: Map.get(attrs, :retry_at_ms) || now_ms + wait_ms
+    }
+
+    %{state | status: :rate_limited, wait_status: wait_status} |> mark_dirty()
+  end
+
+  def clear_wait_status(%{wait_status: nil} = state), do: state
+  def clear_wait_status(state), do: %{state | wait_status: nil} |> mark_dirty()
+
+  def wait_status_text(state, now_ms \\ System.monotonic_time(:millisecond))
+  def wait_status_text(%{wait_status: nil}, _now_ms), do: nil
+
+  def wait_status_text(%{wait_status: wait_status}, now_ms) do
+    label =
+      wait_status
+      |> Map.get(:reason)
+      |> wait_label()
+
+    remaining_seconds =
+      wait_status
+      |> Map.get(:retry_at_ms, now_ms)
+      |> remaining_seconds(now_ms)
+
+    "#{label} · retrying in #{remaining_seconds}s"
+  end
 
   def refresh_memory_total(state) do
     %{state | memory_total: compute_memory_total()} |> mark_dirty()
@@ -159,9 +203,9 @@ defmodule Beamcore.TUI.State do
   def paused?(%{status: :paused}), do: true
   def paused?(_state), do: false
 
-  def pause(state), do: %{state | status: :paused} |> mark_dirty()
+  def pause(state), do: %{clear_wait_status(state) | status: :paused} |> mark_dirty()
 
-  def resume(state), do: %{state | status: :idle} |> mark_dirty()
+  def resume(state), do: %{clear_wait_status(state) | status: :idle} |> mark_dirty()
 
   def set_session(state, session) do
     selected_checkpoint_id = state.selected_checkpoint_id || active_checkpoint_id(session)
@@ -171,10 +215,16 @@ defmodule Beamcore.TUI.State do
     |> mark_dirty()
   end
 
-  def start_worker(state, pid), do: %{state | worker: pid, status: :thinking} |> mark_dirty()
+  def start_worker(state, pid),
+    do: %{clear_wait_status(state) | worker: pid, status: :thinking} |> mark_dirty()
 
   def finish_worker(state, session) do
-    %{set_session(state, session) | worker: nil, status: :idle, ctrl_c_pending: false}
+    %{
+      set_session(clear_wait_status(state), session)
+      | worker: nil,
+        status: :idle,
+        ctrl_c_pending: false
+    }
     |> mark_dirty()
   end
 
@@ -193,7 +243,7 @@ defmodule Beamcore.TUI.State do
 
   def animation_interval(%{status: status, messages: messages}) do
     cond do
-      status in [:thinking, :tool_running, :local_search] -> 160
+      status in [:thinking, :tool_running, :local_search, :rate_limited] -> 160
       messages == [] -> 360
       true -> 420
     end
@@ -204,7 +254,7 @@ defmodule Beamcore.TUI.State do
     until_animation = max(animation_interval(state) - elapsed, 0)
 
     cond do
-      state.status in [:thinking, :tool_running, :local_search] ->
+      state.status in [:thinking, :tool_running, :local_search, :rate_limited] ->
         clamp_poll(until_animation, 18, 42)
 
       state.show_commands ->
@@ -228,6 +278,23 @@ defmodule Beamcore.TUI.State do
     value
     |> max(min_value)
     |> min(max_value)
+  end
+
+  defp wait_label(:rate_limit), do: "Rate limited"
+  defp wait_label(:cooldown), do: "Cooling down"
+  defp wait_label(:backoff), do: "Waiting for provider"
+  defp wait_label(:retry_wait), do: "Retrying soon"
+  defp wait_label(_reason), do: "Waiting for provider"
+
+  defp normalize_wait_ms(wait_ms) when is_integer(wait_ms), do: max(wait_ms, 0)
+  defp normalize_wait_ms(_wait_ms), do: 0
+
+  defp remaining_seconds(retry_at_ms, now_ms) do
+    retry_at_ms
+    |> Kernel.-(now_ms)
+    |> max(0)
+    |> Kernel.+(999)
+    |> div(1000)
   end
 
   # Intentionally unlimited backscroll to allow reading the full history.

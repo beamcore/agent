@@ -14,7 +14,7 @@ defmodule Beamcore.TUI do
   # typespec. Suppress the false positive until upstream updates the spec.
   @dialyzer {:nowarn_function, [start: 0, start: 1]}
 
-  @animated_statuses [:thinking, :tool_running, :local_search]
+  @animated_statuses [:thinking, :tool_running, :local_search, :rate_limited]
 
   def start(opts \\ []) do
     old_level = Logger.level()
@@ -33,6 +33,14 @@ defmodule Beamcore.TUI do
           other -> other
         end
       end
+    rescue
+      error ->
+        Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :tui_start)
+        reraise error, __STACKTRACE__
+    catch
+      kind, reason ->
+        Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :tui_start)
+        :erlang.raise(kind, reason, __STACKTRACE__)
     after
       Logger.configure(level: old_level)
     end
@@ -42,7 +50,12 @@ defmodule Beamcore.TUI do
     ref = Process.monitor(pid)
 
     receive do
-      {:DOWN, ^ref, :process, ^pid, _reason} -> :ok
+      {:DOWN, ^ref, :process, ^pid, reason} ->
+        if reason not in [:normal, :shutdown] do
+          Beamcore.AppLog.error("TUI process stopped unexpectedly", reason: inspect(reason))
+        end
+
+        :ok
     end
   end
 
@@ -94,30 +107,50 @@ defmodule Beamcore.TUI do
 
   @impl true
   def render(state, frame) do
-    state
-    |> MultiScreenState.get_active()
-    |> Render.render(frame)
+    try do
+      state
+      |> MultiScreenState.get_active()
+      |> Render.render(frame)
+    rescue
+      error ->
+        Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :tui_render)
+        reraise error, __STACKTRACE__
+    catch
+      kind, reason ->
+        Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :tui_render)
+        :erlang.raise(kind, reason, __STACKTRACE__)
+    end
   end
 
   @impl true
   def handle_event(event, state) do
-    case event do
-      %ExRatatui.Event.Key{code: "f1"} ->
-        switch_or_delegate(event, state, :f1)
+    try do
+      case event do
+        %ExRatatui.Event.Key{code: "f1"} ->
+          switch_or_delegate(event, state, :f1)
 
-      %ExRatatui.Event.Key{code: "f2"} ->
-        switch_or_delegate(event, state, :f2)
+        %ExRatatui.Event.Key{code: "f2"} ->
+          switch_or_delegate(event, state, :f2)
 
-      %ExRatatui.Event.Resize{width: width, height: height} ->
-        new_state =
-          state
-          |> set_viewports(width, height)
-          |> MultiScreenState.update_active(&State.mark_dirty/1)
+        %ExRatatui.Event.Resize{width: width, height: height} ->
+          new_state =
+            state
+            |> set_viewports(width, height)
+            |> MultiScreenState.update_active(&State.mark_dirty/1)
 
-        {:noreply, new_state}
+          {:noreply, new_state}
 
-      _ ->
-        delegate_event(event, state, state.active_screen)
+        _ ->
+          delegate_event(event, state, state.active_screen)
+      end
+    rescue
+      error ->
+        Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :tui_event)
+        reraise error, __STACKTRACE__
+    catch
+      kind, reason ->
+        Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :tui_event)
+        :erlang.raise(kind, reason, __STACKTRACE__)
     end
   end
 
@@ -203,6 +236,10 @@ defmodule Beamcore.TUI do
         {:noreply, %{state | f2_state: Events.handle_runtime_event(event, state.f2_state)}}
 
       true ->
+        Beamcore.AppLog.warn("TUI dropped runtime event from unknown worker",
+          worker_pid: inspect(worker_pid)
+        )
+
         Logger.warning("TUI dropping runtime event from unknown worker #{inspect(worker_pid)}")
         {:noreply, state}
     end
@@ -224,16 +261,19 @@ defmodule Beamcore.TUI do
 
   @impl true
   def handle_info({:agent_error, worker_pid, error, stacktrace}, state) do
+    Beamcore.AppLog.exception(:error, error, stacktrace, boundary: :agent_worker)
     formatted_error = Exception.format(:error, error, stacktrace)
+    user_error = Beamcore.AppLog.user_message()
 
     cond do
       state.f1_state.worker == worker_pid ->
-        {:noreply, %{state | f1_state: Events.fail_worker(state.f1_state, formatted_error)}}
+        {:noreply, %{state | f1_state: Events.fail_worker(state.f1_state, user_error)}}
 
       state.f2_state.worker == worker_pid ->
-        {:noreply, %{state | f2_state: Events.fail_worker(state.f2_state, formatted_error)}}
+        {:noreply, %{state | f2_state: Events.fail_worker(state.f2_state, user_error)}}
 
       true ->
+        Beamcore.AppLog.warn("TUI received error from unknown worker", error: formatted_error)
         {:noreply, state}
     end
   end

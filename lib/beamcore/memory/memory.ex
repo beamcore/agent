@@ -305,7 +305,7 @@ defmodule Beamcore.Memory do
     root =
       Process.get(:workspace_root) ||
         Application.get_env(:agent, :workspace_root) ||
-        File.cwd!()
+        Beamcore.Agent.Tools.PathInput.workspace_root()
 
     detect_org_repo(root)
   end
@@ -319,19 +319,27 @@ defmodule Beamcore.Memory do
     else
       git_root = Path.expand(workspace_root)
 
-      case System.cmd("git", ["-C", git_root, "config", "--get", "remote.origin.url"]) do
-        {url, 0} ->
-          url = String.trim(url)
-
-          case parse_git_url(url) do
-            {org, repo} -> {org, repo}
-            nil -> {"default_org", "default_repo"}
-          end
-
-        _ ->
-          {"default_org", "default_repo"}
-      end
+      detect_org_repo_from_git(git_root)
     end
+  end
+
+  defp detect_org_repo_from_git(git_root) do
+    case System.cmd("git", ["-C", git_root, "config", "--get", "remote.origin.url"]) do
+      {url, 0} ->
+        url = String.trim(url)
+
+        case parse_git_url(url) do
+          {org, repo} -> {org, repo}
+          nil -> {"default_org", "default_repo"}
+        end
+
+      _ ->
+        {"default_org", "default_repo"}
+    end
+  rescue
+    _ -> {"default_org", "default_repo"}
+  catch
+    _, _ -> {"default_org", "default_repo"}
   end
 
   # --- GenServer Callbacks ---
@@ -346,7 +354,7 @@ defmodule Beamcore.Memory do
         System.get_env("MEMORY_DETS_PATH") ||
         @default_dets_path
 
-    expanded_path = Path.expand(dets_path)
+    expanded_path = Beamcore.Agent.Tools.PathInput.canonical_path(dets_path)
     File.mkdir_p!(Path.dirname(expanded_path))
 
     dets_name = opts[:dets_name] || :beamcore_memory_store
@@ -773,7 +781,7 @@ defmodule Beamcore.Memory do
         System.get_env("MEMORY_DETS_PATH") ||
         @default_dets_path
 
-    expanded_path = Path.expand(dets_path)
+    expanded_path = Beamcore.Agent.Tools.PathInput.canonical_path(dets_path)
 
     try do
       File.mkdir_p!(Path.dirname(expanded_path))

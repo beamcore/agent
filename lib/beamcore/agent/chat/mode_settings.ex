@@ -17,22 +17,24 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
             input_budget: 32_000,
             output_budget: 4_000,
             history_limit: 304,
-            tool_depth_limit: 100,
+            tool_depth_limit: 10_000,
             retry_limit: 3
+
+  @default_tool_depth_limit 10_000
 
   @defaults %{
     agent: %{
       input_budget: 32_000,
       output_budget: 4_000,
       history_limit: 304,
-      tool_depth_limit: 200,
+      tool_depth_limit: @default_tool_depth_limit,
       retry_limit: 3
     },
     chat: %{
       input_budget: 16_000,
       output_budget: 2_000,
       history_limit: 120,
-      tool_depth_limit: 2,
+      tool_depth_limit: @default_tool_depth_limit,
       retry_limit: 2
     }
   }
@@ -64,7 +66,7 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
       input_budget: integer_setting(mode, "INPUT_BUDGET", defaults.input_budget),
       output_budget: integer_setting(mode, "OUTPUT_BUDGET", defaults.output_budget),
       history_limit: integer_setting(mode, "HISTORY_LIMIT", defaults.history_limit),
-      tool_depth_limit: integer_setting(mode, "TOOL_DEPTH_LIMIT", defaults.tool_depth_limit),
+      tool_depth_limit: tool_depth_limit(mode, defaults.tool_depth_limit),
       retry_limit: integer_setting(mode, "RETRY_LIMIT", defaults.retry_limit)
     }
   end
@@ -114,6 +116,26 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
           {integer, ""} when integer > 0 -> integer
           _ -> default
         end
+    end
+  end
+
+  defp tool_depth_limit(mode, default) do
+    env_positive_integer("BEAMCORE_MAX_TOOL_CALLS") ||
+      integer_setting(mode, "TOOL_DEPTH_LIMIT", default)
+  end
+
+  defp env_positive_integer(name) do
+    case System.get_env(name) do
+      value when is_binary(value) ->
+        value = String.trim(value)
+
+        case Integer.parse(value) do
+          {integer, ""} when integer > 0 -> integer
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 end

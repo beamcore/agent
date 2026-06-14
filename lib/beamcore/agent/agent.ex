@@ -19,6 +19,7 @@ defmodule Beamcore.Agent do
   Start the Beamcore.Agent application.
   """
   def start(_type, _args) do
+    Beamcore.AppLog.info("Application starting", app: :agent)
     remember_initial_workspace()
 
     children = [
@@ -36,6 +37,16 @@ defmodule Beamcore.Agent do
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  def prep_stop(state) do
+    Beamcore.AppLog.info("Application shutting down", app: :agent)
+    state
+  end
+
+  def stop(_state) do
+    Beamcore.AppLog.info("Application stopped", app: :agent)
+    :ok
   end
 
   defp remember_initial_workspace do
@@ -70,6 +81,7 @@ defmodule Beamcore.Agent do
         end
       rescue
         error ->
+          Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :chat_auto)
           reason = Exception.message(error)
 
           if missing_config_reason?(reason) do
@@ -103,6 +115,7 @@ defmodule Beamcore.Agent do
   end
 
   defp fallback_to_plain(reason, opts) do
+    Beamcore.AppLog.warn("TUI unavailable; starting plain fallback", reason: reason)
     IO.puts("TUI unavailable: #{reason}")
     IO.puts("Starting plain emergency fallback.")
     start_plain(opts)
@@ -131,6 +144,7 @@ defmodule Beamcore.Agent do
         String.contains?(reason, "Beamcore is not configured yet")
 
   defp print_missing_config_error do
+    Beamcore.AppLog.warn("Provider configuration missing")
     IO.puts(Beamcore.Provider.Registry.missing_config_message())
     {:error, :missing_config}
   end

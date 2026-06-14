@@ -34,4 +34,11 @@ defmodule Beamcore.Agent.Chat.ToolRuntimeTest do
     assert caps.allow_memory_write
     assert caps.allow_network
   end
+
+  test "legacy allow and block lists no longer hide the only model-facing tool" do
+    caps = Map.merge(ToolRuntime.default(), %{allowed_tools: [], blocked_tools: ["eeva"]})
+
+    assert ToolRuntime.allowed_tool_names(caps) == ["eeva"]
+    assert :ok == ToolRuntime.allow_tool_call(caps, "eeva", %{"code" => ":ok"})
+  end
 end
