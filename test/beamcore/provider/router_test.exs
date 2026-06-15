@@ -11,8 +11,7 @@ defmodule Beamcore.Provider.RouterTest do
     Application.put_env(:agent, :config_dets_path, path)
 
     Beamcore.Agent.TestEnv.setup_env(%{
-      "MISTRAL_API_KEY" => "test-mistral-key",
-      "MISTRAL_BASE_URL" => nil,
+      "OPENAI_API_KEY" => "test-openai-key",
       "API_KEY" => nil,
       "ACTIVE_PROVIDER" => nil
     })
@@ -26,7 +25,7 @@ defmodule Beamcore.Provider.RouterTest do
     :ok
   end
 
-  test "routes Mistral chat through the registry-selected compatible adapter" do
+  test "routes OpenAI chat through the registry-selected compatible adapter" do
     parent = self()
 
     Process.put(:mock_completions_create, fn client, params ->
@@ -36,11 +35,11 @@ defmodule Beamcore.Provider.RouterTest do
 
     assert {:ok, %{"choices" => [%{"message" => %{"content" => "ok"}}]}} =
              Router.chat(
-               %{provider: "mistral", model: "mistral-medium-3-5"},
+               %{provider: "openai", model: "gpt-4o"},
                %{messages: [%{role: "user", content: "hi"}], tools: []}
              )
 
-    assert_receive {:call, "https://api.mistral.ai/v1", "test-mistral-key", "mistral-medium-3-5"}
+    assert_receive {:call, "https://api.openai.com/v1", "test-openai-key", "gpt-4o"}
   end
 
   test "routes a custom compatible provider without adding an adapter module" do
@@ -79,7 +78,6 @@ defmodule Beamcore.Provider.RouterTest do
     source = File.read!(Path.expand("../../../lib/beamcore/provider/router.ex", __DIR__))
 
     refute source =~ "@adapters"
-    refute source =~ ~s("mistral" =>)
     refute source =~ ~s("ollama" =>)
     refute source =~ "Beamcore.Provider.Mistral"
     refute source =~ "Beamcore.Provider.Ollama"
@@ -96,7 +94,6 @@ defmodule Beamcore.Provider.RouterTest do
       )
 
     refute source =~ "provider_atom"
-    refute source =~ ~s("mistral")
     refute source =~ ~s("ollama")
     refute source =~ ~s("openai")
     refute source =~ ~s("deepseek")

@@ -8,7 +8,7 @@ defmodule Beamcore.TUI.StatusBarTest do
   test "status bar exposes F1/F2 switcher" do
     session = %Session{
       roles: %Beamcore.Provider.Selection{
-        primary: %{provider: "mistral", model: "test-model", enabled: true}
+        primary: %{provider: "openai", model: "test-model", enabled: true}
       },
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
@@ -40,7 +40,7 @@ defmodule Beamcore.TUI.StatusBarTest do
   test "status bar shows retry countdown while waiting" do
     session = %Session{
       roles: %Beamcore.Provider.Selection{
-        primary: %{provider: "mistral", model: "test-model", enabled: true}
+        primary: %{provider: "openai", model: "test-model", enabled: true}
       },
       total_prompt_tokens: 0,
       total_completion_tokens: 0,

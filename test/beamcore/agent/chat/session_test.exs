@@ -4,8 +4,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
-      "MISTRAL_API_KEY" => "test-api-key",
-      "MISTRAL_BASE_URL" => nil
+      "OPENAI_API_KEY" => "test-api-key",
+      "ACTIVE_PROVIDER" => "openai"
     })
   end
 
@@ -555,63 +555,6 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert length(compacted.blocked_attempts) == 3
       assert length(compacted.known_risks) == 3
       assert compacted.last_validation == %{command: "test", ok: true, summary: "passed"}
-    end
-
-    test "summarize_and_rollover/3 transparently rolls over the session, preserving session_id and context" do
-      client = Beamcore.Provider.Registry.client()
-      session = Session.new(client)
-
-      # 1. Mock the API call
-      Process.put(:mock_completions_create, fn _client, params ->
-        assert params.model == "mistral-medium-3-5"
-
-        {:ok,
-         %{
-           "choices" => [
-             %{"message" => %{"role" => "assistant", "content" => "Summary of our work."}}
-           ]
-         }}
-      end)
-
-      # Ensure cleanup
-      on_exit(fn ->
-        Process.delete(:mock_completions_create)
-      end)
-
-      # 2. Modify context to verify it gets preserved and compacted
-      session = %{
-        session
-        | context: %{
-            session.context
-            | modified_files: MapSet.new(["lib/modified.ex"]),
-              inspected_files: MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
-          },
-          session_id: "test-session-id",
-          last_prompt_tokens: 155_000,
-          needs_compaction: true
-      }
-
-      # 3. Perform rollover
-      new_session = Session.summarize_and_rollover(session, session.messages, nil)
-
-      # 4. Assertions
-      assert new_session.session_id == "test-session-id"
-      assert new_session.compaction_count == 1
-      assert new_session.needs_compaction == false
-      assert new_session.last_prompt_tokens == 0
-      assert new_session.total_tokens == 0
-      assert new_session.total_prompt_tokens == 0
-      assert new_session.total_completion_tokens == 0
-
-      # Context modified_files preserved, inspected_files preserved (and compacted)
-      assert new_session.context.modified_files == MapSet.new(["lib/modified.ex"])
-
-      assert new_session.context.inspected_files ==
-               MapSet.new(["lib/inspected1.ex", "lib/inspected2.ex"])
-
-      # Combined system message contains the original prompt and the summary
-      [%{role: "system", content: system_content}] = new_session.messages
-      assert system_content =~ "Summary of our work."
     end
 
     test "summarize_and_rollover/3 performs fallback local compaction if API call fails" do

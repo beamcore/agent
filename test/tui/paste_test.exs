@@ -5,7 +5,11 @@ defmodule Beamcore.TUI.PasteTest do
   alias Beamcore.TUI.{Events, State}
 
   setup do
-    Beamcore.Agent.TestEnv.setup_env(%{"MISTRAL_API_KEY" => "test-api-key"})
+    Beamcore.Agent.TestEnv.setup_env(%{
+      "OPENAI_API_KEY" => "test-api-key",
+      "ACTIVE_PROVIDER" => "openai"
+    })
+
     session_id = "tui-paste-#{System.unique_integer([:positive])}"
     tmp_dir = Path.join(System.tmp_dir!(), session_id)
     File.mkdir_p!(tmp_dir)

@@ -25,9 +25,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       "context" -> handle_context(session, output)
       "context clear" -> handle_context_clear(session, output)
       "env" -> handle_env(session, output)
-      "login" -> handle_login_prompt(session, output)
-      "login " <> token -> handle_login_token(token, session, output)
-      "logout" -> handle_logout(session, output)
       "yolo" -> handle_yolo(session, output)
       "api" -> handle_api(["list"], session, output)
       "api " <> args -> handle_api(String.split(args, " ", trim: true), session, output)
@@ -70,43 +67,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       |> Enum.map_join("\n", fn {key, value} -> "#{key}=#{redact_env_value(key, value)}" end)
 
     output.(env_str)
-    session
-  end
-
-  def store_login_token(token) when is_binary(token),
-    do: Beamcore.Config.put_mistral_api_key(token)
-
-  def login_saved_message do
-    if Beamcore.Provider.Registry.env_api_key_present?() do
-      "Beamcore login saved.\nWarning: MISTRAL_API_KEY is set in this process and will override the stored login until it is unset."
-    else
-      "Beamcore login saved."
-    end
-  end
-
-  defp handle_login_prompt(session, output) do
-    output.(
-      "Paste your Mistral API key. It will be securely hashed and stored locally in ~/.beamcore/config.dets."
-    )
-
-    {:login_prompt, session}
-  end
-
-  defp handle_login_token(token, session, output) do
-    case store_login_token(token) do
-      :ok ->
-        output.(login_saved_message())
-        session
-
-      {:error, :empty_value} ->
-        output.("Login token was empty; nothing was saved.")
-        session
-    end
-  end
-
-  defp handle_logout(session, output) do
-    :ok = Beamcore.Config.delete_mistral_api_key()
-    output.("Beamcore login cleared.")
     session
   end
 
@@ -268,8 +228,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       /api use <provider> - Switch active API provider
       /api add <provider> <token> [<base_url>] [<default_model>] - Add/update provider config
       /api delete <provider> - Delete a provider config
-      /login - Configure your default API key
-      /logout - Clear stored default login
       /yolo - Reaffirm the default autonomous mode
       /env  - Print env variables with secrets redacted
       /help - Show this help message
@@ -308,7 +266,6 @@ defmodule Beamcore.Agent.Chat.Commands do
 
     Enum.any?(
       [
-        "MISTRAL_API_KEY",
         "OPENAI_API_KEY",
         "API_KEY",
         "TOKEN",

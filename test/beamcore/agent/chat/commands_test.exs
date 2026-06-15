@@ -4,6 +4,7 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
   alias Beamcore.Agent.Chat.{Commands, Session}
 
   setup do
+    Beamcore.Agent.TestEnv.setup_env(%{"ACTIVE_PROVIDER" => "openai"})
     session = Session.new(nil, screen_type: :agent)
     %{session: session}
   end

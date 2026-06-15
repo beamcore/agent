@@ -21,21 +21,21 @@ defmodule Beamcore.ConfigTest do
     %{path: path}
   end
 
-  test "stores and clears mistral api key in config.dets", %{path: path} do
-    refute Config.configured?(:mistral_api_key)
+  test "stores and clears api key in config.dets", %{path: path} do
+    refute Config.configured?(:api_key)
 
-    assert :ok = Config.put_mistral_api_key(" test-token ")
-    assert Config.configured?(:mistral_api_key)
-    assert Config.mistral_api_key() == "test-token"
+    assert :ok = Config.put(:api_key, " test-token ")
+    assert Config.configured?(:api_key)
+    assert Config.get(:api_key) == "test-token"
     assert File.exists?(path)
 
-    assert :ok = Config.delete_mistral_api_key()
-    refute Config.configured?(:mistral_api_key)
-    assert Config.mistral_api_key() == nil
+    assert :ok = Config.delete(:api_key)
+    refute Config.configured?(:api_key)
+    assert Config.get(:api_key) == nil
   end
 
   test "config file uses owner-only permissions where supported", %{path: path} do
-    assert :ok = Config.put_mistral_api_key("test-token")
+    assert :ok = Config.put(:api_key, "test-token")
 
     case File.stat(path) do
       {:ok, %File.Stat{mode: mode}} ->
@@ -47,8 +47,8 @@ defmodule Beamcore.ConfigTest do
   end
 
   test "rejects blank token" do
-    assert {:error, :empty_value} = Config.put_mistral_api_key("   ")
-    refute Config.configured?(:mistral_api_key)
+    assert {:error, :empty_value} = Config.put(:api_key, "   ")
+    refute Config.configured?(:api_key)
   end
 
   defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)

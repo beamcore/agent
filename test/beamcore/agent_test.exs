@@ -3,8 +3,8 @@ defmodule Beamcore.AgentTest do
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
-      "MISTRAL_API_KEY" => "test-api-key",
-      "MISTRAL_BASE_URL" => nil
+      "OPENAI_API_KEY" => "test-api-key",
+      "ACTIVE_PROVIDER" => "openai"
     })
   end
 

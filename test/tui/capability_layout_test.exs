@@ -46,7 +46,7 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     assert_receive {:result, :plain_started}
   end
 
-  test "missing Mistral API key reports config error without plain fallback" do
+  test "missing OpenAI API key reports config error without plain fallback" do
     path =
       Path.join(
         System.tmp_dir!(),
@@ -57,7 +57,7 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     Application.put_env(:agent, :config_dets_path, path)
 
     try do
-      Beamcore.Agent.TestEnv.with_env(%{"MISTRAL_API_KEY" => nil}, fn ->
+      Beamcore.Agent.TestEnv.with_env(%{"OPENAI_API_KEY" => nil, "ACTIVE_PROVIDER" => "openai"}, fn ->
         output =
           ExUnit.CaptureIO.capture_io(fn ->
             result =
@@ -69,8 +69,7 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
             send(self(), {:result, result})
           end)
 
-        assert output =~ "Provider 'mistral' is not configured"
-        assert output =~ "/login"
+        assert output =~ "Provider 'openai' is not configured"
         assert output =~ "/api add"
         refute output =~ "TUI unavailable"
         refute output =~ "Starting plain emergency fallback"
