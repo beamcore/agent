@@ -15,7 +15,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
         }
       })
 
-    context = Context.new(:elixir, :mix) |> Context.update_from_tool("eeva", %{}, result)
+    context = Context.new() |> Context.update_from_tool("eeva", %{}, result)
 
     assert "lib/a.ex" in context.modified_files
     assert "lib/b.ex" in context.modified_files
@@ -23,13 +23,13 @@ defmodule Beamcore.Agent.Chat.ContextTest do
   end
 
   test "ignores non-eeva historical tool names" do
-    context = Context.new(:elixir, :mix)
+    context = Context.new()
     assert Context.update_from_tool(context, "modify_file", %{"path" => "x"}, "ok") == context
   end
 
   test "user request keeps autonomous eeva constraints" do
     context =
-      Context.new(:elixir, :mix) |> Context.from_user_request("fix it", ToolRuntime.default())
+      Context.new() |> Context.from_user_request("fix it", ToolRuntime.default())
 
     summary = Context.summary(context)
     assert summary =~ "All executable work goes through Eeva"
@@ -40,7 +40,7 @@ defmodule Beamcore.Agent.Chat.ContextTest do
     result = Jason.encode!(%{"ok" => false, "summary" => "Eeva execution is blocked by guard."})
 
     context =
-      Context.new(:elixir, :mix)
+      Context.new()
       |> Context.update_from_tool("eeva", %{"code" => "File.write!(\"a\", \"b\")"}, result)
 
     assert Context.summary(context) =~ "Blocked attempts"

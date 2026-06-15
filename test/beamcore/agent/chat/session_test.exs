@@ -21,8 +21,6 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     assert session.session_id != nil
     assert session.log_file != nil
     assert File.dir?(Path.dirname(session.log_file))
-    assert session.project_nature == {:elixir, :make}
-    assert session.context.project_type == {:elixir, :make}
   end
 
   test "log/2 appends data to file" do
@@ -36,6 +34,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     content = File.read!(session.log_file)
     assert content =~ ~s({"test":"data"})
   end
+
   describe "summarize_and_rollover/3" do
     setup do
       client = Beamcore.Provider.Registry.client()
@@ -162,7 +161,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   describe "trim_and_clean_messages/2" do
     test "prepare_for_api includes compact session context message" do
       context =
-        Beamcore.Agent.Chat.Context.new(:elixir)
+        Beamcore.Agent.Chat.Context.new()
         |> Beamcore.Agent.Chat.Context.update_from_tool(
           "eeva",
           %{"code" => "File.read!(\"README.md\")"},
@@ -511,7 +510,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     end
 
     test "Context.compact/1 trims context fields while preserving modified files" do
-      context = Beamcore.Agent.Chat.Context.new(:elixir, :mix)
+      context = Beamcore.Agent.Chat.Context.new()
 
       # Populate fields
       context = %{
@@ -550,7 +549,6 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       compacted = Beamcore.Agent.Chat.Context.compact(context)
 
-      assert compacted.project_type == {:elixir, :mix}
       assert MapSet.size(compacted.inspected_files) == 20
       assert compacted.modified_files == MapSet.new(["write.ex"])
       assert length(compacted.decisions) == 6

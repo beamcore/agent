@@ -18,7 +18,6 @@ defmodule Beamcore.Agent.Chat.Session do
     :compaction_count,
     :correction_count,
     :runtime_caps,
-    :project_nature,
     :workspace_root,
     :context,
     :roles,
@@ -68,7 +67,7 @@ defmodule Beamcore.Agent.Chat.Session do
       |> Keyword.get(:workspace_root, Beamcore.Agent.Tools.PathInput.workspace_root())
       |> Beamcore.Agent.Tools.PathInput.canonical_path()
 
-    {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root)
+    workspace_instructions = Beamcore.Agent.Discovery.WorkspaceContext.load(workspace_root)
 
     system_message =
       cond do
@@ -81,7 +80,7 @@ defmodule Beamcore.Agent.Chat.Session do
         true ->
           %{
             role: "system",
-            content: Beamcore.Agent.Core.Prompts.dev_agent(language, build_system)
+            content: Beamcore.Agent.Core.Prompts.dev_agent(workspace_instructions)
           }
       end
 
@@ -116,9 +115,8 @@ defmodule Beamcore.Agent.Chat.Session do
       compaction_count: 0,
       correction_count: 0,
       runtime_caps: runtime_caps,
-      project_nature: {language, build_system},
       workspace_root: workspace_root,
-      context: Beamcore.Agent.Chat.Context.new(language, build_system),
+      context: Beamcore.Agent.Chat.Context.new(),
       roles: roles,
       screen_type: screen_type,
       mode_settings: mode_settings,
@@ -272,5 +270,7 @@ defmodule Beamcore.Agent.Chat.Session do
 
   # --- Message cleaning delegation ---
 
-  defdelegate trim_and_clean_messages(messages, limit \\ 30), to: MessageCleaner, as: :trim_and_clean
+  defdelegate trim_and_clean_messages(messages, limit \\ 30),
+    to: MessageCleaner,
+    as: :trim_and_clean
 end

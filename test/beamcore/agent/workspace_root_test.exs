@@ -42,7 +42,6 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     File.write!(Path.join(root, "mix.exs"), "defmodule Demo.MixProject do\nend\n")
     session = Session.new(:client, workspace_root: root)
     assert session.workspace_root == root
-    assert session.project_nature == {:elixir, :mix}
   end
 
   test "ordinary Eeva File calls run inside the selected workspace", %{root: root} do

@@ -21,17 +21,20 @@ defmodule Beamcore.Agent.Core.Prompts do
 
   @doc """
   Generates the primary dev agent system prompt (F1).
+
+  Accepts workspace instructions loaded from well-known files
+  (AGENTS.md, CLAUDE.md, etc.) as a list of `{filename, content}` tuples.
   """
-  def dev_agent(language \\ :unknown, build_system \\ :unknown) do
+  def dev_agent(workspace_instructions \\ []) do
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
+
+    workspace_section = format_workspace_instructions(workspace_instructions)
 
     """
     You are **Beamcore.Agent**: an autonomous local coding agent for this project.
     Bias toward useful action: inspect, edit, test, and iterate until the task is genuinely handled.
 
-    **Project Context**:
-    #{project_nature_details(language, build_system)}
-
+    #{workspace_section}
     **Tools**:
     - #{formatted_tools}
     """
@@ -43,11 +46,6 @@ defmodule Beamcore.Agent.Core.Prompts do
   def chat_agent do
     """
     You are **Beamcore.Chat**: a concise, factual general-purpose AI assistant.
-
-    **Core Rules**:
-    - Be clear, direct, and practical.
-    - Use available context and tools when they help.
-    - Ask for clarification only when the next useful step is genuinely ambiguous.
     """
   end
 
@@ -134,47 +132,21 @@ defmodule Beamcore.Agent.Core.Prompts do
 
   # --- Helpers ---
 
-  defp project_nature_details(:elixir, build_system) do
-    base = """
-    - This is an Elixir project.
-    - Prefer idiomatic Elixir.
+  defp format_workspace_instructions([]), do: ""
+
+  defp format_workspace_instructions(files) do
+    sections =
+      Enum.map_join(files, "\n\n", fn {filename, content} ->
+        """
+        === #{filename} ===
+        #{content}
+        """
+      end)
+
     """
 
-    build_details(build_system, base)
-  end
-
-  defp project_nature_details(:erlang, build_system),
-    do: build_details(build_system, "- This is an Erlang project. Prefer idiomatic Erlang.")
-
-  defp project_nature_details(:python, build_system) do
-    base = """
-    - This is a Python project.
-    - Prefer idiomatic Python.
+    **Workspace Instructions**:
+    #{sections}
     """
-
-    build_details(build_system, base)
   end
-
-  defp project_nature_details(:javascript, build_system) do
-    base = """
-    - This is a JavaScript project.
-    - Prefer idiomatic JavaScript.
-    """
-
-    build_details(build_system, base)
-  end
-
-  defp project_nature_details(_unknown, _build_system) do
-    "- Project nature is not fully detected. Infer conventions from existing files before editing."
-  end
-
-  defp build_details(:bazel, base), do: base <> "\n- Build system: Bazel."
-  defp build_details(:make, base), do: base <> "\n- Build system: Make."
-  defp build_details(:mix, base), do: base <> "\n- Build system: Mix."
-  defp build_details(:poetry, base), do: base <> "\n- Build system: Poetry."
-  defp build_details(:pip, base), do: base <> "\n- Build system: pip."
-  defp build_details(:npm, base), do: base <> "\n- Build system: npm."
-  defp build_details(:yarn, base), do: base <> "\n- Build system: Yarn."
-  defp build_details(:pnpm, base), do: base <> "\n- Build system: pnpm."
-  defp build_details(_unknown, base), do: base
 end
