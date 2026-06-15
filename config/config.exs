@@ -1,6 +1,7 @@
 import Config
 
 config :agent, :rate_limit_ms, 1000
+config :agent, :provider_receive_timeout_ms, 300_000
 
 if Config.config_env() == :test do
   config :agent, :completions_module, Beamcore.Agent.MockCompletions
