@@ -78,45 +78,6 @@ defmodule Beamcore.Agent.Core.Prompts do
     """
   end
 
-  # --- Loop Detection & Catch ---
-
-  @doc """
-  Prompt sent to request diagnostic analysis when a mechanical loop is caught.
-  """
-  def loop_diagnosis_request(reason) do
-    """
-    The agent loop has detected a mechanical loop:
-    → #{reason}
-
-    This is NOT a request to apologize or start over. Analyze WHY this loop happened
-    and provide a concrete different approach. The previous approach demonstrably
-    does not work — do something structurally different.
-
-    Provide:
-    1. Brief summary of current state (key decisions, files touched, work done)
-    2. Why the loop occurred (what assumption is wrong?)
-    3. A structurally different plan of action — not a retry of the same approach
-    """
-  end
-
-  @doc """
-  System prompt template after loop correction.
-  """
-  def loop_correction_system(system_content, reason, correction_content) do
-    """
-    #{system_content}
-
-    ⚠️ SYSTEM INTERRUPT: The conversation was interrupted because a mechanical loop was detected:
-    → #{reason}
-
-    The following diagnosis and corrected actions have been formulated:
-
-    #{correction_content}
-
-    You MUST follow the corrected plan. Do NOT repeat the previous approach.
-    """
-  end
-
   # --- Tool Sub-agents ---
 
   @doc """

@@ -33,8 +33,7 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
         "total_tokens" => session.total_tokens || 0,
         "last_prompt_tokens" => session.last_prompt_tokens || 0,
         "needs_compaction" => session.needs_compaction || false,
-        "compaction_count" => session.compaction_count || 0,
-        "correction_count" => session.correction_count || 0
+        "compaction_count" => session.compaction_count || 0
       },
       "workspace_root" => session.workspace_root,
       "intermediate_state" => session.intermediate_state || %{},
@@ -74,7 +73,6 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       last_prompt_tokens: Map.get(usage, "last_prompt_tokens", 0),
       needs_compaction: Map.get(usage, "needs_compaction", false),
       compaction_count: Map.get(usage, "compaction_count", 0),
-      correction_count: Map.get(usage, "correction_count", 0),
       runtime_caps:
         if(screen_type == :chat,
           do: Beamcore.Agent.Chat.ToolRuntime.chat(),
