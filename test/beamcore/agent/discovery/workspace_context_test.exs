@@ -37,31 +37,15 @@ defmodule Beamcore.Agent.Discovery.WorkspaceContextTest do
       assert [{"CLAUDE.md", "# Claude instructions\nBe concise."}] = result
     end
 
-    test "loads .cursorrules when present", %{test_dir: test_dir} do
-      File.write!(Path.join(test_dir, ".cursorrules"), "Use tabs not spaces.")
-
-      result = WorkspaceContext.load(test_dir)
-      assert [{".cursorrules", "Use tabs not spaces."}] = result
-    end
-
-    test "loads COPILOT.md when present", %{test_dir: test_dir} do
-      File.write!(Path.join(test_dir, "COPILOT.md"), "# Copilot guide\nFollow PEP8.")
-
-      result = WorkspaceContext.load(test_dir)
-      assert [{"COPILOT.md", "# Copilot guide\nFollow PEP8."}] = result
-    end
-
     test "loads multiple files in defined order", %{test_dir: test_dir} do
       File.write!(Path.join(test_dir, "AGENTS.md"), "agents content")
       File.write!(Path.join(test_dir, "CLAUDE.md"), "claude content")
-      File.write!(Path.join(test_dir, ".cursorrules"), "cursor content")
-      File.write!(Path.join(test_dir, "COPILOT.md"), "copilot content")
 
       result = WorkspaceContext.load(test_dir)
-      assert length(result) == 4
+      assert length(result) == 2
 
       filenames = Enum.map(result, &elem(&1, 0))
-      assert filenames == ["AGENTS.md", "CLAUDE.md", ".cursorrules", "COPILOT.md"]
+      assert filenames == ["AGENTS.md", "CLAUDE.md"]
     end
 
     test "skips files that are empty after trimming", %{test_dir: test_dir} do
@@ -92,8 +76,7 @@ defmodule Beamcore.Agent.Discovery.WorkspaceContextTest do
       files = WorkspaceContext.instruction_files()
       assert "AGENTS.md" in files
       assert "CLAUDE.md" in files
-      assert ".cursorrules" in files
-      assert "COPILOT.md" in files
+      assert length(files) == 2
     end
   end
 end
