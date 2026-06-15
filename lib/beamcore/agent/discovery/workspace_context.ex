@@ -6,9 +6,7 @@ defmodule Beamcore.Agent.Discovery.WorkspaceContext do
 
   @instruction_files [
     "AGENTS.md",
-    "CLAUDE.md",
-    ".cursorrules",
-    "COPILOT.md"
+    "CLAUDE.md"
   ]
 
   @max_file_bytes 50_000
