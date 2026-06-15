@@ -7,14 +7,9 @@ defmodule Beamcore.Agent.Chat.Context do
   """
 
   defstruct inspected_files: MapSet.new(),
-            modified_files: MapSet.new(),
-            last_validation: nil,
-            decisions: [],
             active_constraints: [],
             current_task: nil,
-            blocked_attempts: [],
-            pending_action: nil,
-            known_risks: []
+            blocked_attempts: []
 
   @max_summary_chars 1_500
   @max_items 12
@@ -33,10 +28,7 @@ defmodule Beamcore.Agent.Chat.Context do
       context
       | inspected_files:
           context.inspected_files |> MapSet.to_list() |> Enum.take(20) |> MapSet.new(),
-        modified_files: context.modified_files,
-        decisions: Enum.take(context.decisions, 6),
         blocked_attempts: Enum.take(context.blocked_attempts, 3),
-        known_risks: Enum.take(context.known_risks, 3),
         current_task: context.current_task
     }
   end
@@ -49,7 +41,6 @@ defmodule Beamcore.Agent.Chat.Context do
     context
     |> maybe_record_blocked_attempt("eeva", args, result)
     |> record_eeva_inspected_files(args)
-    |> update_eeva(result)
   end
 
   def update_from_tool(%__MODULE__{} = context, _name, _args, _result), do: context
@@ -60,11 +51,8 @@ defmodule Beamcore.Agent.Chat.Context do
     [
       "Known session context:",
       list_line("Inspected this session", context.inspected_files),
-      list_line("Modified this session", context.modified_files),
       list_line("Active constraints", context.active_constraints),
-      list_line("Decisions", context.decisions),
       list_line("Blocked attempts", context.blocked_attempts),
-      list_line("Known risks", context.known_risks),
       task_line(context.current_task)
     ]
     |> Enum.reject(&is_nil/1)
@@ -85,18 +73,6 @@ defmodule Beamcore.Agent.Chat.Context do
 
     Enum.reduce(paths, context, fn path, current ->
       %{current | inspected_files: MapSet.put(current.inspected_files, normalize_path(path))}
-    end)
-  end
-
-  defp update_eeva(context, result) do
-    result
-    |> decode_json()
-    |> Map.get("filesystem_changes", %{})
-    |> Map.get("mutations", [])
-    |> Enum.reduce(context, fn mutation, current ->
-      current
-      |> add_modified(Map.get(mutation, "path"))
-      |> add_modified(Map.get(mutation, "target_path"))
     end)
   end
 
@@ -124,20 +100,11 @@ defmodule Beamcore.Agent.Chat.Context do
     String.contains?(text, "blocked") or String.contains?(text, "not available")
   end
 
-  defp blocked_summary?(_summary), do: false
-
-  defp add_modified(context, nil), do: context
-
-  defp add_modified(context, path),
-    do: %{context | modified_files: MapSet.put(context.modified_files, normalize_path(path))}
-
   defp normalize_path(path) when is_binary(path) do
     path
     |> Path.expand("/")
     |> Path.relative_to("/")
   end
-
-  defp normalize_path(path), do: to_string(path)
 
   defp prepend_unique(list, item),
     do: [item | Enum.reject(list, &(&1 == item))] |> Enum.take(@max_items)
@@ -164,8 +131,6 @@ defmodule Beamcore.Agent.Chat.Context do
       _ -> %{}
     end
   end
-
-  defp decode_json(_), do: %{}
 
   defp compact_text(nil, _max_chars), do: ""
 

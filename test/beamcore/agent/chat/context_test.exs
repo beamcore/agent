@@ -3,25 +3,6 @@ defmodule Beamcore.Agent.Chat.ContextTest do
 
   alias Beamcore.Agent.Chat.{Context, ToolRuntime}
 
-  test "tracks workspace mutations reported by eeva" do
-    result =
-      Jason.encode!(%{
-        "ok" => true,
-        "filesystem_changes" => %{
-          "mutations" => [
-            %{"path" => "lib/a.ex"},
-            %{"path" => "lib/b.ex", "target_path" => "lib/c.ex"}
-          ]
-        }
-      })
-
-    context = Context.new() |> Context.update_from_tool("eeva", %{}, result)
-
-    assert "lib/a.ex" in context.modified_files
-    assert "lib/b.ex" in context.modified_files
-    assert "lib/c.ex" in context.modified_files
-  end
-
   test "ignores non-eeva historical tool names" do
     context = Context.new()
     assert Context.update_from_tool(context, "modify_file", %{"path" => "x"}, "ok") == context
