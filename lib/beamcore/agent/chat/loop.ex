@@ -416,6 +416,12 @@ defmodule Beamcore.Agent.Chat.Loop do
 
       {:error, %OpenaiEx.Error{kind: :rate_limit} = error} ->
         message = Beamcore.Agent.Chat.RateLimit.message(error)
+        Beamcore.AppLog.warn("Rate limit hit",
+          provider: provider_name(session),
+          model: model_name(session),
+          status_code: error.status_code,
+          message: message
+        )
 
         wait_ms =
           Beamcore.Agent.Chat.RateLimit.retry_after_ms(error) ||
@@ -429,6 +435,13 @@ defmodule Beamcore.Agent.Chat.Loop do
       {:error, %Beamcore.Provider.Error{kind: :rate_limit} = error} ->
         wait_ms = error.retry_after_ms || Beamcore.Agent.Chat.RateLimit.default_wait_ms()
         message = error.message || "Provider rate limit reached."
+        Beamcore.AppLog.warn("Rate limit hit",
+          provider: provider_name(session),
+          model: model_name(session),
+          kind: error.kind,
+          message: message,
+          retry_after_ms: wait_ms
+        )
         retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
         maybe_print(opts, fn -> Pretty.print_error(retry_message) end)
         sleep_before_retry(opts, :rate_limit, wait_ms, retry_message)
@@ -436,6 +449,12 @@ defmodule Beamcore.Agent.Chat.Loop do
 
       {:error, %OpenaiEx.Error{kind: :api_timeout_error}} ->
         message = timeout_message(session, settings, call_elapsed)
+        Beamcore.AppLog.error("Provider timeout",
+          provider: provider_name(session),
+          model: model_name(session),
+          elapsed_ms: call_elapsed,
+          configured_timeout_ms: receive_timeout_ms(settings)
+        )
         maybe_print(opts, fn -> Pretty.print_error(message) end)
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
@@ -447,12 +466,25 @@ defmodule Beamcore.Agent.Chat.Loop do
         )
 
       {:error, %Beamcore.Provider.Error{} = error} ->
+        Beamcore.AppLog.error("Provider error",
+          provider: provider_name(session),
+          model: model_name(session),
+          kind: error.kind,
+          message: error.message
+        )
         maybe_print(opts, fn -> Pretty.print_error(error.message) end)
         emit(opts, {:error, error.message})
         emit(opts, {:status, :error})
         Session.append_timeline(session, :failed, error.message)
 
       {:error, %OpenaiEx.Error{} = error} ->
+        Beamcore.AppLog.error("API error",
+          provider: provider_name(session),
+          model: model_name(session),
+          status_code: error.status_code,
+          message: error.message,
+          body: error.body
+        )
         maybe_print(opts, fn -> Pretty.print_api_error(error) end)
         emit(opts, {:error, api_error_text(error)})
         emit(opts, {:status, :error})
@@ -460,6 +492,11 @@ defmodule Beamcore.Agent.Chat.Loop do
 
       {:error, reason} ->
         message = "#{inspect(reason)}"
+        Beamcore.AppLog.error("Unknown provider error",
+          provider: provider_name(session),
+          model: model_name(session),
+          reason: message
+        )
         maybe_print(opts, fn -> Pretty.print_error(message) end)
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
