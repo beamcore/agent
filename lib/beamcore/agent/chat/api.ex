@@ -9,13 +9,11 @@ defmodule Beamcore.Agent.Chat.API do
                         :completions_module,
                         OpenaiEx.Chat.Completions
                       )
-  @default_model "mistral-medium-3-5"
+  @default_model nil
 
   def default_model do
     System.get_env("API_MODEL") ||
       System.get_env("API_CHAT_MODEL") ||
-      System.get_env("MISTRAL_CHAT_MODEL") ||
-      System.get_env("MISTRAL_MODEL") ||
       get_active_provider_default_model() ||
       Application.get_env(:agent, :chat_model, @default_model)
   end

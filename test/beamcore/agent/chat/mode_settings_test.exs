@@ -11,7 +11,8 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
       "BEAMCORE_AGENT_MODEL" => nil,
       "BEAMCORE_MAX_TOOL_CALLS" => nil,
       "BEAMCORE_CHAT_TOOL_DEPTH_LIMIT" => nil,
-      "BEAMCORE_AGENT_TOOL_DEPTH_LIMIT" => nil
+      "BEAMCORE_AGENT_TOOL_DEPTH_LIMIT" => nil,
+      "ACTIVE_PROVIDER" => "openai"
     })
   end
 

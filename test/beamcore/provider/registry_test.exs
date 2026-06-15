@@ -14,7 +14,7 @@ defmodule Beamcore.Provider.RegistryTest do
     Application.put_env(:agent, :config_dets_path, path)
 
     Beamcore.Agent.TestEnv.setup_env(%{
-      "MISTRAL_API_KEY" => nil,
+      "OPENAI_API_KEY" => nil,
       "API_KEY" => nil,
       "ACTIVE_PROVIDER" => nil
     })
@@ -30,13 +30,13 @@ defmodule Beamcore.Provider.RegistryTest do
   test "lists default providers with provider-neutral capabilities" do
     providers = Registry.list()
 
-    assert Enum.any?(providers, &(&1.name == "mistral"))
+    assert Enum.any?(providers, &(&1.name == "openai"))
     refute Enum.any?(providers, &(&1.name == "ollama"))
 
-    mistral = Enum.find(providers, &(&1.name == "mistral"))
-    assert mistral.requires_api_key?
-    assert mistral.adapter == Beamcore.Provider.Adapters.OpenAICompatible
-    assert %Capabilities{tool_calls: true, local: false} = mistral.capabilities
+    openai = Enum.find(providers, &(&1.name == "openai"))
+    assert openai.requires_api_key?
+    assert openai.adapter == Beamcore.Provider.Adapters.OpenAICompatible
+    assert %Capabilities{tool_calls: true, local: false} = openai.capabilities
   end
 
   test "custom providers select the OpenAI-compatible adapter without atom creation" do
@@ -57,8 +57,8 @@ defmodule Beamcore.Provider.RegistryTest do
   end
 
   test "selection validation returns typed missing config errors" do
-    assert {:error, %Error{kind: :missing_config, provider: :mistral}} =
-             Registry.validate_selection("mistral")
+    assert {:error, %Error{kind: :missing_config, provider: :openai}} =
+             Registry.validate_selection("openai")
 
     assert {:error, %Error{kind: :invalid_config}} = Registry.validate_selection("ollama")
   end

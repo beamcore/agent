@@ -27,7 +27,7 @@ config/                   # Elixir config (config.exs)
 
 ## Architecture
 - **OTP Supervision**: `Beamcore.Agent` supervises Config, Memory, RateLimiter, Scheduler, TaskSupervisor, Eeva workers, TUI
-- **Providers**: `Beamcore.Provider` behaviour with `OpenAICompatible` adapter for all APIs. Registry holds defaults (mistral, openai, deepseek). Router handles dispatch with rate limiting
+- **Providers**: `Beamcore.Provider` behaviour with `OpenAICompatible` adapter for all APIs. Registry holds defaults (openai, deepseek). Router handles dispatch with rate limiting
 - **Eeva**: Model writes plain Elixir code. Parsed/validated by `Sandbox` (size, AST, atom limits), executed by `Worker` under supervision with timeout/memory/reduction caps. Output captured and truncated
 - **Two UI modes**: TUI (`ex_ratatui`) and plain fallback IO. `Beamcore.Agent.chat/2` auto-detects
 - **Memory**: `Beamcore.Memory` — scoped `{type, org, repo, key}` store. Types: facts, decisions, patterns, errors, context, notes, preferences, tasks, projects
@@ -42,7 +42,7 @@ config/                   # Elixir config (config.exs)
 - Secrets redacted in logs and env display; destructive ops require `confirm: true`
 
 ## Key Env Vars
-- `MISTRAL_API_KEY`, `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` — provider keys
+- `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` — provider keys
 - `BEAMCORE_AGENT_PROVIDER`, `BEAMCORE_AGENT_MODEL` — override defaults
 - `BEAMCORE_EEVA_TIMEOUT_MS`, `BEAMCORE_EEVA_MAX_CODE_BYTES` — Eeva limits
 - `BEAMCORE_MAX_TOOL_CALLS` — cap model tool iterations

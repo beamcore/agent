@@ -6,8 +6,8 @@ defmodule Beamcore.Agent.Chat.APITest do
 
   setup do
     Beamcore.Agent.TestEnv.setup_env(%{
-      "MISTRAL_API_KEY" => "test-api-key",
-      "MISTRAL_BASE_URL" => nil
+      "OPENAI_API_KEY" => "test-api-key",
+      "ACTIVE_PROVIDER" => "openai"
     })
 
     client = Beamcore.Provider.Registry.client()
@@ -125,13 +125,13 @@ defmodule Beamcore.Agent.Chat.APITest do
 
   test "execute/5 supports custom model in opts", %{client: client} do
     Process.put(:mock_completions_create, fn _client, params ->
-      assert params.model == "mistral-small-2603"
+      assert params.model == "gpt-4o-mini"
       {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "Hello"}}]}}
     end)
 
     assert {:ok, %{message: %{"content" => "Hello"}}} =
              API.execute(client, [%{role: "user", content: "hello"}], [], :main,
-               model: "mistral-small-2603"
+               model: "gpt-4o-mini"
              )
   end
 

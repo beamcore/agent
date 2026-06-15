@@ -139,9 +139,7 @@ defmodule Beamcore.Agent do
   end
 
   defp missing_config_reason?(reason) when is_binary(reason),
-    do:
-      String.contains?(reason, "MISTRAL_API_KEY environment variable is required") or
-        String.contains?(reason, "Beamcore is not configured yet")
+    do: String.contains?(reason, "Beamcore is not configured yet")
 
   defp print_missing_config_error do
     Beamcore.AppLog.warn("Provider configuration missing")

@@ -25,8 +25,6 @@ approval before normal work.
 | Command | Purpose |
 |---|---|
 | `/help` | Show available commands. |
-| `/login` | Store a Mistral API key in the local Beamcore config. |
-| `/logout` | Remove the stored Mistral API key. |
 | `/api` | List configured providers. |
 | `/api use PROVIDER [MODEL]` | Switch the active provider/model. |
 | `/api model MODEL` | Switch the model for the active provider. |

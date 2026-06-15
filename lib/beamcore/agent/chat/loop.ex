@@ -61,35 +61,8 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp handle_command("paste", session, pid), do: handle_paste(session, pid, "/end")
 
   defp handle_command(command, session, pid) do
-    case Commands.execute(command, session) do
-      {:login_prompt, session} ->
-        handle_login_prompt(session, pid)
-
-      new_session ->
-        loop(new_session, pid)
-    end
-  end
-
-  defp handle_login_prompt(session, pid) do
-    case IO.gets("Mistral API key: ") do
-      input when is_binary(input) ->
-        session =
-          case Commands.store_login_token(input) do
-            :ok ->
-              IO.puts(Commands.login_saved_message())
-              session
-
-            {:error, :empty_value} ->
-              IO.puts("Login token was empty; nothing was saved.")
-              session
-          end
-
-        loop(session, pid)
-
-      _ ->
-        IO.puts("Login canceled.")
-        loop(session, pid)
-    end
+    new_session = Commands.execute(command, session)
+    loop(new_session, pid)
   end
 
   defp handle_paste(session, pid, terminator) do

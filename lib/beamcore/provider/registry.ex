@@ -11,18 +11,6 @@ defmodule Beamcore.Provider.Registry do
   alias Beamcore.Provider.Adapters.OpenAICompatible
 
   @defaults %{
-    "mistral" => %{
-      id: :mistral,
-      adapter: OpenAICompatible,
-      base_url: "https://api.mistral.ai/v1",
-      auth: :bearer,
-      secret_envs: ["MISTRAL_API_KEY", "API_KEY"],
-      legacy_secret: :mistral,
-      default_model: "mistral-medium-3-5",
-      requires_api_key?: true,
-      local?: false,
-      default_primary?: true
-    },
     "openai" => %{
       id: :openai,
       adapter: OpenAICompatible,
@@ -114,12 +102,7 @@ defmodule Beamcore.Provider.Registry do
         "Unknown provider '#{name}'. Run /api list to choose a configured provider."
 
       %{requires_api_key?: true} ->
-        legacy =
-          if name == "mistral",
-            do: " You may also use /login for the legacy Mistral credential flow.",
-            else: ""
-
-        "Provider '#{name}' is not configured. Use /api add #{name} <token> [<base_url>] [<model>].#{legacy}"
+        "Provider '#{name}' is not configured. Use /api add #{name} <token> [<base_url>] [<model>]."
 
       _provider ->
         "Provider '#{name}' is unavailable. Check its endpoint/model configuration with /api list."
@@ -127,7 +110,7 @@ defmodule Beamcore.Provider.Registry do
   end
 
   def default_primary_provider_name do
-    default_provider_name(:default_primary?) || "mistral"
+    default_provider_name(:default_primary?)
   end
 
   def resolve_api_key(%{auth: :none}), do: nil
@@ -274,20 +257,6 @@ defmodule Beamcore.Provider.Registry do
   @spec capabilities(binary(), binary() | nil) :: Capabilities.t()
   def capabilities(provider_name, model \\ nil)
 
-  def capabilities("mistral", _model) do
-    %Capabilities{
-      chat: true,
-      streaming: false,
-      tool_calls: true,
-      parallel_tool_calls: true,
-      structured_output: true,
-      context_window: 128_000,
-      latency_class: :medium,
-      token_accounting: true,
-      retry_after: true
-    }
-  end
-
   def capabilities("openai", _model) do
     %Capabilities{
       chat: true,
@@ -357,9 +326,6 @@ defmodule Beamcore.Provider.Registry do
       is_binary(legacy_secret_value(default)) ||
       is_binary(env_secret_value(default))
   end
-
-  defp legacy_secret_value(%{legacy_secret: :mistral}),
-    do: Beamcore.Config.mistral_api_key()
 
   defp legacy_secret_value(_default), do: nil
 

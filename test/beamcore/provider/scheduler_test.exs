@@ -7,7 +7,7 @@ defmodule Beamcore.Provider.SchedulerTest do
     name = :"scheduler_#{System.unique_integer([:positive])}"
     {:ok, _pid} = Scheduler.start_link(name: name, default_interval: 1_000)
 
-    remote = {:mistral, "default", "mistral-medium"}
+    remote = {:openai, "default", "gpt-4o"}
     local = {:custom_local, nil, "small-model"}
 
     assert :ok == Scheduler.wait(remote, name: name)
@@ -36,7 +36,7 @@ defmodule Beamcore.Provider.SchedulerTest do
     name = :"scheduler_#{System.unique_integer([:positive])}"
     {:ok, _pid} = Scheduler.start_link(name: name, default_interval: 0)
 
-    remote = {:mistral, "default", "mistral-medium"}
+    remote = {:openai, "default", "gpt-4o"}
     local = {:custom_local, nil, "small-model"}
 
     assert :ok == Scheduler.cooldown(remote, 1_000, name: name)
@@ -61,7 +61,7 @@ defmodule Beamcore.Provider.SchedulerTest do
   test "wait callback receives scheduler delay instead of sleeping internally" do
     name = :"scheduler_#{System.unique_integer([:positive])}"
     {:ok, _pid} = Scheduler.start_link(name: name, default_interval: 1_000)
-    key = {:mistral, "default", "mistral-medium"}
+    key = {:openai, "default", "gpt-4o"}
     parent = self()
 
     assert :ok == Scheduler.wait(key, name: name)

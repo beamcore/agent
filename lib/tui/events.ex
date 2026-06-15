@@ -738,10 +738,6 @@ defmodule Beamcore.TUI.Events do
         value == "" ->
           state
 
-        state.pending_login? ->
-          ExRatatui.textarea_set_value(state.textarea, "")
-          complete_login(%{state | show_commands: false}, value)
-
         String.starts_with?(value, "/") ->
           ExRatatui.textarea_set_value(state.textarea, "")
           state = maybe_record_command_history(state, value)
@@ -910,13 +906,6 @@ defmodule Beamcore.TUI.Events do
     |> start_turn(content, caps)
   end
 
-  defp apply_command_result({:login_prompt, session}, state, _command) do
-    state
-    |> State.set_session(session)
-    |> Map.put(:pending_login?, true)
-    |> State.mark_dirty()
-  end
-
   defp apply_command_result(session, state, "new" <> _ = command) do
     msg =
       if String.trim(command) == "new" do
@@ -937,20 +926,6 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp apply_command_result(session, state, _command), do: State.set_session(state, session)
-
-  defp complete_login(state, token) do
-    state = %{state | pending_login?: false, history_index: nil}
-
-    case Commands.store_login_token(token) do
-      :ok ->
-        state
-        |> State.set_session(state.session)
-        |> State.add_message(:system, Commands.login_saved_message())
-
-      {:error, :empty_value} ->
-        State.add_message(state, :system, "Login token was empty; nothing was saved.")
-    end
-  end
 
   defp start_turn(state, content, caps) do
     parent = self()

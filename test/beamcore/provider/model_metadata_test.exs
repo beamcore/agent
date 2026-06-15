@@ -15,7 +15,7 @@ defmodule Beamcore.Provider.ModelMetadataTest do
     Application.put_env(:agent, :config_dets_path, path)
 
     Beamcore.Agent.TestEnv.setup_env(%{
-      "MISTRAL_API_KEY" => nil,
+      "OPENAI_API_KEY" => nil,
       "API_KEY" => nil,
       "ACTIVE_PROVIDER" => nil
     })
@@ -33,7 +33,7 @@ defmodule Beamcore.Provider.ModelMetadataTest do
   end
 
   test "registry fallback is marked as estimated when API does not provide context" do
-    metadata = ModelMetadata.fallback("mistral", "mistral-medium-3-5")
+    metadata = ModelMetadata.fallback("openai", "gpt-4o")
 
     assert metadata.context_window == 128_000
     assert metadata.source == :registry
