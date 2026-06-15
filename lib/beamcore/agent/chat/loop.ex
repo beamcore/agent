@@ -90,72 +90,83 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp do_process_messages(session, messages, pid, depth, caps, opts) do
-    tools = Dispatcher.tool_specs(caps)
-    settings = mode_settings(session)
-
-    opts =
-      case session.screen_type do
-        :agent -> Keyword.put_new(opts, :temperature, 0.2)
-        _ -> opts
-      end
-
-    with {:ok, api_messages, budget_plan, metadata} <-
-           prepare_api_messages(session, messages, caps, tools, settings) do
-      emit(opts, {:model_context, model_context_event(session, budget_plan, metadata)})
-
-      session =
-        Session.append_timeline(session, :model_call, model_call_summary(session), %{
-          role: model_call_role(session),
-          title: model_call_title(session),
-          metadata:
-            %{
-              provider: provider_name(session),
-              model: model_name(session),
-              depth: depth
-            }
-            |> Map.merge(model_context_event(session, budget_plan, metadata)),
-          checkpoint: false
-        })
-
-      call_started = System.monotonic_time(:millisecond)
-
-      api_result =
-        API.execute(session.client, api_messages, tools, :main,
-          selection: Beamcore.Provider.Selection.primary(session.roles),
-          model: model_name(session),
-          silent: Keyword.get(opts, :silent, false),
-          retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
-          temperature: Keyword.get(opts, :temperature),
-          max_tokens: budget_plan.reserved_output_tokens,
-          wait_fun: fn wait_ms ->
-            sleep_before_retry(
-              opts,
-              :cooldown,
-              wait_ms,
-              "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
-            )
-          end
-        )
-
-      call_elapsed = System.monotonic_time(:millisecond) - call_started
-
-      handle_api_result(
-        api_result,
-        session,
-        messages,
-        message_context(pid, caps, opts, settings, call_elapsed, depth)
+    if session.session_paused do
+      emit(
+        opts,
+        {:error,
+         "Session paused: context exceeds 200k tokens. Run /compress to compress the session before continuing."}
       )
-    else
-      {:error, budget_plan} ->
-        message = context_budget_error(session, budget_plan)
-        emit(opts, {:error, message})
-        emit(opts, {:status, :error})
 
-        Session.append_timeline(session, :failed, message,
-          role: model_call_role(session),
-          title: "Model context budget exceeded",
-          metadata: budget_plan
+      emit(opts, {:status, :idle})
+      session
+    else
+      tools = Dispatcher.tool_specs(caps)
+      settings = mode_settings(session)
+
+      opts =
+        case session.screen_type do
+          :agent -> Keyword.put_new(opts, :temperature, 0.2)
+          _ -> opts
+        end
+
+      with {:ok, api_messages, budget_plan, metadata} <-
+             prepare_api_messages(session, messages, caps, tools, settings) do
+        emit(opts, {:model_context, model_context_event(session, budget_plan, metadata)})
+
+        session =
+          Session.append_timeline(session, :model_call, model_call_summary(session), %{
+            role: model_call_role(session),
+            title: model_call_title(session),
+            metadata:
+              %{
+                provider: provider_name(session),
+                model: model_name(session),
+                depth: depth
+              }
+              |> Map.merge(model_context_event(session, budget_plan, metadata)),
+            checkpoint: false
+          })
+
+        call_started = System.monotonic_time(:millisecond)
+
+        api_result =
+          API.execute(session.client, api_messages, tools, :main,
+            selection: Beamcore.Provider.Selection.primary(session.roles),
+            model: model_name(session),
+            silent: Keyword.get(opts, :silent, false),
+            retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
+            temperature: Keyword.get(opts, :temperature),
+            max_tokens: budget_plan.reserved_output_tokens,
+            wait_fun: fn wait_ms ->
+              sleep_before_retry(
+                opts,
+                :cooldown,
+                wait_ms,
+                "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
+              )
+            end
+          )
+
+        call_elapsed = System.monotonic_time(:millisecond) - call_started
+
+        handle_api_result(
+          api_result,
+          session,
+          messages,
+          message_context(pid, caps, opts, settings, call_elapsed, depth)
         )
+      else
+        {:error, budget_plan} ->
+          message = context_budget_error(session, budget_plan)
+          emit(opts, {:error, message})
+          emit(opts, {:status, :error})
+
+          Session.append_timeline(session, :failed, message,
+            role: model_call_role(session),
+            title: "Model context budget exceeded",
+            metadata: budget_plan
+          )
+      end
     end
   end
 
@@ -192,83 +203,87 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         emit(opts, {:session, session})
 
-        # --- Grace period logic ---
-        # Hard limit: force rollover immediately, even mid-tool-chain
-        if Session.needs_rollover_now?(session) do
-          rolled_session = Session.summarize_and_rollover(session, messages ++ [message], pid)
-          finish_turn(rolled_session, opts)
+        # Emit warnings when context is getting large
+        if session.session_paused do
+          emit(
+            opts,
+            {:error,
+             "Session paused: context exceeds 200k tokens. Run /compress to compress the session before continuing."}
+          )
         else
-          message = normalize_tool_calls(message)
-          compacted_message = Session.compact_for_api(message)
-          new_messages = messages ++ [compacted_message]
-
-          if has_tool_calls?(message) do
-            # Agent has more work to do — continue the tool chain.
-            # Even if needs_compaction is true, we let it finish.
-            {tool_responses, session} =
-              Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
-                name = tool_call["function"]["name"]
-                args = decode_tool_args(tool_call["function"]["arguments"])
-
-                emit(opts, {:tool_queued, name, args})
-                emit(opts, {:status, :tool_running})
-                emit(opts, {:tool_running, name, args})
-
-                session = maybe_pre_tool_checkpoint(session, name, args)
-
-                content = Dispatcher.execute(name, args, caps)
-
-                event_content = compact_event_content(content)
-                emit(opts, {:tool_finished, name, args, event_content})
-
-                session =
-                  session
-                  |> update_context(name, args, content)
-                  |> maybe_post_tool_checkpoint(name, args, content)
-                  |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
-                    role: tool_role(session),
-                    title: "Tool call: #{name}",
-                    metadata: %{
-                      tool: name,
-                      result: event_content
-                    },
-                    checkpoint: false
-                  })
-
-                emit(opts, {:session, session})
-
-                {
-                  %{
-                    role: "tool",
-                    tool_call_id: tool_call["id"],
-                    name: name,
-                    content: content
-                  },
-                  session
-                }
-              end)
-
-            Enum.each(tool_responses, &Session.log(session, &1))
-
-            process_messages(
-              session,
-              new_messages ++ tool_responses,
-              pid,
-              depth + 1,
-              caps,
-              opts
+          if session.warn_user do
+            emit(
+              opts,
+              {:assistant,
+               "Warning: context exceeds 150k tokens. Consider running /compress to compress the session."}
             )
-          else
-            # Natural break — agent is done with tool calls, responding to user.
-            # If compaction is needed, this is the moment to do it.
-            if session.needs_compaction do
-              rolled_session = Session.summarize_and_rollover(session, new_messages, pid)
-              finish_turn(rolled_session, opts)
-            else
-              session = %{session | messages: Session.compact_history(new_messages)}
-              finish_turn(session, opts)
-            end
           end
+        end
+
+        message = normalize_tool_calls(message)
+        compacted_message = Session.compact_for_api(message)
+        new_messages = messages ++ [compacted_message]
+
+        if has_tool_calls?(message) do
+          # Agent has more work to do — continue the tool chain.
+          # Even if needs_compaction is true, we let it finish.
+          {tool_responses, session} =
+            Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
+              name = tool_call["function"]["name"]
+              args = decode_tool_args(tool_call["function"]["arguments"])
+
+              emit(opts, {:tool_queued, name, args})
+              emit(opts, {:status, :tool_running})
+              emit(opts, {:tool_running, name, args})
+
+              session = maybe_pre_tool_checkpoint(session, name, args)
+
+              content = Dispatcher.execute(name, args, caps)
+
+              event_content = compact_event_content(content)
+              emit(opts, {:tool_finished, name, args, event_content})
+
+              session =
+                session
+                |> update_context(name, args, content)
+                |> maybe_post_tool_checkpoint(name, args, content)
+                |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
+                  role: tool_role(session),
+                  title: "Tool call: #{name}",
+                  metadata: %{
+                    tool: name,
+                    result: event_content
+                  },
+                  checkpoint: false
+                })
+
+              emit(opts, {:session, session})
+
+              {
+                %{
+                  role: "tool",
+                  tool_call_id: tool_call["id"],
+                  name: name,
+                  content: content
+                },
+                session
+              }
+            end)
+
+          Enum.each(tool_responses, &Session.log(session, &1))
+
+          process_messages(
+            session,
+            new_messages ++ tool_responses,
+            pid,
+            depth + 1,
+            caps,
+            opts
+          )
+        else
+          # Natural break — agent is done with tool calls, responding to user.
+          session = %{session | messages: Session.compact_history(new_messages)}
+          finish_turn(session, opts)
         end
 
       {:error, %OpenaiEx.Error{kind: :rate_limit} = error} ->
