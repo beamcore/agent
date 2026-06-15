@@ -298,9 +298,7 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp recoverable_error_text(message, extra \\ nil) do
-    hint = "Session is still active. You can continue or ask the agent to retry."
-
-    [message, extra, hint]
+    [message, extra, "Session is still active. Ask the agent to retry."]
     |> Enum.reject(&(&1 in [nil, ""]))
     |> Enum.join("\n")
   end

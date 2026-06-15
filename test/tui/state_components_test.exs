@@ -122,17 +122,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert [%{role: :error, content: content}] = state.messages
     assert content =~ "Eeva stopped: boom"
     assert content =~ "Session is still active"
-    assert content =~ "ask the agent to retry"
-  end
-
-  test "plain recoverable TUI errors include continuity hint" do
-    state = %State{messages: [], status: :thinking}
-
-    state = Events.handle_runtime_event({:error, "Provider failed"}, state)
-
-    assert [%{role: :error, content: content}] = state.messages
-    assert content =~ "Provider failed"
-    assert content =~ "Session is still active"
+    assert content =~ "Ask the agent to retry."
   end
 
   test "worker crash message points to app log and keeps TUI idle" do

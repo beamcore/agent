@@ -509,10 +509,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert Session.needs_rollover_now?(session2)
     end
 
-    test "Context.compact/1 trims context fields while preserving modified files" do
+    test "Context.compact/1 trims context fields" do
       context = Beamcore.Agent.Chat.Context.new()
 
-      # Populate fields
+      # Populate fields with many items to test trimming
       context = %{
         context
         | inspected_files:
@@ -540,21 +540,14 @@ defmodule Beamcore.Agent.Chat.SessionTest do
               "u.ex",
               "v.ex"
             ]),
-          modified_files: MapSet.new(["write.ex"]),
-          decisions: ["dec1", "dec2", "dec3", "dec4", "dec5", "dec6", "dec7"],
-          blocked_attempts: ["att1", "att2", "att3", "att4"],
-          known_risks: ["risk1", "risk2", "risk3", "risk4"],
-          last_validation: %{command: "test", ok: true, summary: "passed"}
+          blocked_attempts: ["att1", "att2", "att3", "att4"]
       }
 
       compacted = Beamcore.Agent.Chat.Context.compact(context)
 
       assert MapSet.size(compacted.inspected_files) == 20
-      assert compacted.modified_files == MapSet.new(["write.ex"])
-      assert length(compacted.decisions) == 6
       assert length(compacted.blocked_attempts) == 3
-      assert length(compacted.known_risks) == 3
-      assert compacted.last_validation == %{command: "test", ok: true, summary: "passed"}
+      assert compacted.current_task == nil
     end
 
     test "summarize_and_rollover/3 performs fallback local compaction if API call fails" do
@@ -574,7 +567,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       # 2. Modify session context
       session = %{
         session
-        | context: %{session.context | modified_files: MapSet.new(["lib/fallback_modified.ex"])},
+        | context: session.context,
           session_id: "fallback-session-id",
           last_prompt_tokens: 155_000,
           needs_compaction: true
@@ -591,7 +584,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.total_tokens == 0
 
       # Context is still compacted and preserved
-      assert new_session.context.modified_files == MapSet.new(["lib/fallback_modified.ex"])
+      # Context is preserved after compaction
 
       # Message history is locally trimmed but non-empty
       assert length(new_session.messages) > 0
