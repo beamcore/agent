@@ -17,12 +17,10 @@ RELEASE_DIR   = _build/prod/rel/$(RELEASE_NAME)
 VERBOSE ?= 0
 DRY_RUN ?= 0
 
-LOAD_ENV = set -a; [ ! -f .env ] || . ./.env; set +a;
-
 .PHONY: all help
 .PHONY: install install-dev uninstall
 .PHONY: deps compile release test format format-check dialyzer check check-full
-.PHONY: chat chat-plain shell run-memory
+.PHONY: chat shell run-memory
 .PHONY: dev-setup init config-status version clean update
 
 all: compile
@@ -184,15 +182,11 @@ clean:
 
 ## chat: Start the TUI chat (dev mode)
 chat: compile
-	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
-
-## chat-plain: Start the plain fallback chat (dev mode)
-chat-plain: compile
-	$(LOAD_ENV) mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat(:plain)"
+	mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
 
 ## run-memory: Run memory service standalone (cluster member)
 run-memory: compile
-	$(LOAD_ENV) MEMORY_GLOBAL=true elixir --sname memory -S mix run --no-halt
+	MEMORY_GLOBAL=true elixir --sname memory -S mix run --no-halt
 
 # ==============================================================================
 # Setup & Config
@@ -254,7 +248,6 @@ help:
 	@echo ""
 	@echo "  \033[1mRunning:\033[0m"
 	@printf "    \033[36m%-16s\033[0m %s\n" "chat" "Start TUI chat (dev mode)"
-	@printf "    \033[36m%-16s\033[0m %s\n" "chat-plain" "Start plain fallback chat"
 	@printf "    \033[36m%-16s\033[0m %s\n" "run-memory" "Run memory service standalone"
 	@echo ""
 	@echo "  \033[1mSetup:\033[0m"

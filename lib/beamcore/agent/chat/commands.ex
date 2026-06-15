@@ -248,7 +248,7 @@ defmodule Beamcore.Agent.Chat.Commands do
   end
 
   defp handle_unknown(command, session, _output, false) do
-    Beamcore.Agent.Core.Pretty.print_error("Unknown command: /#{command}")
+    IO.puts("Unknown command: /#{command}")
     session
   end
 

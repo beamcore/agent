@@ -31,7 +31,6 @@ defmodule Beamcore.Agent do
       Beamcore.Agent.Tools.Eeva.AtomBudget,
       Beamcore.Agent.Tools.Eeva.Supervisor,
       Beamcore.Provider.Health,
-      Beamcore.Agent.Core.StatusBar,
       Beamcore.TUI.DynamicSupervisor
     ]
 
@@ -70,25 +69,8 @@ defmodule Beamcore.Agent do
 
   def chat(:auto, opts) do
     with_workspace(opts, fn opts ->
-      try do
-        case ensure_chat_config(opts) do
-          :ok ->
-            if Beamcore.TUI.Capability.supported?(opts) do
-              start_tui(opts)
-            else
-              fallback_to_plain(Beamcore.TUI.Capability.unsupported_reason(opts), opts)
-            end
-        end
-      rescue
-        error ->
-          Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :chat_auto)
-          reason = Exception.message(error)
-
-          if missing_config_reason?(reason) do
-            print_missing_config_error()
-          else
-            fallback_to_plain(reason, opts)
-          end
+      case ensure_chat_config(opts) do
+        :ok -> start_tui(opts)
       end
     end)
   end
@@ -100,26 +82,8 @@ defmodule Beamcore.Agent do
     end)
   end
 
-  def chat(:plain, opts) do
-    with_workspace(opts, fn opts ->
-      case ensure_chat_config(opts),
-        do: (:ok -> start_plain(opts))
-    end)
-  end
-
-  def chat(:classic, opts), do: chat(:plain, opts)
-
   @doc false
-  def chat_mode(opts \\ []) do
-    if Beamcore.TUI.Capability.supported?(opts), do: :tui, else: :plain
-  end
-
-  defp fallback_to_plain(reason, opts) do
-    Beamcore.AppLog.warn("TUI unavailable; starting plain fallback", reason: reason)
-    IO.puts("TUI unavailable: #{reason}")
-    IO.puts("Starting plain emergency fallback.")
-    start_plain(opts)
-  end
+  def chat_mode(_opts \\ []), do: :tui
 
   defp ensure_chat_config(opts) do
     cond do
@@ -138,9 +102,6 @@ defmodule Beamcore.Agent do
     end
   end
 
-  defp missing_config_reason?(reason) when is_binary(reason),
-    do: String.contains?(reason, "Beamcore is not configured yet")
-
   defp print_missing_config_error do
     Beamcore.AppLog.warn("Provider configuration missing")
     IO.puts(Beamcore.Provider.Registry.missing_config_message())
@@ -149,9 +110,6 @@ defmodule Beamcore.Agent do
 
   defp start_tui(opts),
     do: call_start(Keyword.get(opts, :tui_start, &Beamcore.TUI.start/1), opts)
-
-  defp start_plain(opts),
-    do: call_start(Keyword.get(opts, :plain_start, &Beamcore.Agent.Chat.start/1), opts)
 
   defp call_start(fun, opts) when is_function(fun, 1), do: fun.(opts)
   defp call_start(fun, _opts) when is_function(fun, 0), do: fun.()

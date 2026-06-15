@@ -50,19 +50,16 @@ defmodule Beamcore.Agent.Chat.API do
               response = execute_provider_call(client, model, messages, tools, opts)
 
               case response do
-                {:error, %OpenaiEx.Error{kind: :bad_request} = error} ->
-                  maybe_print_debug(opts, messages, tools, model, error)
+                {:error, %OpenaiEx.Error{kind: :bad_request}} ->
                   format_response(response, context, opts)
 
-                {:error, %OpenaiEx.Error{status_code: 400} = error} ->
-                  maybe_print_debug(opts, messages, tools, model, error)
+                {:error, %OpenaiEx.Error{status_code: 400}} ->
                   format_response(response, context, opts)
 
                 {:error, error} ->
                   if is_binary(error) &&
                        (String.contains?(error, "bad_request") ||
                           String.contains?(error, "status_code: 400")) do
-                    maybe_print_debug(opts, messages, tools, model, error)
                     format_response(response, context, opts)
                   else
                     format_response(response, context, opts)
@@ -154,15 +151,9 @@ defmodule Beamcore.Agent.Chat.API do
     {:ok, %{message: message, raw_response: response_map}}
   end
 
-  defp format_response({:ok, response_map}, context, opts) do
+  defp format_response({:ok, response_map}, _context, _opts) do
     # Fallback clause
     message = (response_map["choices"] |> List.first())["message"]
-
-    if Map.has_key?(message, "tool_calls") and not Keyword.get(opts, :silent, false) do
-      if content = message["content"],
-        do: Beamcore.Agent.Core.Pretty.print_thinking(content, context)
-    end
-
     {:ok, %{message: message, raw_response: response_map}}
   end
 
@@ -174,225 +165,8 @@ defmodule Beamcore.Agent.Chat.API do
     {:error, reason}
   end
 
-  defp format_response_with_context(response_map, message, _tool_calls, context, opts) do
-    # Tool calls are intentionally not printed here.
-    # The chat loop prints them only after runtime capabilities authorization.
-    # This prevents blocked mutation attempts from looking like executed tools.
-    case Map.get(message, "content") do
-      content when is_binary(content) and content != "" ->
-        unless Keyword.get(opts, :silent, false) do
-          Beamcore.Agent.Core.Pretty.print_thinking(content, context)
-        end
-
-      _ ->
-        :ok
-    end
-
+  defp format_response_with_context(response_map, message, _tool_calls, _context, _opts) do
     {:ok, %{message: message, raw_response: response_map}}
-  end
-
-  defp maybe_print_debug(opts, messages, tools, model, error_info) do
-    unless Keyword.get(opts, :silent, false) do
-      print_debug_info(messages, tools, model, error_info)
-    end
-  end
-
-  defp print_debug_info(messages, tools, model, error_info) do
-    alias Beamcore.Agent.Core.Pretty
-    alias Beamcore.Agent.Core.Pretty.Colors
-
-    separator =
-      Pretty.colorize(
-        "===============================================================================",
-        &Colors.bright_red/0
-      )
-
-    IO.puts("\n" <> separator)
-    IO.puts(Pretty.colorize("🚨  API BAD REQUEST ERROR DEBUG INFO", &Colors.bright_red/0))
-    IO.puts(separator)
-
-    # 1. Extract and display the REAL error from the API
-    IO.puts("\n" <> Pretty.colorize("👉  ERROR DETAILS:", &Colors.bright_yellow/0))
-    print_extracted_error(error_info)
-
-    # 2. Message diagnostics (not the full dump — that's useless noise)
-    IO.puts("\n" <> Pretty.colorize("👉  REQUEST DIAGNOSTICS:", &Colors.bright_yellow/0))
-    IO.puts(Pretty.colorize("  Model: ", &Colors.dim/0) <> inspect(model))
-    IO.puts(Pretty.colorize("  Tool count: ", &Colors.dim/0) <> inspect(length(tools || [])))
-    IO.puts(Pretty.colorize("  Message count: ", &Colors.dim/0) <> inspect(length(messages)))
-
-    # Role sequence
-    roles = Enum.map(messages, fn m -> m[:role] || m["role"] || "?" end)
-    IO.puts(Pretty.colorize("  Role sequence: ", &Colors.dim/0) <> Enum.join(roles, " → "))
-
-    # Per-message content sizes
-    IO.puts(Pretty.colorize("  Message sizes (chars):", &Colors.dim/0))
-
-    messages
-    |> Enum.with_index(1)
-    |> Enum.each(fn {msg, i} ->
-      role = msg[:role] || msg["role"] || "?"
-      content = msg[:content] || msg["content"] || ""
-      content_len = if is_binary(content), do: String.length(content), else: 0
-      has_tool_calls = if msg["tool_calls"], do: " [has tool_calls]", else: ""
-
-      tool_call_id =
-        if msg[:tool_call_id] || msg["tool_call_id"],
-          do: " [tool_call_id: #{msg[:tool_call_id] || msg["tool_call_id"]}]",
-          else: ""
-
-      IO.puts(
-        "    #{String.pad_leading(to_string(i), 3)}. #{String.pad_trailing(role, 10)} #{String.pad_leading(to_string(content_len), 8)} chars#{has_tool_calls}#{tool_call_id}"
-      )
-    end)
-
-    # Estimated total tokens
-    total_chars =
-      messages
-      |> Enum.map(fn msg ->
-        content = msg[:content] || msg["content"] || ""
-        if is_binary(content), do: String.length(content), else: 0
-      end)
-      |> Enum.sum()
-
-    estimated_tokens = div(total_chars, 4)
-    tools_json_size = tools |> inspect() |> String.length()
-    estimated_tool_tokens = div(tools_json_size, 4)
-
-    IO.puts(Pretty.colorize("\n  Total content chars: ", &Colors.dim/0) <> "#{total_chars}")
-
-    IO.puts(
-      Pretty.colorize("  Estimated content tokens: ", &Colors.dim/0) <> "~#{estimated_tokens}"
-    )
-
-    IO.puts(
-      Pretty.colorize("  Estimated tool schema tokens: ", &Colors.dim/0) <>
-        "~#{estimated_tool_tokens}"
-    )
-
-    IO.puts(
-      Pretty.colorize("  Estimated total prompt tokens: ", &Colors.bright_yellow/0) <>
-        "~#{estimated_tokens + estimated_tool_tokens}"
-    )
-
-    # 3. Sequence validation warnings
-    IO.puts("\n" <> Pretty.colorize("👉  SEQUENCE VALIDATION:", &Colors.bright_yellow/0))
-    validate_message_sequence(messages)
-
-    IO.puts(separator <> "\n")
-  end
-
-  # Extract the real error message from various error formats
-  defp print_extracted_error(%OpenaiEx.Error{} = error) do
-    alias Beamcore.Agent.Core.Pretty
-    alias Beamcore.Agent.Core.Pretty.Colors
-
-    IO.puts(Pretty.colorize("  Kind: ", &Colors.dim/0) <> inspect(error.kind))
-    IO.puts(Pretty.colorize("  Status: ", &Colors.dim/0) <> inspect(error.status_code))
-
-    extracted_message =
-      cond do
-        error.status_code == 400 or error.kind == :bad_request ->
-          "API Bad Request (Likely out of context size limit)"
-
-        error.message && error.message != "" ->
-          error.message
-
-        error.body && is_map(error.body) && error.body["message"] ->
-          error.body["message"]
-
-        true ->
-          "Unknown API error"
-      end
-
-    IO.puts(Pretty.colorize("  Message: ", &Colors.bright_red/0) <> extracted_message)
-
-    if error.body do
-      IO.puts(
-        Pretty.colorize("  Body: ", &Colors.bright_red/0) <> inspect(error.body, pretty: true)
-      )
-    end
-  end
-
-  defp print_extracted_error(error) when is_binary(error) do
-    alias Beamcore.Agent.Core.Pretty
-    alias Beamcore.Agent.Core.Pretty.Colors
-
-    IO.puts(Pretty.colorize("  Message: ", &Colors.bright_red/0) <> error)
-  end
-
-  # Validate message sequence and print warnings
-  defp validate_message_sequence(messages) do
-    alias Beamcore.Agent.Core.Pretty
-    alias Beamcore.Agent.Core.Pretty.Colors
-
-    issues = []
-
-    roles = Enum.map(messages, fn m -> m[:role] || m["role"] || "?" end)
-
-    # Check for orphaned tool messages (tool without preceding assistant with tool_calls)
-    issues =
-      messages
-      |> Enum.with_index()
-      |> Enum.reduce(issues, fn {msg, i}, acc ->
-        role = msg[:role] || msg["role"]
-
-        if role == "tool" and i > 0 do
-          prev = Enum.at(messages, i - 1)
-          prev_role = prev[:role] || prev["role"]
-          prev_has_tool_calls = prev["tool_calls"] != nil
-
-          cond do
-            prev_role == "tool" ->
-              # Multiple tool responses in a row is fine (for parallel tool calls)
-              acc
-
-            prev_role == "assistant" and prev_has_tool_calls ->
-              acc
-
-            true ->
-              [
-                "  ⚠ Message #{i + 1} (tool) is orphaned — previous message is #{prev_role} without tool_calls"
-                | acc
-              ]
-          end
-        else
-          acc
-        end
-      end)
-
-    # Check for consecutive user messages
-    issues =
-      roles
-      |> Enum.chunk_every(2, 1, :discard)
-      |> Enum.with_index()
-      |> Enum.reduce(issues, fn {[a, b], i}, acc ->
-        if a == "user" and b == "user" do
-          ["  ⚠ Consecutive user messages at positions #{i + 1} and #{i + 2}" | acc]
-        else
-          acc
-        end
-      end)
-
-    # Check first non-system message
-    first_non_system = Enum.find(roles, fn r -> r != "system" end)
-
-    issues =
-      if first_non_system == "tool" do
-        ["  ⚠ First non-system message is a tool response (must be user or assistant)" | issues]
-      else
-        issues
-      end
-
-    if issues == [] do
-      IO.puts(Pretty.colorize("  ✓ Message sequence looks valid", &Colors.green/0))
-    else
-      issues
-      |> Enum.reverse()
-      |> Enum.each(fn issue ->
-        IO.puts(Pretty.colorize(issue, &Colors.bright_red/0))
-      end)
-    end
   end
 
   @doc """

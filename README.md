@@ -54,7 +54,6 @@ Useful Make targets:
 
 ```sh
 make chat
-make chat-plain
 make test
 make validate
 make install

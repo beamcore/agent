@@ -29,7 +29,6 @@ config/                   # Elixir config (config.exs)
 - **OTP Supervision**: `Beamcore.Agent` supervises Config, Memory, RateLimiter, Scheduler, TaskSupervisor, Eeva workers, TUI
 - **Providers**: `Beamcore.Provider` behaviour with `OpenAICompatible` adapter for all APIs. Registry holds defaults (openai, deepseek). Router handles dispatch with rate limiting
 - **Eeva**: Model writes plain Elixir code. Parsed/validated by `Sandbox` (size, AST, atom limits), executed by `Worker` under supervision with timeout/memory/reduction caps. Output captured and truncated
-- **Two UI modes**: TUI (`ex_ratatui`) and plain fallback IO. `Beamcore.Agent.chat/2` auto-detects
 - **Memory**: `Beamcore.Memory` — scoped `{type, org, repo, key}` store. Types: facts, decisions, patterns, errors, context, notes, preferences, tasks, projects
 - **Config**: `Beamcore.Config` — DETS-backed, AES-256-GCM encrypted secrets, machine-bound key
 

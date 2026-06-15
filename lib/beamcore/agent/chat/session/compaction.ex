@@ -82,9 +82,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
   @doc """
   Summarizes the current session context and rolls over into a new session.
   """
-  def summarize_and_rollover(session, messages, pid) do
-    Beamcore.Agent.Core.StatusBar.update_text(pid, " 🔄 Compacting context... ")
-
+  def summarize_and_rollover(session, messages, _pid) do
     summary_prompt = %{
       role: "user",
       content: Beamcore.Agent.Core.Prompts.compaction_summary_request()
@@ -150,7 +148,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
           timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
         })
 
-        Beamcore.Agent.Core.StatusBar.update(pid, new_session)
         new_session
 
       {:error, _reason} ->

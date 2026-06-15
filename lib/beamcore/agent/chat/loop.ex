@@ -5,15 +5,12 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   alias Beamcore.Agent.Chat.{
     API,
-    Commands,
     Context,
     ModeSettings,
-    MultilineInput,
     Session,
     ToolRuntime
   }
 
-  alias Beamcore.Agent.Core.{Pretty, StatusBar}
   alias Beamcore.Agent.Tools.Dispatcher
 
   require Logger
@@ -21,89 +18,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   @event_content_limit 1_200
   @event_content_head 420
   @event_content_tail 260
-
-  @doc """
-  Start the chat loop with the given session and status bar PID.
-  """
-  def start(session, pid) do
-    loop(session, pid)
-  end
-
-  defp loop(session, pid) do
-    Pretty.print_prompt()
-
-    case IO.gets("") do
-      :eof ->
-        StatusBar.reset(pid)
-        IO.puts("\nGoodbye!")
-
-      input when is_binary(input) ->
-        case String.trim(input) do
-          "" ->
-            loop(session, pid)
-
-          "/" <> command ->
-            handle_command(command, session, pid)
-
-          "<<<" ->
-            handle_paste(session, pid, ">>>")
-
-          trimmed ->
-            new_session = send_message(session, trimmed, pid)
-            loop(new_session, pid)
-        end
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp handle_command("paste", session, pid), do: handle_paste(session, pid, "/end")
-
-  defp handle_command(command, session, pid) do
-    new_session = Commands.execute(command, session)
-    loop(new_session, pid)
-  end
-
-  defp handle_paste(session, pid, terminator) do
-    IO.puts("Paste multi-line input. Finish with #{terminator}.")
-
-    case collect_paste([], terminator) do
-      {:ok, text} ->
-        session
-        |> send_message(text, pid)
-        |> loop(pid)
-
-      {:error, :empty} ->
-        Beamcore.Agent.Core.Pretty.print_error("Empty paste ignored.")
-        loop(session, pid)
-    end
-  end
-
-  defp collect_paste(lines, terminator) do
-    case IO.gets("") do
-      :eof ->
-        lines
-        |> MultilineInput.collect_until(terminator)
-        |> eof_paste_result()
-
-      input when is_binary(input) ->
-        line = String.trim_trailing(input, "\n") |> String.trim_trailing("\r")
-
-        case MultilineInput.collect_until(lines ++ [line], terminator) do
-          {:ok, text, _rest} -> {:ok, text}
-          {:error, :empty, _rest} -> {:error, :empty}
-          {:more, _text} -> collect_paste(lines ++ [line], terminator)
-        end
-    end
-  end
-
-  defp eof_paste_result({:ok, text, _rest}), do: {:ok, text}
-  defp eof_paste_result({:error, :empty, _rest}), do: {:error, :empty}
-
-  defp eof_paste_result({:more, text}) do
-    if String.trim(text) == "", do: {:error, :empty}, else: {:ok, String.trim(text)}
-  end
 
   def send_message(session, content, pid, runtime_caps \\ nil, opts \\ []) do
     with {:ok, session} <- ensure_client(session, opts) do
@@ -121,7 +35,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp ensure_client(%{client: nil} = session, opts) do
     message = Beamcore.Provider.Registry.missing_config_message()
-    maybe_print(opts, fn -> Pretty.print_error(message) end)
     emit(opts, {:error, message})
     {:error, session}
   end
@@ -165,7 +78,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp stop_for_depth_limit(session, messages, opts, max_depth) do
     warning = "Tool loop depth limit (#{max_depth}) reached. Stopping."
-    maybe_print(opts, fn -> Pretty.print_warning(warning) end)
     emit(opts, {:error, warning})
 
     session =
@@ -236,7 +148,6 @@ defmodule Beamcore.Agent.Chat.Loop do
     else
       {:error, budget_plan} ->
         message = context_budget_error(session, budget_plan)
-        maybe_print(opts, fn -> Pretty.print_error(message) end)
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
 
@@ -264,12 +175,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         {cleaned_content, reasoning} = API.extract_reasoning(message)
 
-        maybe_print(opts, fn ->
-          if reasoning && reasoning != "", do: Pretty.print_thinking(reasoning, :main)
-          Pretty.print_assistant(cleaned_content, :main)
-          Pretty.print_raw_response(raw_response)
-        end)
-
         if reasoning && reasoning != "", do: emit(opts, {:thinking, reasoning})
         emit_assistant(opts, cleaned_content)
 
@@ -285,7 +190,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         session = Session.append_timeline(session, :checkpoint_saved, "Model response received.")
 
-        if pid, do: StatusBar.update(pid, session)
         emit(opts, {:session, session})
 
         # --- Grace period logic ---
@@ -314,7 +218,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
                 content = Dispatcher.execute(name, args, caps)
 
-                maybe_print(opts, fn -> print_tool_execution(name, args, content) end)
                 event_content = compact_event_content(content)
                 emit(opts, {:tool_finished, name, args, event_content})
 
@@ -382,7 +285,6 @@ defmodule Beamcore.Agent.Chat.Loop do
           Beamcore.Agent.Chat.RateLimit.retry_after_ms(error) ||
             Beamcore.Agent.Chat.RateLimit.default_wait_ms()
 
-        maybe_print(opts, fn -> Pretty.print_rate_limit_error(error) end)
         retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
         sleep_before_retry(opts, :rate_limit, wait_ms, retry_message)
         process_messages(session, messages, pid, depth, caps, opts)
@@ -400,7 +302,6 @@ defmodule Beamcore.Agent.Chat.Loop do
         )
 
         retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
-        maybe_print(opts, fn -> Pretty.print_error(retry_message) end)
         sleep_before_retry(opts, :rate_limit, wait_ms, retry_message)
         process_messages(session, messages, pid, depth, caps, opts)
 
@@ -414,7 +315,6 @@ defmodule Beamcore.Agent.Chat.Loop do
           configured_timeout_ms: receive_timeout_ms(settings)
         )
 
-        maybe_print(opts, fn -> Pretty.print_error(message) end)
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
 
@@ -432,7 +332,6 @@ defmodule Beamcore.Agent.Chat.Loop do
           message: error.message
         )
 
-        maybe_print(opts, fn -> Pretty.print_error(error.message) end)
         emit(opts, {:error, error.message})
         emit(opts, {:status, :error})
         Session.append_timeline(session, :failed, error.message)
@@ -446,7 +345,6 @@ defmodule Beamcore.Agent.Chat.Loop do
           body: error.body
         )
 
-        maybe_print(opts, fn -> Pretty.print_api_error(error) end)
         emit(opts, {:error, api_error_text(error)})
         emit(opts, {:status, :error})
         Session.append_timeline(session, :failed, api_error_text(error))
@@ -460,7 +358,6 @@ defmodule Beamcore.Agent.Chat.Loop do
           reason: message
         )
 
-        maybe_print(opts, fn -> Pretty.print_error(message) end)
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
         Session.append_timeline(session, :failed, message)
@@ -706,10 +603,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp format_ms(ms) when is_integer(ms) and ms >= 1000, do: "#{Float.round(ms / 1000, 1)}s"
   defp format_ms(ms), do: "#{ms}ms"
 
-  defp maybe_print(opts, fun) do
-    unless Keyword.get(opts, :silent, false), do: fun.()
-  end
-
   defp finish_turn(session, opts) do
     session = Session.append_timeline(session, :completed, "Turn completed.", checkpoint: false)
     emit(opts, {:session, session})
@@ -847,21 +740,4 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp update_context(session, name, args, content),
     do: %{session | context: Context.update_from_tool(session.context, name, args, content)}
-
-  defp print_tool_execution(name, args, "Error: Tool call blocked" <> rest) do
-    Pretty.print_blocked_tool_call(name, args, "Tool call blocked" <> rest)
-  end
-
-  defp print_tool_execution(name, args, "Error: Mutation requires" <> rest) do
-    Pretty.print_blocked_tool_call(name, args, "Mutation requires" <> rest)
-  end
-
-  defp print_tool_execution(name, args, "Error: " <> reason) do
-    Pretty.print_tool_call(name, args)
-    Pretty.print_error(reason)
-  end
-
-  defp print_tool_execution(name, args, _content) do
-    Pretty.print_tool_call(name, args)
-  end
 end

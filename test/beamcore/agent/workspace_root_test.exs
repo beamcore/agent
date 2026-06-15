@@ -28,10 +28,10 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     parent = self()
 
     assert :ok =
-             Beamcore.Agent.chat(:plain,
+             Beamcore.Agent.chat(:tui,
                workspace_root: root,
                client: :test_client,
-               plain_start: fn opts ->
+               tui_start: fn opts ->
                  send(parent, {:workspace, PathInput.workspace_root(), opts[:workspace_root]})
                  :ok
                end
