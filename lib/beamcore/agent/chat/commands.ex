@@ -5,6 +5,11 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   alias Beamcore.Agent.Chat.Session
 
+  @doc false
+  def compress_session(session, output) do
+    handle_compress(session, output)
+  end
+
   def provider_defaults do
     Beamcore.Provider.Registry.defaults()
     |> Map.new(fn {name, config} ->
@@ -20,6 +25,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     custom_output? = Keyword.has_key?(opts, :output)
 
     case command do
+      "compress" -> handle_compress(session, output)
       "new" -> handle_new(session, nil, output)
       "new " <> arg -> handle_new(session, String.trim(arg), output)
       "context" -> handle_context(session, output)
@@ -58,6 +64,13 @@ defmodule Beamcore.Agent.Chat.Commands do
     else
       Session.new(session.client, opts)
     end
+  end
+
+  defp handle_compress(session, output) do
+    output.("Compressing session context...")
+
+    rolled = Session.summarize_and_rollover(session, session.messages, nil)
+    Session.clear_warnings(rolled)
   end
 
   defp handle_env(session, output) do
@@ -221,6 +234,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     output.("""
     Available commands:
       /new  - Start a new chat session
+      /compress - Compress/rollover the session context
       /context - Show compact session context
       /context clear - Clear compact session context
       /stop - Pause the session to add improved direction

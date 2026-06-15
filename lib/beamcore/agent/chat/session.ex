@@ -16,6 +16,8 @@ defmodule Beamcore.Agent.Chat.Session do
     :last_prompt_tokens,
     :needs_compaction,
     :compaction_count,
+    :warn_user,
+    :session_paused,
     :runtime_caps,
     :workspace_root,
     :context,
@@ -112,6 +114,8 @@ defmodule Beamcore.Agent.Chat.Session do
       last_prompt_tokens: 0,
       needs_compaction: false,
       compaction_count: 0,
+      warn_user: false,
+      session_paused: false,
       runtime_caps: runtime_caps,
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(),
@@ -224,6 +228,9 @@ defmodule Beamcore.Agent.Chat.Session do
   def update_usage(session, usage) do
     last_prompt = usage["prompt_tokens"] || 0
 
+    warn = last_prompt >= @grace_threshold
+    paused = last_prompt >= @hard_limit
+
     %{
       session
       | total_prompt_tokens: session.total_prompt_tokens + (usage["prompt_tokens"] || 0),
@@ -231,7 +238,9 @@ defmodule Beamcore.Agent.Chat.Session do
           session.total_completion_tokens + (usage["completion_tokens"] || 0),
         total_tokens: session.total_tokens + (usage["total_tokens"] || 0),
         last_prompt_tokens: last_prompt,
-        needs_compaction: session.needs_compaction || last_prompt >= @grace_threshold
+        needs_compaction: session.needs_compaction || warn,
+        warn_user: session.warn_user || warn,
+        session_paused: session.session_paused || paused
     }
   end
 
@@ -254,6 +263,13 @@ defmodule Beamcore.Agent.Chat.Session do
       last_prompt_tokens: session.last_prompt_tokens || 0,
       needs_compaction: session.needs_compaction || false
     }
+  end
+
+  @doc """
+  Clears warning and pause flags after compaction.
+  """
+  def clear_warnings(session) do
+    %{session | warn_user: false, session_paused: false, needs_compaction: false}
   end
 
   # --- Compaction delegation ---

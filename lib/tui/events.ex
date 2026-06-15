@@ -19,6 +19,7 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "api add ", description: "Add or update an API provider"},
     %Command{name: "api delete ", description: "Delete an API provider configuration"},
     %Command{name: "clear", description: "Clear visible chat messages"},
+    %Command{name: "compress", description: "Compress/rollover the session context"},
     %Command{name: "new", description: "Start a fresh session"},
     %Command{name: "context", description: "Show compact session context"},
     %Command{name: "context clear", description: "Clear compact session context"},
@@ -674,6 +675,9 @@ defmodule Beamcore.TUI.Events do
 
   defp worker_running?(%{worker: worker}), do: not is_nil(worker)
 
+  defp session_paused?(%{session: %{session_paused: true}}), do: true
+  defp session_paused?(_state), do: false
+
   defp maybe_disarm_ctrl_c("c", mods, state) do
     if ctrl?(mods), do: state, else: State.disarm_ctrl_c(state)
   end
@@ -742,6 +746,13 @@ defmodule Beamcore.TUI.Events do
           ExRatatui.textarea_set_value(state.textarea, "")
           state = maybe_record_command_history(state, value)
           run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
+
+        session_paused?(state) ->
+          State.add_message(
+            state,
+            :system,
+            "Session paused: context exceeds 200k tokens. Run /compress to compress the session."
+          )
 
         true ->
           ExRatatui.textarea_set_value(state.textarea, "")
