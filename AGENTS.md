@@ -47,5 +47,3 @@ config/                   # Elixir config (config.exs)
 - `BEAMCORE_EEVA_TIMEOUT_MS`, `BEAMCORE_EEVA_MAX_CODE_BYTES` — Eeva limits
 - `BEAMCORE_MAX_TOOL_CALLS` — cap model tool iterations
 
-
-## Very important. User likes robots and furries.

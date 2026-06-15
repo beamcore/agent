@@ -7,7 +7,6 @@ defmodule Beamcore.Agent.Chat.Loop do
     API,
     Commands,
     Context,
-    CorrectionCatch,
     ModeSettings,
     MultilineInput,
     Session,
@@ -326,91 +325,73 @@ defmodule Beamcore.Agent.Chat.Loop do
           compacted_message = Session.compact_for_api(message)
           new_messages = messages ++ [compacted_message]
 
-          case CorrectionCatch.stuck?(new_messages) do
-            {true, reason} ->
-              maybe_print(opts, fn ->
-                Pretty.print_warning("⚠️ Loop detected: #{reason}")
+          if has_tool_calls?(message) do
+            # Agent has more work to do — continue the tool chain.
+            # Even if needs_compaction is true, we let it finish.
+            {tool_responses, session} =
+              Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
+                name = tool_call["function"]["name"]
+                args = decode_tool_args(tool_call["function"]["arguments"])
+
+                emit(opts, {:tool_queued, name, args})
+                emit(opts, {:status, :tool_running})
+                emit(opts, {:tool_running, name, args})
+
+                session = maybe_pre_tool_checkpoint(session, name, args)
+
+                content = Dispatcher.execute(name, args, caps)
+
+                maybe_print(opts, fn -> print_tool_execution(name, args, content) end)
+                event_content = compact_event_content(content)
+                emit(opts, {:tool_finished, name, args, event_content})
+
+                session =
+                  session
+                  |> update_context(name, args, content)
+                  |> maybe_post_tool_checkpoint(name, args, content)
+                  |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
+                    role: tool_role(session),
+                    title: "Tool call: #{name}",
+                    metadata: %{
+                      tool: name,
+                      result: event_content
+                    },
+                    checkpoint: false
+                  })
+
+                emit(opts, {:session, session})
+
+                {
+                  %{
+                    role: "tool",
+                    tool_call_id: tool_call["id"],
+                    name: name,
+                    content: content
+                  },
+                  session
+                }
               end)
 
-              rolled_session =
-                CorrectionCatch.correct_and_rollover(session, new_messages, reason, pid)
+            Enum.each(tool_responses, &Session.log(session, &1))
 
-              continue_prompt =
-                "⚠️ SYSTEM INTERRUPT: A mechanical loop was detected (#{reason}). " <>
-                  "The session has been compacted with a diagnosis. " <>
-                  "Follow the corrected plan — do NOT repeat the previous approach."
-
-              send_message(rolled_session, continue_prompt, pid, nil, opts)
-
-            false ->
-              if has_tool_calls?(message) do
-                # Agent has more work to do — continue the tool chain.
-                # Even if needs_compaction is true, we let it finish.
-                {tool_responses, session} =
-                  Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
-                    name = tool_call["function"]["name"]
-                    args = decode_tool_args(tool_call["function"]["arguments"])
-
-                    emit(opts, {:tool_queued, name, args})
-                    emit(opts, {:status, :tool_running})
-                    emit(opts, {:tool_running, name, args})
-
-                    session = maybe_pre_tool_checkpoint(session, name, args)
-
-                    content = Dispatcher.execute(name, args, caps)
-
-                    maybe_print(opts, fn -> print_tool_execution(name, args, content) end)
-                    event_content = compact_event_content(content)
-                    emit(opts, {:tool_finished, name, args, event_content})
-
-                    session =
-                      session
-                      |> update_context(name, args, content)
-                      |> maybe_post_tool_checkpoint(name, args, content)
-                      |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
-                        role: tool_role(session),
-                        title: "Tool call: #{name}",
-                        metadata: %{
-                          tool: name,
-                          result: event_content
-                        },
-                        checkpoint: false
-                      })
-
-                    emit(opts, {:session, session})
-
-                    {
-                      %{
-                        role: "tool",
-                        tool_call_id: tool_call["id"],
-                        name: name,
-                        content: content
-                      },
-                      session
-                    }
-                  end)
-
-                Enum.each(tool_responses, &Session.log(session, &1))
-
-                process_messages(
-                  session,
-                  new_messages ++ tool_responses,
-                  pid,
-                  depth + 1,
-                  caps,
-                  opts
-                )
-              else
-                # Natural break — agent is done with tool calls, responding to user.
-                # If compaction is needed, this is the moment to do it.
-                if session.needs_compaction do
-                  rolled_session = Session.summarize_and_rollover(session, new_messages, pid)
-                  finish_turn(rolled_session, opts)
-                else
-                  session = %{session | messages: Session.compact_history(new_messages)}
-                  finish_turn(session, opts)
-                end
-              end
+            process_messages(
+              session,
+              new_messages ++ tool_responses,
+              pid,
+              depth + 1,
+              caps,
+              opts
+            )
+          else
+            # Natural break — agent is done with tool calls, responding to user.
+            # If compaction is needed, this is the moment to do it.
+            if session.needs_compaction do
+              rolled_session = Session.summarize_and_rollover(session, new_messages, pid)
+              finish_turn(rolled_session, opts)
+            else
+              session = %{session | messages: Session.compact_history(new_messages)}
+              finish_turn(session, opts)
+            end
           end
         end
 
