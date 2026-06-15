@@ -16,34 +16,20 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
            ) == :tui
   end
 
-  test "chat entrypoint can force TUI and plain fallback" do
+  test "chat entrypoint can force TUI" do
     assert Beamcore.Agent.chat(:tui, client: :test_client, tui_start: fn -> :tui_started end) ==
              :tui_started
-
-    assert Beamcore.Agent.chat(:plain,
-             client: :test_client,
-             plain_start: fn -> :plain_started end
-           ) ==
-             :plain_started
   end
 
-  test "automatic chat falls back if TUI startup fails" do
-    output =
-      ExUnit.CaptureIO.capture_io(fn ->
-        result =
-          Beamcore.Agent.chat(:auto,
-            supported?: true,
-            client: :test_client,
-            tui_start: fn -> raise "alternate screen failed" end,
-            plain_start: fn -> :plain_started end
-          )
+  test "automatic chat starts TUI" do
+    result =
+      Beamcore.Agent.chat(:auto,
+        supported?: true,
+        client: :test_client,
+        tui_start: fn -> :tui_started end
+      )
 
-        send(self(), {:result, result})
-      end)
-
-    assert output =~ "TUI unavailable"
-    assert output =~ "Starting plain emergency fallback"
-    assert_receive {:result, :plain_started}
+    assert result == :tui_started
   end
 
   test "missing OpenAI API key reports config error without plain fallback" do
@@ -57,25 +43,28 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     Application.put_env(:agent, :config_dets_path, path)
 
     try do
-      Beamcore.Agent.TestEnv.with_env(%{"OPENAI_API_KEY" => nil, "ACTIVE_PROVIDER" => "openai"}, fn ->
-        output =
-          ExUnit.CaptureIO.capture_io(fn ->
-            result =
-              Beamcore.Agent.chat(:auto,
-                supported?: true,
-                tui_start: fn _opts -> :tui_started end
-              )
+      Beamcore.Agent.TestEnv.with_env(
+        %{"OPENAI_API_KEY" => nil, "ACTIVE_PROVIDER" => "openai"},
+        fn ->
+          output =
+            ExUnit.CaptureIO.capture_io(fn ->
+              result =
+                Beamcore.Agent.chat(:auto,
+                  supported?: true,
+                  tui_start: fn _opts -> :tui_started end
+                )
 
-            send(self(), {:result, result})
-          end)
+              send(self(), {:result, result})
+            end)
 
-        assert output =~ "Provider 'openai' is not configured"
-        assert output =~ "/api add"
-        refute output =~ "TUI unavailable"
-        refute output =~ "Starting plain emergency fallback"
-        refute output =~ "** ("
-        assert_receive {:result, :tui_started}
-      end)
+          assert output =~ "Provider 'openai' is not configured"
+          assert output =~ "/api add"
+          refute output =~ "TUI unavailable"
+          refute output =~ "Starting plain emergency fallback"
+          refute output =~ "** ("
+          assert_receive {:result, :tui_started}
+        end
+      )
     after
       restore_config_path(previous)
       File.rm(path)
