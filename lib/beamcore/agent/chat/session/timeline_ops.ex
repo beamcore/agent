@@ -128,7 +128,10 @@ defmodule Beamcore.Agent.Chat.Session.TimelineOps do
   """
   def save_state(session) do
     if session.state_file do
-      Beamcore.Agent.Timeline.write_atomic!(session.state_file, Session.Serializer.snapshot(session))
+      Beamcore.Agent.Timeline.write_atomic!(
+        session.state_file,
+        Session.Serializer.snapshot(session)
+      )
     end
 
     if session.checkpoint_file do

@@ -6,8 +6,7 @@ defmodule Beamcore.Agent.Chat.Context do
   file contents.
   """
 
-  defstruct project_type: :unknown,
-            inspected_files: MapSet.new(),
+  defstruct inspected_files: MapSet.new(),
             modified_files: MapSet.new(),
             last_validation: nil,
             decisions: [],
@@ -25,8 +24,8 @@ defmodule Beamcore.Agent.Chat.Context do
     "Normal allowed work is autonomous; hard runtime boundaries are automatic."
   ]
 
-  def new(language \\ :unknown, build_system \\ :unknown) do
-    %__MODULE__{project_type: {language, build_system}, active_constraints: @default_constraints}
+  def new do
+    %__MODULE__{active_constraints: @default_constraints}
   end
 
   def compact(%__MODULE__{} = context) do
@@ -60,7 +59,6 @@ defmodule Beamcore.Agent.Chat.Context do
   def summary(%__MODULE__{} = context) do
     [
       "Known session context:",
-      "- Project type: #{format_project_type(context.project_type)}",
       list_line("Inspected this session", context.inspected_files),
       list_line("Modified this session", context.modified_files),
       list_line("Active constraints", context.active_constraints),
@@ -143,9 +141,6 @@ defmodule Beamcore.Agent.Chat.Context do
 
   defp prepend_unique(list, item),
     do: [item | Enum.reject(list, &(&1 == item))] |> Enum.take(@max_items)
-
-  defp format_project_type({language, build_system}), do: "#{language} (#{build_system})"
-  defp format_project_type(type), do: to_string(type)
 
   defp list_line(_label, nil), do: nil
 

@@ -55,7 +55,6 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
     timeline_state = Beamcore.Agent.Timeline.safe_restore(data)
     usage = Map.get(data, "usage", %{})
     workspace_root = Map.get(data, "workspace_root") || Keyword.get(opts, :workspace_root)
-    {language, build_system} = Beamcore.Agent.Discovery.Detector.detect(workspace_root || ".")
 
     %Beamcore.Agent.Chat.Session{
       messages: safe_messages(Map.get(data, "messages", [])),
@@ -81,9 +80,8 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
           do: Beamcore.Agent.Chat.ToolRuntime.chat(),
           else: nil
         ),
-      project_nature: {language, build_system},
       workspace_root: workspace_root,
-      context: Beamcore.Agent.Chat.Context.new(language, build_system),
+      context: Beamcore.Agent.Chat.Context.new(),
       roles: restore_roles(Map.get(data, "roles"), mode_settings),
       screen_type: screen_type,
       mode_settings: mode_settings,
