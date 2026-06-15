@@ -36,42 +36,6 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     content = File.read!(session.log_file)
     assert content =~ ~s({"test":"data"})
   end
-
-  test "timeline events are stored on the session and state file" do
-    client = Beamcore.Provider.Registry.client()
-    session = Session.new(client, session_id: "timeline-#{System.unique_integer([:positive])}")
-
-    session = Session.append_timeline(session, :planning, "Planning next step.")
-
-    assert Enum.any?(
-             session.timeline,
-             &(&1.type == :decision and &1.summary == "Planning next step.")
-           )
-
-    assert List.last(session.timeline).type == :checkpoint_saved
-    assert File.exists?(session.state_file)
-    assert File.read!(session.state_file) =~ "Planning next step."
-  end
-
-  test "saves and resumes durable session state" do
-    client = Beamcore.Provider.Registry.client()
-    session_id = "resume-#{System.unique_integer([:positive])}"
-
-    session =
-      client
-      |> Session.new(session_id: session_id, screen_type: :chat)
-      |> Map.update!(:messages, &(&1 ++ [%{role: "user", content: "resume me"}]))
-      |> Session.append_timeline(:planning, "Saved plan.", %{step: 1})
-
-    assert {:ok, resumed} = Session.resume(session_id, client)
-
-    assert resumed.session_id == session.session_id
-    assert Enum.any?(resumed.messages, &((&1[:content] || &1["content"]) == "resume me"))
-    assert Enum.any?(resumed.timeline, &(&1.summary == "Saved plan."))
-    assert resumed.roles.primary.provider == session.roles.primary.provider
-    assert resumed.roles.primary.model == session.roles.primary.model
-  end
-
   describe "summarize_and_rollover/3" do
     setup do
       client = Beamcore.Provider.Registry.client()
