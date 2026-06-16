@@ -1,38 +1,12 @@
 defmodule Beamcore.Agent.Chat.Session.Compaction do
   @moduledoc """
-  Message compaction, API preparation, and session rollover logic.
+  Session rollover and history cleanup.
 
-  Handles preparing message histories for API calls (with context injection and budget fitting),
-  cleaning histories after turns, and performing transparent session rollovers with summarization.
+  Handles cleaning message histories after turns and performing transparent
+  session rollovers with summarization via /compress.
   """
 
   alias Beamcore.Agent.Chat.Session.MessageCleaner
-
-  @doc """
-  Prepares message history for an API request without mutating the persisted log.
-  """
-  def prepare_for_api(messages, limit) do
-    MessageCleaner.trim_and_clean(messages, limit)
-  end
-
-  @doc """
-  Prepares message history and injects compact session context.
-  """
-  def prepare_for_api(messages, context, limit) do
-    prepared = prepare_for_api(messages, limit)
-
-    if context do
-      inject_context_message(prepared, context)
-    else
-      prepared
-    end
-  end
-
-  def prepare_for_api(messages, context, limit, budget) do
-    messages
-    |> prepare_for_api(context, limit)
-    |> Beamcore.Agent.Chat.Budget.fit_messages(budget)
-  end
 
   @doc """
   Clean the in-memory history kept after a turn (structural fixes only, no truncation).
@@ -137,13 +111,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         )
     end
   end
-
-  defp inject_context_message([system | rest], context) do
-    [system, Beamcore.Agent.Chat.Context.to_message(context) | rest]
-  end
-
-  defp inject_context_message(messages, context),
-    do: [Beamcore.Agent.Chat.Context.to_message(context) | messages]
 
   defp validate_summary(summary) do
     default = "Previous context was compacted. Continuing with current session state."

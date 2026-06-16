@@ -322,11 +322,29 @@ defmodule Beamcore.Agent.Chat.Session do
 
   # --- Compaction delegation ---
 
-  defdelegate prepare_for_api(messages, limit), to: Compaction
-  defdelegate prepare_for_api(messages, context, limit), to: Compaction
-  defdelegate prepare_for_api(messages, context, limit, budget), to: Compaction
   defdelegate compact_history(messages), to: Compaction
   defdelegate summarize_and_rollover(session, messages, pid), to: Compaction
+
+  @doc """
+  Prepares messages for an API call: structural cleanup + context injection.
+  """
+  def prepare_for_api(messages, context) do
+    cleaned = MessageCleaner.clean(messages)
+
+    if context do
+      inject_context(cleaned, context)
+    else
+      cleaned
+    end
+  end
+
+  defp inject_context([system | rest], context) do
+    [system, Beamcore.Agent.Chat.Context.to_message(context) | rest]
+  end
+
+  defp inject_context(messages, context) do
+    [Beamcore.Agent.Chat.Context.to_message(context) | messages]
+  end
 
   # --- Message cleaning delegation ---
 
