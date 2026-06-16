@@ -21,8 +21,6 @@ defmodule Beamcore.TUI.Events do
     %Command{name: "clear", description: "Clear visible chat messages"},
     %Command{name: "compress", description: "Compress/rollover the session context"},
     %Command{name: "new", description: "Start a fresh session"},
-    %Command{name: "context", description: "Show compact session context"},
-    %Command{name: "context clear", description: "Clear compact session context"},
     %Command{name: "stop", description: "Pause the session; type a message to resume"},
     %Command{name: "quit", description: "Exit"},
     %Command{name: "exit", description: "Exit"},

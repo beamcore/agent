@@ -3,9 +3,8 @@ Beamcore is a small terminal coding agent built on Elixir/OTP. It runs one
 straight chat loop, uses one provider routing path, and executes work through
 Eeva, the model-facing Elixir runtime.
 
-The default mode is autonomous yolo: Beamcore acts directly in a trusted-local
-developer environment and reports failures clearly instead of asking for
-approval before normal work.
+Beamcore acts directly in a trusted-local developer environment and reports
+failures clearly instead of asking for approval before normal work.
 
 ## What Remains
 
@@ -28,10 +27,7 @@ approval before normal work.
 | `/api` | List configured providers. |
 | `/api use PROVIDER [MODEL]` | Switch the active provider/model. |
 | `/api model MODEL` | Switch the model for the active provider. |
-| `/yolo` | Reaffirm the default autonomous mode. |
 | `/env` | Show redacted process environment values. |
-| `/context` | Show compact session context. |
-| `/context clear` | Clear compact session context. |
 | `/clear` | Clear the visible chat when supported by the current TUI path. |
 | `/stop` | Stop or pause active work when supported by the current runtime path. |
 

@@ -9,14 +9,6 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     %{session: session}
   end
 
-  test "/context prints compact context", %{session: session} do
-    parent = self()
-    assert Commands.execute("context", session, output: &send(parent, {:out, &1})) == session
-    assert_receive {:out, output}
-    assert output =~ "Known session context"
-    assert output =~ "Eeva"
-  end
-
   test "/help remains available", %{session: session} do
     parent = self()
     assert Commands.execute("help", session, output: &send(parent, {:out, &1})) == session
@@ -37,13 +29,6 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert Commands.execute("safe", session, output: &send(parent, {:out, &1})) == session
     assert_receive {:out, output}
     assert output =~ "Unknown command"
-  end
-
-  test "/yolo reaffirms the default autonomous mode", %{session: session} do
-    parent = self()
-    assert Commands.execute("yolo", session, output: &send(parent, {:out, &1})) == session
-    assert_receive {:out, output}
-    assert output =~ "autonomous yolo mode"
   end
 
   test "legacy confirmation commands are not part of the command surface", %{session: session} do
