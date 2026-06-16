@@ -273,7 +273,19 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp handle_key("a", mods, state) do
-    handle_text_key("a", mods, state)
+    if ctrl?(mods) do
+      select_all_text(state.textarea)
+      {:noreply, State.mark_dirty(state)}
+    else
+      handle_text_key("a", mods, state)
+    end
+  end
+
+  defp select_all_text(textarea) do
+    ExRatatui.textarea_handle_key(textarea, ">", ["alt"])
+    ExRatatui.textarea_handle_key(textarea, "end", [])
+    ExRatatui.textarea_handle_key(textarea, "<", ["alt", "shift"])
+    ExRatatui.textarea_handle_key(textarea, "home", ["shift"])
   end
 
   defp handle_key(code, mods, %{file_finder_active?: true} = state) do
