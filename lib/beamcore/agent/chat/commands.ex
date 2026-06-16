@@ -47,9 +47,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   defp handle_compress(session, output) do
     output.("Compressing session context...")
-
-    rolled = Session.summarize_and_rollover(session, session.messages, nil)
-    Session.clear_warnings(rolled)
+    Session.summarize_and_rollover(session, session.messages, nil)
   end
 
   defp handle_env(session, output) do
@@ -97,7 +95,7 @@ defmodule Beamcore.Agent.Chat.Commands do
           for {name, config} <- Enum.sort(providers) do
             prefix = if name == active, do: "  * ", else: "    "
             base_url = Map.get(config, "base_url")
-            model = Map.get(config, "default_model") || "default"
+            model = Map.get(config, "default_model") || "(not set)"
             output.("#{prefix}#{name} (#{base_url}) - model: #{model}")
           end
         end
@@ -126,25 +124,34 @@ defmodule Beamcore.Agent.Chat.Commands do
         base_url = List.first(rest) || (known && known.base_url)
 
         model =
-          if length(rest) > 1,
-            do: List.last(rest),
-            else: (known && known.default_model) || "default"
+          cond do
+            length(rest) > 1 -> List.last(rest)
+            known && known.default_model -> known.default_model
+            true -> nil
+          end
 
-        if base_url do
-          Beamcore.Config.put_provider(provider, %{
-            api_key: token,
-            base_url: base_url,
-            default_model: model
-          })
+        cond do
+          !base_url ->
+            output.("Error: Unknown provider '#{provider}'. Please specify base URL:")
+            output.("Usage: /api add <provider> <token> <base_url> [<default_model>]")
+            session
 
-          output.("Provider '#{provider}' configured successfully.")
-          Beamcore.Config.set_active_provider(session.screen_type, provider)
-          Beamcore.Config.set_active_model(session.screen_type, model)
-          Session.set_primary_provider(session, provider, model)
-        else
-          output.("Error: Unknown provider '#{provider}'. Please specify base URL:")
-          output.("Usage: /api add <provider> <token> <base_url> [<default_model>]")
-          session
+          !model ->
+            output.("Error: No default model for '#{provider}'. Please specify one:")
+            output.("Usage: /api add <provider> <token> <base_url> <model>")
+            session
+
+          true ->
+            Beamcore.Config.put_provider(provider, %{
+              api_key: token,
+              base_url: base_url,
+              default_model: model
+            })
+
+            output.("Provider '#{provider}' configured successfully.")
+            Beamcore.Config.set_active_provider(session.screen_type, provider)
+            Beamcore.Config.set_active_model(session.screen_type, model)
+            Session.set_primary_provider(session, provider, model)
         end
 
       ["delete", provider] ->

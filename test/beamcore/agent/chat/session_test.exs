@@ -414,94 +414,32 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     end
   end
 
-  describe "transparent rollover and grace period" do
-    test "update_usage/2 sets needs_compaction flag at grace threshold" do
-      client = Beamcore.Provider.Registry.client()
-      session = Session.new(client)
-
-      # Below threshold
-      session1 =
-        Session.update_usage(session, %{
-          "prompt_tokens" => 140_000,
-          "completion_tokens" => 10,
-          "total_tokens" => 140_010
-        })
-
-      refute session1.needs_compaction
-      assert session1.last_prompt_tokens == 140_000
-
-      # At/above threshold
-      session2 =
-        Session.update_usage(session1, %{
-          "prompt_tokens" => 150_000,
-          "completion_tokens" => 10,
-          "total_tokens" => 150_010
-        })
-
-      assert session2.needs_compaction
-      assert session2.last_prompt_tokens == 150_000
-
-      # Keeps needs_compaction: true even when subsequently updated with lower tokens
-      session3 =
-        Session.update_usage(session2, %{
-          "prompt_tokens" => 10_000,
-          "completion_tokens" => 10,
-          "total_tokens" => 10_010
-        })
-
-      assert session3.needs_compaction
-      assert session3.last_prompt_tokens == 10_000
-    end
-
-    test "needs_rollover_now?/1 correctly identifies hard limit" do
-      client = Beamcore.Provider.Registry.client()
-      session = Session.new(client)
-
-      refute Session.needs_rollover_now?(session)
-
-      session1 = %{session | last_prompt_tokens: 199_999}
-      refute Session.needs_rollover_now?(session1)
-
-      session2 = %{session | last_prompt_tokens: 200_000}
-      assert Session.needs_rollover_now?(session2)
-    end
-
+  describe "transparent rollover" do
     test "summarize_and_rollover/3 performs fallback local compaction if API call fails" do
       client = Beamcore.Provider.Registry.client()
       session = Session.new(client)
 
-      # 1. Mock API call failure
       Process.put(:mock_completions_create, fn _client, _params ->
         {:error, "API is down"}
       end)
 
-      # Ensure cleanup
       on_exit(fn ->
         Process.delete(:mock_completions_create)
       end)
 
-      # 2. Modify session
       session = %{
         session
         | session_id: "fallback-session-id",
-          last_prompt_tokens: 155_000,
-          needs_compaction: true
+          last_prompt_tokens: 155_000
       }
 
-      # 3. Perform rollover
       new_session = Session.summarize_and_rollover(session, session.messages, nil)
 
-      # 4. Assertions
       assert new_session.session_id == "fallback-session-id"
       assert new_session.compaction_count == 1
-      assert new_session.needs_compaction == false
       assert new_session.last_prompt_tokens == 0
       assert new_session.total_tokens == 0
 
-      # Context is still compacted and preserved
-      # Context is preserved after compaction
-
-      # Message history is locally trimmed but non-empty
       assert length(new_session.messages) > 0
     end
   end

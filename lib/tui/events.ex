@@ -12,8 +12,6 @@ defmodule Beamcore.TUI.Events do
   @commands [
     %Command{name: "help", description: "Show commands and keybindings"},
     %Command{name: "env", description: "Print full env variables"},
-    %Command{name: "login", description: "Configure your default API key"},
-    %Command{name: "logout", description: "Clear stored default login"},
     %Command{name: "api list", description: "List all configured API providers"},
     %Command{name: "api use ", description: "Switch active API provider"},
     %Command{name: "api add ", description: "Add or update an API provider"},
@@ -631,9 +629,6 @@ defmodule Beamcore.TUI.Events do
 
   defp worker_running?(%{worker: worker}), do: not is_nil(worker)
 
-  defp session_paused?(%{session: %{session_paused: true}}), do: true
-  defp session_paused?(_state), do: false
-
   defp maybe_disarm_ctrl_c("c", mods, state) do
     if ctrl?(mods), do: state, else: State.disarm_ctrl_c(state)
   end
@@ -703,13 +698,6 @@ defmodule Beamcore.TUI.Events do
           state = maybe_record_command_history(state, value)
           run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
 
-        session_paused?(state) ->
-          State.add_message(
-            state,
-            :system,
-            "Session paused: context exceeds 200k tokens. Run /compress to compress the session."
-          )
-
         true ->
           ExRatatui.textarea_set_value(state.textarea, "")
           state = record_history(state, value)
@@ -767,7 +755,6 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
-  defp maybe_record_command_history(state, "/login" <> _suffix), do: %{state | history_index: nil}
   defp maybe_record_command_history(state, value), do: record_history(state, value)
 
   defp run_command(state, command) when command in ["quit", "exit", "q"],

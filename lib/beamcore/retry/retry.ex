@@ -3,7 +3,7 @@ defmodule Beamcore.Retry do
   Retry mechanism with exponential backoff and budget for API calls.
   """
 
-  @default_max_retries 50
+  @default_max_retries 5
   @default_initial_backoff 3000
   @default_max_backoff 900_000
   @default_backoff_multiplier 2
@@ -11,8 +11,7 @@ defmodule Beamcore.Retry do
     :rate_limit,
     :api_timeout_error,
     :api_connection_error,
-    :internal_server_error,
-    :bad_request
+    :internal_server_error
   ]
 
   @doc """
@@ -85,7 +84,9 @@ defmodule Beamcore.Retry do
             ""
           end
 
-        if error.kind in config.retryable_errors do
+        retryable = config.retryable_errors || @default_retryable_errors
+
+        if error.kind in retryable do
           # Use longer backoff for timeout errors
           current_backoff = retry_backoff(error, config, backoff)
 
@@ -108,6 +109,7 @@ defmodule Beamcore.Retry do
   defp retry_backoff(_error, _config, backoff), do: backoff
 
   defp sleep(config, milliseconds) do
+    milliseconds = milliseconds || @default_initial_backoff
     sleep_fun = Map.get(config, :sleep_fun) || (&Process.sleep/1)
     sleep_fun.(milliseconds)
   end

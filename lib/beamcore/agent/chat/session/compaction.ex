@@ -51,7 +51,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
           session
           | messages: [combined_system],
             last_prompt_tokens: 0,
-            needs_compaction: false,
             compaction_count: session.compaction_count + 1,
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
@@ -96,7 +95,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         %{
           session
           | messages: fallback,
-            needs_compaction: false,
             compaction_count: session.compaction_count + 1,
             last_prompt_tokens: 0,
             total_prompt_tokens: 0,
