@@ -253,37 +253,13 @@ defmodule Beamcore.Agent.Chat.Loop do
         end
 
       {:error, %OpenaiEx.Error{kind: :rate_limit} = error} ->
-        message = Beamcore.Agent.Chat.RateLimit.message(error)
-
-        Beamcore.AppLog.warn("Rate limit hit",
+        Beamcore.AppLog.warn("Rate limit retries exhausted, auto-retrying",
           provider: provider_name(session),
           model: model_name(session),
-          status_code: error.status_code,
-          message: message
+          status_code: error.status_code
         )
 
-        wait_ms =
-          Beamcore.Agent.Chat.RateLimit.retry_after_ms(error) ||
-            Beamcore.Agent.Chat.RateLimit.default_wait_ms()
-
-        retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
-        sleep_before_retry(opts, :rate_limit, wait_ms, retry_message)
-        process_messages(session, messages, pid, depth, caps, opts)
-
-      {:error, %Beamcore.Provider.Error{kind: :rate_limit} = error} ->
-        wait_ms = error.retry_after_ms || Beamcore.Agent.Chat.RateLimit.default_wait_ms()
-        message = error.message || "Provider rate limit reached."
-
-        Beamcore.AppLog.warn("Rate limit hit",
-          provider: provider_name(session),
-          model: model_name(session),
-          kind: error.kind,
-          message: message,
-          retry_after_ms: wait_ms
-        )
-
-        retry_message = "#{message} Retrying automatically in #{format_ms(wait_ms)}."
-        sleep_before_retry(opts, :rate_limit, wait_ms, retry_message)
+        emit(opts, {:assistant, "Rate limited by provider. Retrying..."})
         process_messages(session, messages, pid, depth, caps, opts)
 
       {:error, %OpenaiEx.Error{kind: :api_timeout_error}} ->
@@ -304,6 +280,17 @@ defmodule Beamcore.Agent.Chat.Loop do
           title: "Provider timeout",
           metadata: timeout_metadata(session, settings, call_elapsed)
         )
+
+      {:error, %Beamcore.Provider.Error{kind: :rate_limit} = error} ->
+        Beamcore.AppLog.warn("Rate limit retries exhausted, auto-retrying",
+          provider: provider_name(session),
+          model: model_name(session),
+          kind: error.kind,
+          message: error.message
+        )
+
+        emit(opts, {:assistant, "Rate limited by provider. Retrying..."})
+        process_messages(session, messages, pid, depth, caps, opts)
 
       {:error, %Beamcore.Provider.Error{} = error} ->
         Beamcore.AppLog.error("Provider error",
@@ -401,19 +388,8 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp retry_config(settings, opts) do
-    max_retries = settings.retry_limit
-
     %Beamcore.Retry.Config{
-      max_retries: max_retries,
-      initial_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
-      max_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
-      backoff_multiplier: 1,
-      retryable_errors: [
-        :rate_limit,
-        :api_timeout_error,
-        :api_connection_error,
-        :internal_server_error
-      ],
+      max_retries: settings.retry_limit,
       sleep_fun: fn wait_ms ->
         sleep_before_retry(
           opts,

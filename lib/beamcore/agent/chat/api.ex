@@ -50,7 +50,6 @@ defmodule Beamcore.Agent.Chat.API do
                   Beamcore.Provider.Router.chat(selection, request, opts)
 
                 _ ->
-                  Beamcore.RateLimiter.wait()
                   @completions_module.create(client, request)
               end
               |> format_response(opts)
@@ -76,18 +75,7 @@ defmodule Beamcore.Agent.Chat.API do
   end
 
   defp retry_config do
-    %Config{
-      max_retries: 3,
-      initial_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
-      max_backoff: Beamcore.Agent.Chat.RateLimit.default_wait_ms(),
-      backoff_multiplier: 1,
-      retryable_errors: [
-        :rate_limit,
-        :api_timeout_error,
-        :api_connection_error,
-        :internal_server_error
-      ]
-    }
+    Config.default()
   end
 
   defp format_response(

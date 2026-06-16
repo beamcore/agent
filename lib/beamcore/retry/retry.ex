@@ -5,7 +5,7 @@ defmodule Beamcore.Retry do
 
   @default_max_retries 50
   @default_initial_backoff 3000
-  @default_max_backoff 60000
+  @default_max_backoff 900_000
   @default_backoff_multiplier 2
   @default_retryable_errors [
     :rate_limit,
@@ -99,15 +99,6 @@ defmodule Beamcore.Retry do
 
       {:error, reason} ->
         {:error, reason}
-    end
-  end
-
-  defp retry_backoff(%OpenaiEx.Error{kind: :rate_limit} = error, config, backoff) do
-    error
-    |> Beamcore.Agent.Chat.RateLimit.retry_after_ms()
-    |> case do
-      wait_ms when is_integer(wait_ms) and wait_ms > 0 -> min(wait_ms, config.max_backoff)
-      _ -> backoff
     end
   end
 

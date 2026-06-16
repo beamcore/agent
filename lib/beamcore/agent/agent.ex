@@ -25,7 +25,6 @@ defmodule Beamcore.Agent do
     children = [
       Beamcore.Config,
       Beamcore.Memory,
-      Beamcore.RateLimiter,
       Beamcore.Provider.Scheduler,
       {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
       Beamcore.Agent.Tools.Eeva.AtomBudget,

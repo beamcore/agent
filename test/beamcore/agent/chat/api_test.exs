@@ -63,14 +63,8 @@ defmodule Beamcore.Agent.Chat.APITest do
              API.execute(client, [%{role: "user", content: "hello"}], [], model: "gpt-4o-mini")
   end
 
-  test "execute/5 uses Retry-After delay for provider rate limit", %{client: client} do
-    parent = self()
-
-    error = %OpenaiEx.Error{
-      kind: :rate_limit,
-      status_code: 429,
-      body: %{"retry_after" => "7"}
-    }
+  test "execute/5 retries on rate limit error", %{client: client} do
+    error = %OpenaiEx.Error{kind: :rate_limit, status_code: 429}
 
     Process.put(:mock_completions_calls, 0)
 
@@ -79,35 +73,14 @@ defmodule Beamcore.Agent.Chat.APITest do
       {:error, error}
     end)
 
-    retry_config = retry_config(fn ms -> send(parent, {:sleep, ms}) end)
+    retry_config = retry_config(fn _ms -> :ok end)
 
     assert {:error, ^error} =
              API.execute(client, [%{role: "user", content: "hello"}], [],
                retry_config: retry_config
              )
 
-    assert_receive {:sleep, 7000}
     assert Process.get(:mock_completions_calls) == 2
-  end
-
-  test "execute/5 uses fallback backoff for provider rate limit without Retry-After", %{
-    client: client
-  } do
-    parent = self()
-    error = %OpenaiEx.Error{kind: :rate_limit, status_code: 429}
-
-    Process.put(:mock_completions_create, fn _client, _params ->
-      {:error, error}
-    end)
-
-    retry_config = retry_config(fn ms -> send(parent, {:sleep, ms}) end)
-
-    assert {:error, ^error} =
-             API.execute(client, [%{role: "user", content: "hello"}], [],
-               retry_config: retry_config
-             )
-
-    assert_receive {:sleep, 5000}
   end
 
   test "execute/5 passes requested max_tokens through provider selection" do
