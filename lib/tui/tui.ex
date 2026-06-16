@@ -225,7 +225,6 @@ defmodule Beamcore.TUI do
           worker_pid: inspect(worker_pid)
         )
 
-        Logger.warning("TUI dropping runtime event from unknown worker #{inspect(worker_pid)}")
         {:noreply, state}
     end
   end

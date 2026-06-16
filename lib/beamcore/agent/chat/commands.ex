@@ -21,7 +21,7 @@ defmodule Beamcore.Agent.Chat.Commands do
   Handle a command and return the updated session.
   """
   def execute(command, session, opts \\ []) do
-    output = Keyword.get(opts, :output, &IO.puts/1)
+    output = Keyword.get(opts, :output, fn msg -> Beamcore.AppLog.info(msg) end)
     custom_output? = Keyword.has_key?(opts, :output)
 
     case command do
@@ -277,12 +277,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     %{session | context: Beamcore.Agent.Chat.Context.new()}
   end
 
-  defp handle_unknown(command, session, _output, false) do
-    IO.puts("Unknown command: /#{command}")
-    session
-  end
-
-  defp handle_unknown(command, session, output, true) do
+  defp handle_unknown(command, session, output, _custom_output?) do
     output.("Error: Unknown command: /#{command}")
     session
   end

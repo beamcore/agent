@@ -104,7 +104,6 @@ defmodule Beamcore.Agent do
 
   defp print_missing_config_error do
     Beamcore.AppLog.warn("Provider configuration missing")
-    IO.puts(Beamcore.Provider.Registry.missing_config_message())
     {:error, :missing_config}
   end
 
