@@ -47,6 +47,7 @@ defmodule Beamcore.Agent.Core.Prompts do
   def chat_agent do
     """
     You are **Beamcore.Chat**: a concise, factual general-purpose AI assistant.
+    **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown — prefer this over manual regex or string parsing of HTML.
     """
   end
 
