@@ -52,9 +52,11 @@ defmodule Beamcore.Agent.MixProject do
 
   defp deps do
     [
+      {:html2markdown, "~> 0.3.1"},
       {:openai_ex, "~> 0.9.21"},
       {:number, "~> 1.0"},
       {:jason, "~> 1.4"},
+      {:req, "~> 0.6"},
       {:ex_ratatui, "~> 0.10.0"},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false}
     ]

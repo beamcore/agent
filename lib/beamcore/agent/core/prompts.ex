@@ -35,6 +35,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     Bias toward useful action: inspect, edit, test, and iterate until the task is genuinely handled.
 
     #{workspace_section}
+    **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown — prefer this over manual regex or string parsing of HTML.
     **Tools**:
     - #{formatted_tools}
     """
