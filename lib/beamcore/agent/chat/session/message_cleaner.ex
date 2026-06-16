@@ -11,118 +11,116 @@ defmodule Beamcore.Agent.Chat.Session.MessageCleaner do
   dangling tool calls, empty assistant messages, and enforces role alternation.
   """
   def clean(messages) do
-    {system_messages, cleaned} = split_system(messages)
-    system_messages ++ cleaned
+    {system, rest} = split_system(messages)
+    system ++ do_clean(rest)
   end
 
   @doc """
   Cleans and truncates a message list to the given message count limit.
   """
   def trim_and_clean(messages, limit) do
-    {system_messages, cleaned} = split_system(messages)
-
-    trimmed =
-      if length(cleaned) > limit do
-        Enum.take(cleaned, -limit)
-      else
-        cleaned
-      end
-
-    system_messages ++ trimmed
+    {system, rest} = split_system(messages)
+    trimmed = if length(rest) > limit, do: Enum.take(rest, -limit), else: rest
+    system ++ do_clean(trimmed)
   end
 
   defp split_system(messages) do
-    {system_messages, other_messages} =
-      Enum.split_with(messages, fn m ->
-        (m[:role] || m["role"]) == "system"
-      end)
-
-    cleaned =
-      other_messages
-      |> normalize_all_tool_calls()
-      |> clean_orphaned_tools()
-      |> clean_dangling_tool_calls()
-      |> remove_empty_assistant_messages()
-      |> ensure_starts_with_user()
-      |> merge_consecutive_roles()
-
-    cleaned =
-      case cleaned do
-        [] -> [%{role: "user", content: "Continuing the conversation."}]
-        other -> other
-      end
-
-    {system_messages, cleaned}
+    Enum.split_with(messages, &(role(&1) == "system"))
   end
 
-  defp normalize_all_tool_calls(messages) do
+  defp do_clean(messages) do
+    messages
+    |> normalize_tool_calls()
+    |> drop_leading_orphans()
+    |> fill_dangling_tool_calls()
+    |> drop_orphaned_tools()
+    |> drop_empty_assistant()
+    |> ensure_user_first()
+    |> merge_consecutive()
+    |> ensure_nonempty()
+  end
+
+  # --- Field access ---
+
+  defp role(msg), do: msg[:role] || msg["role"]
+  defp content(msg), do: msg[:content] || msg["content"]
+  defp tool_calls(msg), do: msg[:tool_calls] || msg["tool_calls"]
+  defp tool_call_id(msg), do: msg[:tool_call_id] || msg["tool_call_id"]
+
+  defp put_field(msg, :tool_calls, value) do
+    if Map.has_key?(msg, :tool_calls),
+      do: Map.put(msg, :tool_calls, value),
+      else: Map.put(msg, "tool_calls", value)
+  end
+
+  defp put_field(msg, :content, value) do
+    if Map.has_key?(msg, :content),
+      do: Map.put(msg, :content, value),
+      else: Map.put(msg, "content", value)
+  end
+
+  defp delete_field(msg, :tool_calls) do
+    msg |> Map.delete(:tool_calls) |> Map.delete("tool_calls")
+  end
+
+  # --- Pipeline ---
+
+  defp normalize_tool_calls(messages) do
     Enum.map(messages, fn msg ->
-      role = msg[:role] || msg["role"]
-      tool_calls = msg["tool_calls"] || msg[:tool_calls]
+      tc = tool_calls(msg)
 
-      if role == "assistant" and is_list(tool_calls) and tool_calls != [] do
-        fixed =
-          Enum.map(tool_calls, fn tc ->
-            tc
-            |> Map.put("type", "function")
-            |> Map.delete("index")
-          end)
-
-        if Map.has_key?(msg, :tool_calls),
-          do: Map.put(msg, :tool_calls, fixed),
-          else: Map.put(msg, "tool_calls", fixed)
+      if role(msg) == "assistant" and is_list(tc) and tc != [] do
+        fixed = Enum.map(tc, fn t -> t |> Map.put("type", "function") |> Map.delete("index") end)
+        put_field(msg, :tool_calls, fixed)
       else
         msg
       end
     end)
   end
 
-  defp clean_dangling_tool_calls(messages) do
-    answered_ids =
+  defp drop_leading_orphans(messages) do
+    Enum.drop_while(messages, &(role(&1) == "tool"))
+  end
+
+  defp fill_dangling_tool_calls(messages) do
+    answered =
       messages
-      |> Enum.filter(fn msg -> (msg[:role] || msg["role"]) == "tool" end)
-      |> Enum.map(fn msg -> msg[:tool_call_id] || msg["tool_call_id"] end)
+      |> Enum.filter(&(role(&1) == "tool"))
+      |> Enum.map(&tool_call_id/1)
       |> MapSet.new()
 
-    {result, _answered} =
-      Enum.reduce(messages, {[], answered_ids}, fn msg, {acc, ids} ->
-        role = msg[:role] || msg["role"]
-        tool_calls = msg["tool_calls"] || msg[:tool_calls]
+    {result, _} =
+      Enum.reduce(messages, {[], answered}, fn msg, {acc, ids} ->
+        tc = tool_calls(msg)
 
-        if role == "assistant" and is_list(tool_calls) and tool_calls != [] do
+        if role(msg) == "assistant" and is_list(tc) and tc != [] do
           {dangling, kept} =
-            Enum.split_with(tool_calls, fn tc ->
-              not MapSet.member?(ids, tc["id"] || tc[:id])
-            end)
+            Enum.split_with(tc, fn t -> not MapSet.member?(ids, t["id"] || t[:id]) end)
 
           if dangling == [] do
             {[msg | acc], ids}
           else
-            synthetic_responses =
-              Enum.map(dangling, fn tc ->
+            synthetic =
+              Enum.map(dangling, fn t ->
                 %{
                   role: "tool",
-                  tool_call_id: tc["id"] || tc[:id],
-                  name: get_in(tc, ["function", "name"]) || get_in(tc, [:function, :name]),
+                  tool_call_id: t["id"] || t[:id],
+                  name: get_in(t, [:function, :name]) || get_in(t, ["function", "name"]),
                   content: "[Interrupted: tool execution was cancelled before completion]"
                 }
               end)
 
-            updated_msg =
+            updated =
               if kept == [] do
-                msg |> Map.delete("tool_calls") |> Map.delete(:tool_calls)
+                delete_field(msg, :tool_calls)
               else
-                if Map.has_key?(msg, :tool_calls),
-                  do: Map.put(msg, :tool_calls, kept),
-                  else: Map.put(msg, "tool_calls", kept)
+                put_field(msg, :tool_calls, kept)
               end
 
             new_ids =
-              Enum.reduce(dangling, ids, fn tc, s ->
-                MapSet.put(s, tc["id"] || tc[:id])
-              end)
+              Enum.reduce(dangling, ids, fn t, s -> MapSet.put(s, t["id"] || t[:id]) end)
 
-            {Enum.reverse(synthetic_responses) ++ [updated_msg | acc], new_ids}
+            {Enum.reverse(synthetic) ++ [updated | acc], new_ids}
           end
         else
           {[msg | acc], ids}
@@ -132,113 +130,52 @@ defmodule Beamcore.Agent.Chat.Session.MessageCleaner do
     Enum.reverse(result)
   end
 
-  defp remove_empty_assistant_messages(messages) do
+  defp drop_orphaned_tools(messages) do
+    Enum.reduce(messages, [], fn msg, acc ->
+      if role(msg) == "tool" do
+        prev = List.first(acc)
+        if prev && role(prev) in ["assistant", "tool"], do: [msg | acc], else: acc
+      else
+        [msg | acc]
+      end
+    end)
+    |> Enum.reverse()
+  end
+
+  defp drop_empty_assistant(messages) do
     Enum.reject(messages, fn msg ->
-      role = msg[:role] || msg["role"]
-      content = msg[:content] || msg["content"]
-      tool_calls = msg[:tool_calls] || msg["tool_calls"]
-
-      reasoning =
-        msg[:reasoning] || msg["reasoning"] || msg[:reasoning_content] || msg["reasoning_content"]
-
-      role == "assistant" and
-        (is_nil(content) or content == "" or (is_binary(content) and String.trim(content) == "")) and
-        (is_nil(tool_calls) or tool_calls == []) and
-        (is_nil(reasoning) or reasoning == "" or
-           (is_binary(reasoning) and String.trim(reasoning) == ""))
+      role(msg) == "assistant" and
+        blank?(content(msg)) and
+        (is_nil(tool_calls(msg)) or tool_calls(msg) == []) and
+        blank?(
+          msg[:reasoning] || msg["reasoning"] || msg[:reasoning_content] ||
+            msg["reasoning_content"]
+        )
     end)
   end
 
-  defp clean_orphaned_tools(messages) do
-    messages =
-      Enum.drop_while(messages, fn msg ->
-        (msg[:role] || msg["role"]) == "tool"
-      end)
+  defp blank?(nil), do: true
+  defp blank?(""), do: true
+  defp blank?(s) when is_binary(s), do: String.trim(s) == ""
+  defp blank?(_), do: false
 
-    clean_orphaned_tools_helper(messages, [])
+  defp ensure_user_first([]), do: []
+
+  defp ensure_user_first([msg | _] = msgs) do
+    if role(msg) == "user",
+      do: msgs,
+      else: [%{role: "user", content: "Continuing the conversation."} | msgs]
   end
 
-  defp clean_orphaned_tools_helper([], acc), do: Enum.reverse(acc)
-
-  defp clean_orphaned_tools_helper([msg | rest], acc) do
-    role = msg[:role] || msg["role"]
-
-    if role == "tool" do
-      prev = List.first(acc)
-      prev_role = if prev, do: prev[:role] || prev["role"]
-
-      if prev_role == "assistant" or prev_role == "tool" do
-        clean_orphaned_tools_helper(rest, [msg | acc])
-      else
-        clean_orphaned_tools_helper(rest, acc)
-      end
-    else
-      clean_orphaned_tools_helper(rest, [msg | acc])
-    end
-  end
-
-  defp ensure_starts_with_user(messages) do
-    case messages do
-      [] ->
-        []
-
-      [msg | _] = list ->
-        if (msg[:role] || msg["role"]) == "user" do
-          list
-        else
-          [%{role: "user", content: "Continuing the conversation."} | list]
-        end
-    end
-  end
-
-  defp merge_consecutive_roles(messages) do
+  defp merge_consecutive(messages) do
     Enum.reduce(messages, [], fn msg, acc ->
       case acc do
         [] ->
           [msg]
 
         [prev | rest] ->
-          prev_role = prev[:role] || prev["role"]
-          curr_role = msg[:role] || msg["role"]
-
-          if prev_role == curr_role and prev_role in ["user", "assistant"] do
-            prev_content = prev[:content] || prev["content"] || ""
-            curr_content = msg[:content] || msg["content"] || ""
-            merged_content = prev_content <> "\n\n" <> curr_content
-
-            prev_tool_calls = prev[:tool_calls] || prev["tool_calls"]
-            curr_tool_calls = msg[:tool_calls] || msg["tool_calls"]
-
-            merged_msg =
-              if Map.has_key?(prev, :content) do
-                Map.put(prev, :content, merged_content)
-              else
-                Map.put(prev, "content", merged_content)
-              end
-
-            merged_msg =
-              cond do
-                is_nil(curr_tool_calls) or curr_tool_calls == [] ->
-                  merged_msg
-
-                is_nil(prev_tool_calls) or prev_tool_calls == [] ->
-                  if Map.has_key?(merged_msg, :tool_calls) do
-                    Map.put(merged_msg, :tool_calls, curr_tool_calls)
-                  else
-                    Map.put(merged_msg, "tool_calls", curr_tool_calls)
-                  end
-
-                true ->
-                  combined = prev_tool_calls ++ curr_tool_calls
-
-                  if Map.has_key?(merged_msg, :tool_calls) do
-                    Map.put(merged_msg, :tool_calls, combined)
-                  else
-                    Map.put(merged_msg, "tool_calls", combined)
-                  end
-              end
-
-            [merged_msg | rest]
+          if role(prev) == role(msg) and role(prev) in ["user", "assistant"] do
+            [merge_two(prev, msg) | rest]
           else
             [msg | acc]
           end
@@ -246,4 +183,19 @@ defmodule Beamcore.Agent.Chat.Session.MessageCleaner do
     end)
     |> Enum.reverse()
   end
+
+  defp merge_two(prev, msg) do
+    merged = put_field(prev, :content, (content(prev) || "") <> "\n\n" <> (content(msg) || ""))
+
+    case {tool_calls(prev), tool_calls(msg)} do
+      {_, nil} -> merged
+      {_, []} -> merged
+      {nil, tc} -> put_field(merged, :tool_calls, tc)
+      {[], tc} -> put_field(merged, :tool_calls, tc)
+      {tc1, tc2} -> put_field(merged, :tool_calls, tc1 ++ tc2)
+    end
+  end
+
+  defp ensure_nonempty([]), do: [%{role: "user", content: "Continuing the conversation."}]
+  defp ensure_nonempty(msgs), do: msgs
 end
