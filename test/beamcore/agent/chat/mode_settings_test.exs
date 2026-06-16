@@ -4,16 +4,12 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
   alias Beamcore.Agent.Chat.ModeSettings
 
   setup do
-    # Clean up any mode settings from prior tests
     Enum.each(
       [
         :mode_chat_provider,
         :mode_chat_model,
         :mode_agent_provider,
-        :mode_agent_model,
-        :max_tool_calls,
-        :mode_chat_tool_depth_limit,
-        :mode_agent_tool_depth_limit
+        :mode_agent_model
       ],
       fn key ->
         Beamcore.Config.delete(key)
@@ -28,10 +24,7 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
           :mode_chat_provider,
           :mode_chat_model,
           :mode_agent_provider,
-          :mode_agent_model,
-          :max_tool_calls,
-          :mode_chat_tool_depth_limit,
-          :mode_agent_tool_depth_limit
+          :mode_agent_model
         ],
         fn key ->
           Beamcore.Config.delete(key)
@@ -51,31 +44,19 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
     assert settings.model == "gpt-test"
   end
 
-  test "unknown legacy research screen resolves to agent settings" do
+  test "unknown mode raises ArgumentError" do
+    assert_raise ArgumentError, ~r/Unknown mode/, fn ->
+      ModeSettings.resolve(:unknown_screen)
+    end
+  end
+
+  test "retry_limit defaults differ by mode" do
     Beamcore.Config.put(:mode_agent_provider, "openai")
     Beamcore.Config.put(:mode_agent_model, "gpt-test")
+    Beamcore.Config.put(:mode_chat_provider, "openai")
+    Beamcore.Config.put(:mode_chat_model, "gpt-test")
 
-    settings = ModeSettings.resolve(:research)
-
-    assert settings.mode == :agent
-    assert settings.provider == "openai"
-    assert settings.model == "gpt-test"
-  end
-
-  test "unknown screen resolves to agent settings" do
-    settings = ModeSettings.resolve(:unknown_screen)
-    assert settings.mode == :agent
-  end
-
-  test "freedom mode does not impose a tiny default tool loop" do
-    assert ModeSettings.resolve(:agent).tool_depth_limit == 10_000
-    assert ModeSettings.resolve(:chat).tool_depth_limit == 10_000
-  end
-
-  test "global tool-call limit is explicit configuration" do
-    Beamcore.Config.put(:max_tool_calls, "42")
-
-    assert ModeSettings.resolve(:agent).tool_depth_limit == 42
-    assert ModeSettings.resolve(:chat).tool_depth_limit == 42
+    assert ModeSettings.resolve(:agent).retry_limit == 3
+    assert ModeSettings.resolve(:chat).retry_limit == 2
   end
 end

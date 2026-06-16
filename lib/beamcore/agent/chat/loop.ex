@@ -65,25 +65,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp process_messages(session, messages, pid, depth, caps, opts)
        when depth >= 0 do
-    max_depth = tool_depth_limit(session)
-
-    if depth >= max_depth do
-      stop_for_depth_limit(session, messages, opts, max_depth)
-    else
-      do_process_messages(session, messages, pid, depth, caps, opts)
-    end
-  end
-
-  defp stop_for_depth_limit(session, messages, opts, max_depth) do
-    warning = "Tool loop depth limit (#{max_depth}) reached. Stopping."
-    emit(opts, {:error, warning})
-
-    session =
-      session
-      |> Map.put(:messages, Session.compact_history(messages))
-      |> Session.append_timeline(:interrupted, warning)
-
-    finish_turn(session, opts)
+    do_process_messages(session, messages, pid, depth, caps, opts)
   end
 
   defp do_process_messages(session, messages, pid, depth, caps, opts) do
@@ -134,7 +116,7 @@ defmodule Beamcore.Agent.Chat.Loop do
           silent: Keyword.get(opts, :silent, false),
           retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
           temperature: Keyword.get(opts, :temperature),
-          max_tokens: metadata.max_output_tokens || settings.output_budget || 2_000,
+          max_tokens: metadata.max_output_tokens,
           wait_fun: fn wait_ms ->
             sleep_before_retry(
               opts,
@@ -418,14 +400,8 @@ defmodule Beamcore.Agent.Chat.Loop do
     end
   end
 
-  defp tool_depth_limit(session) do
-    session
-    |> mode_settings()
-    |> Map.fetch!(:tool_depth_limit)
-  end
-
   defp retry_config(settings, opts) do
-    max_retries = if ModeSettings.local_provider?(settings), do: 0, else: settings.retry_limit
+    max_retries = settings.retry_limit
 
     %Beamcore.Retry.Config{
       max_retries: max_retries,
@@ -557,18 +533,13 @@ defmodule Beamcore.Agent.Chat.Loop do
       configured_duration_ms: receive_timeout_ms(settings),
       elapsed_duration_ms: elapsed_ms,
       attempt_number: 1,
-      max_attempts:
-        if(ModeSettings.local_provider?(settings), do: 1, else: settings.retry_limit + 1),
+      max_attempts: settings.retry_limit + 1,
       stream: false
     }
   end
 
-  defp receive_timeout_ms(settings) do
-    if ModeSettings.local_provider?(settings) do
-      Beamcore.Config.get_setting(:local_provider_receive_timeout_ms, 120_000)
-    else
-      Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
-    end
+  defp receive_timeout_ms(_settings) do
+    Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
   end
 
   defp format_ms(ms) when is_integer(ms) and ms >= 1000, do: "#{Float.round(ms / 1000, 1)}s"
