@@ -13,7 +13,7 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     on_exit(fn ->
       PathInput.restore_workspace_root(previous_root)
       File.rm_rf!(root)
-      System.delete_env("BEAMCORE_EEVA_TIMEOUT_MS")
+      Beamcore.Config.delete(:eeva_timeout_ms)
     end)
 
     %{root: root}
@@ -145,7 +145,7 @@ defmodule Beamcore.Agent.Tools.EevaTest do
   end
 
   test "execution timeout is enforced" do
-    System.put_env("BEAMCORE_EEVA_TIMEOUT_MS", "50")
+    Beamcore.Config.put(:eeva_timeout_ms, "50")
     result = Eeva.execute(%{"code" => "Process.sleep(5_000); :late"}) |> Jason.decode!()
     refute result["ok"]
     assert result["summary"] =~ "timeout"

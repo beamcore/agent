@@ -43,28 +43,25 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     Application.put_env(:agent, :config_dets_path, path)
 
     try do
-      Beamcore.Agent.TestEnv.with_env(
-        %{"OPENAI_API_KEY" => nil, "ACTIVE_PROVIDER" => "openai"},
-        fn ->
-          output =
-            ExUnit.CaptureIO.capture_io(fn ->
-              result =
-                Beamcore.Agent.chat(:auto,
-                  supported?: true,
-                  tui_start: fn _opts -> :tui_started end
-                )
+      Beamcore.Config.set_active_provider("openai")
 
-              send(self(), {:result, result})
-            end)
+      output =
+        ExUnit.CaptureIO.capture_io(fn ->
+          result =
+            Beamcore.Agent.chat(:auto,
+              supported?: true,
+              tui_start: fn _opts -> :tui_started end
+            )
 
-          assert output =~ "Provider 'openai' is not configured"
-          assert output =~ "/api add"
-          refute output =~ "TUI unavailable"
-          refute output =~ "Starting plain emergency fallback"
-          refute output =~ "** ("
-          assert_receive {:result, :tui_started}
-        end
-      )
+          send(self(), {:result, result})
+        end)
+
+      assert output =~ "Provider 'openai' is not configured"
+      assert output =~ "/api add"
+      refute output =~ "TUI unavailable"
+      refute output =~ "Starting plain emergency fallback"
+      refute output =~ "** ("
+      assert_receive {:result, :tui_started}
     after
       restore_config_path(previous)
       File.rm(path)

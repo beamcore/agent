@@ -2,12 +2,9 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
   @moduledoc """
   Resolves per-mode provider, model, and execution limits.
 
-  Environment variables use the normalized mode name:
-
-  - `BEAMCORE_AGENT_PROVIDER`, `BEAMCORE_AGENT_MODEL`
-  - `BEAMCORE_CHAT_PROVIDER`, `BEAMCORE_CHAT_MODEL`
-  Stored provider/model selections from `Beamcore.Config` are used when the
-  environment does not override them.
+  Settings are stored in `Beamcore.Config` (DETS-backed). Each mode
+  (`:agent`, `:chat`) has its own set of keys. Falls back to built-in
+  defaults when no stored value exists.
   """
 
   @enforce_keys [:mode, :provider, :model]
@@ -39,11 +36,6 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
     }
   }
 
-  @mode_env %{
-    agent: "AGENT",
-    chat: "CHAT"
-  }
-
   @doc """
   Resolve settings for a screen/mode.
   """
@@ -52,22 +44,22 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
     defaults = Map.fetch!(@defaults, mode)
 
     provider =
-      env_value(mode, "PROVIDER") ||
+      Beamcore.Config.get(:"mode_#{mode}_provider") ||
         Beamcore.Config.active_provider(mode)
 
     model =
-      env_value(mode, "MODEL") ||
+      Beamcore.Config.get(:"mode_#{mode}_model") ||
         Beamcore.Config.active_model(mode)
 
     %__MODULE__{
       mode: mode,
       provider: provider,
       model: model,
-      input_budget: integer_setting(mode, "INPUT_BUDGET", defaults.input_budget),
-      output_budget: integer_setting(mode, "OUTPUT_BUDGET", defaults.output_budget),
-      history_limit: integer_setting(mode, "HISTORY_LIMIT", defaults.history_limit),
+      input_budget: config_integer(:"mode_#{mode}_input_budget", defaults.input_budget),
+      output_budget: config_integer(:"mode_#{mode}_output_budget", defaults.output_budget),
+      history_limit: config_integer(:"mode_#{mode}_history_limit", defaults.history_limit),
       tool_depth_limit: tool_depth_limit(mode, defaults.tool_depth_limit),
-      retry_limit: integer_setting(mode, "RETRY_LIMIT", defaults.retry_limit)
+      retry_limit: config_integer(:"mode_#{mode}_retry_limit", defaults.retry_limit)
     }
   end
 
@@ -93,49 +85,16 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
     end
   end
 
-  defp env_value(mode, suffix) do
-    key = "BEAMCORE_#{Map.fetch!(@mode_env, mode)}_#{suffix}"
-
-    case System.get_env(key) do
-      value when is_binary(value) ->
-        value = String.trim(value)
-        if value == "", do: nil, else: value
-
-      _ ->
-        nil
-    end
-  end
-
-  defp integer_setting(mode, suffix, default) do
-    case env_value(mode, suffix) do
-      nil ->
-        default
-
-      value ->
-        case Integer.parse(value) do
-          {integer, ""} when integer > 0 -> integer
-          _ -> default
-        end
+  defp config_integer(key, default) do
+    case Beamcore.Config.get_setting(key) do
+      nil -> default
+      value when is_integer(value) -> value
+      _ -> default
     end
   end
 
   defp tool_depth_limit(mode, default) do
-    env_positive_integer("BEAMCORE_MAX_TOOL_CALLS") ||
-      integer_setting(mode, "TOOL_DEPTH_LIMIT", default)
-  end
-
-  defp env_positive_integer(name) do
-    case System.get_env(name) do
-      value when is_binary(value) ->
-        value = String.trim(value)
-
-        case Integer.parse(value) do
-          {integer, ""} when integer > 0 -> integer
-          _ -> nil
-        end
-
-      _ ->
-        nil
-    end
+    config_integer(:max_tool_calls, nil) ||
+      config_integer(:"mode_#{mode}_tool_depth_limit", default)
   end
 end

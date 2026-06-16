@@ -5,10 +5,13 @@ defmodule Beamcore.Agent.Chat.APITest do
   alias Beamcore.Retry.Config
 
   setup do
-    Beamcore.Agent.TestEnv.setup_env(%{
-      "OPENAI_API_KEY" => "test-api-key",
-      "ACTIVE_PROVIDER" => "openai"
+    Beamcore.Config.put_provider("openai", %{
+      api_key: "test-api-key",
+      base_url: "https://api.openai.com/v1",
+      default_model: "gpt-4o"
     })
+
+    Beamcore.Config.set_active_provider("openai")
 
     client = Beamcore.Provider.Registry.client()
 
@@ -57,9 +60,7 @@ defmodule Beamcore.Agent.Chat.APITest do
     end)
 
     assert {:ok, %{message: %{"content" => "Hello"}}} =
-             API.execute(client, [%{role: "user", content: "hello"}], [], :main,
-               model: "gpt-4o-mini"
-             )
+             API.execute(client, [%{role: "user", content: "hello"}], [], model: "gpt-4o-mini")
   end
 
   test "execute/5 uses Retry-After delay for provider rate limit", %{client: client} do
@@ -81,7 +82,7 @@ defmodule Beamcore.Agent.Chat.APITest do
     retry_config = retry_config(fn ms -> send(parent, {:sleep, ms}) end)
 
     assert {:error, ^error} =
-             API.execute(client, [%{role: "user", content: "hello"}], [], :main,
+             API.execute(client, [%{role: "user", content: "hello"}], [],
                retry_config: retry_config
              )
 
@@ -102,7 +103,7 @@ defmodule Beamcore.Agent.Chat.APITest do
     retry_config = retry_config(fn ms -> send(parent, {:sleep, ms}) end)
 
     assert {:error, ^error} =
-             API.execute(client, [%{role: "user", content: "hello"}], [], :main,
+             API.execute(client, [%{role: "user", content: "hello"}], [],
                retry_config: retry_config
              )
 
@@ -129,7 +130,6 @@ defmodule Beamcore.Agent.Chat.APITest do
                nil,
                [%{role: "user", content: "hi"}],
                [],
-               :main,
                selection: %{provider: "custom-compatible", model: "model-a"},
                model: "model-a",
                max_tokens: 321,

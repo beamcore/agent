@@ -40,9 +40,7 @@ defmodule Beamcore.Config do
   # -- public API ----------------------------------------------------------
 
   def path do
-    Application.get_env(:agent, :config_dets_path) ||
-      System.get_env("BEAMCORE_CONFIG_DETS_PATH") ||
-      @default_path
+    Application.get_env(:agent, :config_dets_path) || @default_path
   end
 
   def configured?(key) when is_atom(key) do
@@ -63,6 +61,27 @@ defmodule Beamcore.Config do
   end
 
   def delete(key) when is_atom(key), do: call({:delete, key}, :ok)
+
+  def get_setting(key, default \\ nil) when is_atom(key) do
+    case get(key) do
+      nil ->
+        default
+
+      value when is_binary(value) ->
+        case Integer.parse(String.trim(value)) do
+          {int, ""} when int > 0 -> int
+          _ -> value
+        end
+    end
+  end
+
+  def put_setting(key, value) when is_atom(key) and is_integer(value) do
+    put(key, Integer.to_string(value))
+  end
+
+  def put_setting(key, value) when is_atom(key) and is_binary(value) do
+    put(key, value)
+  end
 
   def list_providers do
     case get(:api_configs) do
@@ -97,7 +116,7 @@ defmodule Beamcore.Config do
   def decrypted_api_key(key) when is_binary(key), do: key
 
   def active_provider do
-    get(:active_provider) || System.get_env("ACTIVE_PROVIDER")
+    get(:active_provider)
   end
 
   def set_active_provider(name) when is_binary(name), do: put(:active_provider, name)
@@ -308,7 +327,7 @@ defmodule Beamcore.Config do
         {:ok, host} -> to_string(host)
       end
 
-    username = System.get_env("USER") || System.get_env("USERNAME") || "unknown-user"
+    username = System.get_env("USER") || System.get_env("USERNAME") || "default"
     :crypto.hash(:sha256, "beamcore-config-v1|#{hostname}|#{username}")
   end
 
@@ -318,7 +337,7 @@ defmodule Beamcore.Config do
         {:ok, host} -> to_string(host)
       end
 
-    username = System.get_env("USER") || System.get_env("USERNAME") || "unknown"
+    username = System.get_env("USER") || System.get_env("USERNAME") || "default"
     :crypto.hash(:sha256, hostname <> "|" <> username)
   end
 

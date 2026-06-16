@@ -13,12 +13,6 @@ defmodule Beamcore.Provider.RegistryTest do
     previous_path = Application.get_env(:agent, :config_dets_path)
     Application.put_env(:agent, :config_dets_path, path)
 
-    Beamcore.Agent.TestEnv.setup_env(%{
-      "OPENAI_API_KEY" => nil,
-      "API_KEY" => nil,
-      "ACTIVE_PROVIDER" => nil
-    })
-
     on_exit(fn ->
       restore_config_path(previous_path)
       File.rm(path)

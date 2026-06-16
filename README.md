@@ -94,11 +94,10 @@ Beamcore labels estimates explicitly.
 Beamcore is autonomous by default. Useful local coding actions are not hidden
 behind approval loops or legacy allowlists. Operator controls are explicit:
 
-- `BEAMCORE_MAX_TOOL_CALLS` caps model tool iterations when set. Empty or
-  unset means Beamcore uses its high default for iterative coding.
-- `BEAMCORE_EEVA_TIMEOUT_MS`, `BEAMCORE_EEVA_MAX_CODE_BYTES`,
-  `BEAMCORE_EEVA_MAX_OUTPUT_BYTES`, and related `BEAMCORE_EEVA_*` values tune
-  runtime stability bounds.
+- `Beamcore.Config.put_setting(:max_tool_calls, 42)` caps model tool iterations.
+  Unset means Beamcore uses its high default for iterative coding.
+- Eeva runtime bounds (`:eeva_timeout_ms`, `:eeva_max_code_bytes`,
+  `:eeva_max_output_bytes`, etc.) are tuned via `Beamcore.Config.put_setting/2`.
 - `Beamcore.Agent.Tools.Eeva.remove(path, confirm: true)` is the explicit helper
   for destructive removal. Without `confirm: true`, it refuses to remove files.
 - Relative paths resolve from the active project root; absolute and symlinked

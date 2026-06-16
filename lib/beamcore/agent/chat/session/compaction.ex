@@ -58,7 +58,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
            session.client,
            trimmed ++ [summary_prompt],
            [],
-           :main,
            selection: primary,
            model: Map.get(primary, :model),
            silent: true

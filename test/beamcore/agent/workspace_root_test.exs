@@ -6,7 +6,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
   alias Beamcore.Agent.Tools.Eeva
 
   setup do
-    Beamcore.Agent.TestEnv.setup_env(%{"ACTIVE_PROVIDER" => "openai"})
+    Beamcore.Config.set_active_provider("openai")
 
     root =
       Path.join(System.tmp_dir!(), "beamcore_workspace_#{System.unique_integer([:positive])}")

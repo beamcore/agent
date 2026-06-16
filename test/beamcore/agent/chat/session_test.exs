@@ -3,10 +3,13 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   alias Beamcore.Agent.Chat.Session
 
   setup do
-    Beamcore.Agent.TestEnv.setup_env(%{
-      "OPENAI_API_KEY" => "test-api-key",
-      "ACTIVE_PROVIDER" => "openai"
+    Beamcore.Config.put_provider("openai", %{
+      api_key: "test-api-key",
+      base_url: "https://api.openai.com/v1",
+      default_model: "gpt-4o"
     })
+
+    Beamcore.Config.set_active_provider("openai")
   end
 
   test "generate_name/0 returns a funny name" do

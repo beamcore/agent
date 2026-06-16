@@ -17,9 +17,11 @@ defmodule Beamcore.Agent.Tools.Eeva.Supervisor do
 
   @impl true
   def init(_opts) do
+    max_children = Beamcore.Config.get_setting(:eeva_max_concurrency, @default_max_children)
+
     DynamicSupervisor.init(
       strategy: :one_for_one,
-      max_children: env_limit("BEAMCORE_EEVA_MAX_CONCURRENCY", @default_max_children)
+      max_children: max_children
     )
   end
 
@@ -30,13 +32,6 @@ defmodule Beamcore.Agent.Tools.Eeva.Supervisor do
 
       _pid ->
         DynamicSupervisor.start_child(__MODULE__, {Beamcore.Agent.Tools.Eeva.Worker, opts})
-    end
-  end
-
-  defp env_limit(name, default) do
-    case Integer.parse(System.get_env(name, "")) do
-      {value, ""} when value > 0 -> value
-      _ -> default
     end
   end
 end
