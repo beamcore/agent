@@ -4,9 +4,24 @@ defmodule Beamcore.TUI.State do
   """
 
   alias Beamcore.Agent.Chat.Session
-  alias Beamcore.Agent.Core.ToolDisplay
+  alias Beamcore.TUI.State.{Activity, FileFinder, WaitStatus}
 
-  @max_activity 500
+  defdelegate add_activity(state, name, args, status \\ :queued), to: Activity
+  defdelegate update_activity(state, name, args, result), to: Activity
+  defdelegate compact_activity(name, args, status, result \\ nil), to: Activity
+  defdelegate timeline_items(state), to: Activity
+  defdelegate compact_args(args), to: Activity
+
+  defdelegate activate_file_finder(state, query, results), to: FileFinder, as: :activate
+  defdelegate deactivate_file_finder(state), to: FileFinder, as: :deactivate
+  defdelegate update_file_finder_query(state, query, results), to: FileFinder, as: :update_query
+  defdelegate select_file_finder_result(state, offset), to: FileFinder, as: :select_result
+
+  defdelegate set_wait_status(state, event), to: WaitStatus, as: :set
+  defdelegate clear_wait_status(state), to: WaitStatus, as: :clear
+
+  def wait_status_text(state, now_ms \\ System.monotonic_time(:millisecond)),
+    do: WaitStatus.text(state, now_ms)
 
   defstruct terminal: nil,
             textarea: nil,
@@ -123,40 +138,6 @@ defmodule Beamcore.TUI.State do
     %{state | status: status} |> mark_dirty()
   end
 
-  def set_wait_status(state, attrs) when is_map(attrs) do
-    now_ms = Map.get(attrs, :now_ms, System.monotonic_time(:millisecond))
-    wait_ms = attrs |> Map.get(:wait_ms, 0) |> normalize_wait_ms()
-
-    wait_status = %{
-      reason: Map.get(attrs, :reason, :retry_wait),
-      message: Map.get(attrs, :message),
-      started_at_ms: now_ms,
-      retry_at_ms: Map.get(attrs, :retry_at_ms) || now_ms + wait_ms
-    }
-
-    %{state | status: :rate_limited, wait_status: wait_status} |> mark_dirty()
-  end
-
-  def clear_wait_status(%{wait_status: nil} = state), do: state
-  def clear_wait_status(state), do: %{state | wait_status: nil} |> mark_dirty()
-
-  def wait_status_text(state, now_ms \\ System.monotonic_time(:millisecond))
-  def wait_status_text(%{wait_status: nil}, _now_ms), do: nil
-
-  def wait_status_text(%{wait_status: wait_status}, now_ms) do
-    label =
-      wait_status
-      |> Map.get(:reason)
-      |> wait_label()
-
-    remaining_seconds =
-      wait_status
-      |> Map.get(:retry_at_ms, now_ms)
-      |> remaining_seconds(now_ms)
-
-    "#{label} · retrying in #{remaining_seconds}s"
-  end
-
   def refresh_memory_total(state) do
     %{state | memory_total: compute_memory_total()} |> mark_dirty()
   rescue
@@ -266,23 +247,6 @@ defmodule Beamcore.TUI.State do
     |> min(max_value)
   end
 
-  defp wait_label(:rate_limit), do: "Rate limited"
-  defp wait_label(:cooldown), do: "Cooling down"
-  defp wait_label(:backoff), do: "Waiting for provider"
-  defp wait_label(:retry_wait), do: "Retrying soon"
-  defp wait_label(_reason), do: "Waiting for provider"
-
-  defp normalize_wait_ms(wait_ms) when is_integer(wait_ms), do: max(wait_ms, 0)
-  defp normalize_wait_ms(_wait_ms), do: 0
-
-  defp remaining_seconds(retry_at_ms, now_ms) do
-    retry_at_ms
-    |> Kernel.-(now_ms)
-    |> max(0)
-    |> Kernel.+(999)
-    |> div(1000)
-  end
-
   # Intentionally unlimited backscroll to allow reading the full history.
   def scroll_up(state, amount \\ 1),
     do: %{state | scroll_offset: state.scroll_offset + amount} |> mark_dirty()
@@ -334,174 +298,5 @@ defmodule Beamcore.TUI.State do
       %{primary: %{provider: provider}} -> provider
       _ -> Beamcore.Config.active_provider()
     end
-  end
-
-  def add_activity(state, name, args, status \\ :queued) do
-    event = compact_activity(name, args, status)
-
-    %{state | activity: Enum.take([event | state.activity], @max_activity)}
-    |> mark_dirty()
-  end
-
-  def update_activity(state, name, args, result) do
-    event = compact_activity(name, args, ToolDisplay.result_status(result), result)
-
-    activity =
-      case state.activity do
-        [%{name: ^name, target: target} = latest | rest] when target == event.target ->
-          [Map.merge(latest, event) | rest]
-
-        other ->
-          [event | other]
-      end
-
-    %{state | activity: Enum.take(activity, @max_activity)}
-    |> mark_dirty()
-  end
-
-  def compact_activity(name, args, status, result \\ nil) do
-    display = ToolDisplay.activity(name, args, status, result)
-
-    %{
-      id: System.unique_integer([:positive]),
-      timestamp_ms: System.system_time(:millisecond),
-      name: display.name,
-      target: display.target,
-      status: display.status,
-      label: display.label,
-      summary: display.summary,
-      result: compact_activity_result(result),
-      args: compact_args(args)
-    }
-  end
-
-  def timeline_items(%{session: %{timeline: timeline}} = state)
-      when is_list(timeline) and length(timeline) > 0 do
-    Enum.map(timeline, &timeline_event_to_activity(&1, state.session))
-  end
-
-  def timeline_items(state), do: state.activity
-
-  defp timeline_event_to_activity(event, _session) do
-    args = %{
-      role: event.role
-    }
-
-    %{
-      id: event.id,
-      timestamp: event.timestamp,
-      timestamp_ms: timeline_timestamp_ms(event.timestamp),
-      name: to_string(event.type),
-      target: event.id,
-      status: timeline_status(event),
-      label: "[#{event.role}] #{event.title}",
-      summary: event.summary,
-      result: inspect(event.metadata || %{}, pretty: true),
-      args: args,
-      timeline_event: event
-    }
-  end
-
-  defp timeline_status(%{status: :abandoned}), do: :blocked
-  defp timeline_status(%{status: :failed}), do: :error
-  defp timeline_status(%{status: :started}), do: :running
-  defp timeline_status(_event), do: :done
-
-  defp timeline_timestamp_ms(timestamp) when is_binary(timestamp) do
-    case DateTime.from_iso8601(timestamp) do
-      {:ok, datetime, _offset} -> DateTime.to_unix(datetime, :millisecond)
-      _ -> System.system_time(:millisecond)
-    end
-  end
-
-  defp timeline_timestamp_ms(_), do: System.system_time(:millisecond)
-
-  def compact_args(args) when is_map(args) do
-    args
-    |> Enum.map(fn {key, val} ->
-      val_compact =
-        cond do
-          is_binary(val) ->
-            if String.length(val) > 60 do
-              String.slice(val, 0, 57) <> "..."
-            else
-              val
-            end
-
-          is_map(val) ->
-            compact_args(val)
-
-          is_list(val) ->
-            Enum.map(val, fn
-              item when is_map(item) ->
-                compact_args(item)
-
-              item when is_binary(item) ->
-                if String.length(item) > 60, do: String.slice(item, 0, 57) <> "...", else: item
-
-              item ->
-                item
-            end)
-
-          true ->
-            val
-        end
-
-      {key, val_compact}
-    end)
-    |> Map.new()
-  end
-
-  def compact_args(args), do: args
-
-  defp compact_activity_result(nil), do: nil
-
-  defp compact_activity_result(result) when is_binary(result) do
-    ToolDisplay.compact_text(result, 1_200)
-  end
-
-  defp compact_activity_result(result) do
-    result
-    |> inspect(pretty: false, limit: 16, printable_limit: 1_000)
-    |> ToolDisplay.compact_text(1_200)
-  end
-
-  # File finder state management
-  def activate_file_finder(state, query, results) do
-    %{
-      state
-      | file_finder_active?: true,
-        file_finder_query: query,
-        file_finder_results: results,
-        file_finder_selected: 0
-    }
-    |> mark_dirty()
-  end
-
-  def deactivate_file_finder(state) do
-    %{
-      state
-      | file_finder_active?: false,
-        file_finder_query: "",
-        file_finder_results: [],
-        file_finder_selected: 0
-    }
-    |> mark_dirty()
-  end
-
-  def update_file_finder_query(state, query, results) do
-    %{
-      state
-      | file_finder_query: query,
-        file_finder_results: results,
-        file_finder_selected: min(state.file_finder_selected, max(length(results) - 1, 0))
-    }
-    |> mark_dirty()
-  end
-
-  def select_file_finder_result(state, offset) do
-    max_index = max(length(state.file_finder_results) - 1, 0)
-    selected = state.file_finder_selected + offset
-    %{state | file_finder_selected: selected |> max(0) |> min(max_index)} |> mark_dirty()
   end
 end
