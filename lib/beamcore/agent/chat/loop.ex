@@ -84,7 +84,6 @@ defmodule Beamcore.Agent.Chat.Loop do
       session
       |> Map.put(:messages, Session.compact_history(messages))
       |> Session.append_timeline(:interrupted, warning)
-      |> Session.checkpoint("Stopped after tool depth limit.", %{tool_depth_limit: max_depth})
 
     finish_turn(session, opts)
   end

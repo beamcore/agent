@@ -17,16 +17,10 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       "session_id" => session.session_id,
       "log_file" => session.log_file,
       "state_file" => session.state_file,
-      "checkpoint_file" => session.checkpoint_file,
       "messages" => stringify_messages(session.messages || []),
       "screen_type" => to_string(session.screen_type || :agent),
       "roles" => stringify_roles(session.roles),
-      "timeline" => Enum.map(session.timeline || [], &Beamcore.Agent.Timeline.to_json_event/1),
-      "checkpoints" =>
-        Enum.map(session.checkpoints || [], &Beamcore.Agent.Timeline.to_json_checkpoint/1),
-      "branches" => stringify_branches(session.branches || %{}),
-      "branch_id" => session.branch_id,
-      "active_checkpoint_id" => session.active_checkpoint_id,
+      "timeline" => Enum.map(session.timeline || [], &stringify_event/1),
       "usage" => %{
         "total_prompt_tokens" => session.total_prompt_tokens || 0,
         "total_completion_tokens" => session.total_completion_tokens || 0,
@@ -38,7 +32,6 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
         "session_paused" => session.session_paused || false
       },
       "workspace_root" => session.workspace_root,
-      "intermediate_state" => session.intermediate_state || %{},
       "interrupted?" => session.interrupted? || false
     }
   end
@@ -53,9 +46,13 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       |> mode_atom()
 
     mode_settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
-    timeline_state = Beamcore.Agent.Timeline.safe_restore(data)
     usage = Map.get(data, "usage", %{})
     workspace_root = Map.get(data, "workspace_root") || Keyword.get(opts, :workspace_root)
+
+    timeline =
+      data
+      |> Map.get("timeline", [])
+      |> Enum.map(&safe_event/1)
 
     %Beamcore.Agent.Chat.Session{
       messages: safe_messages(Map.get(data, "messages", [])),
@@ -63,12 +60,6 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       session_id: Map.fetch!(data, "session_id"),
       log_file: Map.get(data, "log_file"),
       state_file: Map.get(data, "state_file"),
-      checkpoint_file:
-        Map.get(data, "checkpoint_file") ||
-          Path.join(
-            Path.dirname(Map.get(data, "state_file")),
-            "#{Map.fetch!(data, "session_id")}.checkpoints.json"
-          ),
       total_prompt_tokens: Map.get(usage, "total_prompt_tokens", 0),
       total_completion_tokens: Map.get(usage, "total_completion_tokens", 0),
       total_tokens: Map.get(usage, "total_tokens", 0),
@@ -87,18 +78,12 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       roles: restore_roles(Map.get(data, "roles"), mode_settings),
       screen_type: screen_type,
       mode_settings: mode_settings,
-      timeline: timeline_state.timeline,
-      checkpoints: timeline_state.checkpoints,
-      branches: timeline_state.branches,
-      branch_id: timeline_state.branch_id,
-      active_checkpoint_id: timeline_state.active_checkpoint_id,
-      intermediate_state: Map.get(data, "intermediate_state", %{}),
+      timeline: timeline,
       interrupted?: Map.get(data, "interrupted?", false) || Map.get(data, "interrupted", false)
     }
-    |> Beamcore.Agent.Chat.Session.TimelineOps.append_timeline(:resumed, "Session resumed.",
+    |> Beamcore.Agent.Chat.Session.append_timeline(:resumed, "Session resumed.",
       role: :system,
       title: "Session resumed",
-      reversible: false,
       metadata: %{session_id: Map.get(data, "session_id")}
     )
   end
@@ -116,6 +101,50 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       Map.new(message, fn {key, value} -> {to_string(key), value} end)
     end)
   end
+
+  defp stringify_event(event) when is_map(event) do
+    %{
+      "id" => Map.get(event, :id) || Map.get(event, "id"),
+      "type" => to_string(Map.get(event, :type) || Map.get(event, "type")),
+      "role" => to_string(Map.get(event, :role) || Map.get(event, "role")),
+      "title" => Map.get(event, :title) || Map.get(event, "title"),
+      "summary" => Map.get(event, :summary) || Map.get(event, "summary"),
+      "status" => to_string(Map.get(event, :status) || Map.get(event, "status")),
+      "metadata" => Map.get(event, :metadata) || Map.get(event, "metadata") || %{},
+      "timestamp" => Map.get(event, :timestamp) || Map.get(event, "timestamp")
+    }
+  end
+
+  defp safe_event(event) when is_map(event) do
+    %{
+      id: Map.get(event, "id") || "evt-#{System.unique_integer([:positive])}",
+      type: safe_atom(Map.get(event, "type"), :decision),
+      role: safe_atom(Map.get(event, "role"), :system),
+      title: Map.get(event, "title") || "Timeline event",
+      summary: Map.get(event, "summary") || "",
+      status: safe_atom(Map.get(event, "status"), :completed),
+      metadata: safe_metadata(Map.get(event, "metadata", %{})),
+      timestamp: Map.get(event, "timestamp") || DateTime.utc_now() |> DateTime.to_iso8601()
+    }
+  end
+
+  defp safe_event(_), do: safe_event(%{})
+
+  @event_types ~w(started model_call tool_call file_change compression decision
+    restore_stage error interrupted rewound forked resumed completed checkpoint_saved failed)a
+
+  defp safe_atom(value, fallback) when is_atom(value) do
+    if value in @event_types, do: value, else: fallback
+  end
+
+  defp safe_atom(value, fallback) when is_binary(value) do
+    Enum.find(@event_types, fallback, &(to_string(&1) == value))
+  end
+
+  defp safe_atom(_, fallback), do: fallback
+
+  defp safe_metadata(map) when is_map(map), do: map
+  defp safe_metadata(_), do: %{}
 
   @doc false
   def stringify_roles(nil), do: nil
@@ -153,13 +182,6 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       model: Map.get(selection, "model") || Map.get(selection, :model),
       enabled: Map.get(selection, "enabled") || Map.get(selection, :enabled) || false
     }
-  end
-
-  @doc false
-  def stringify_branches(branches) do
-    Map.new(branches, fn {id, branch} ->
-      {id, Beamcore.Agent.Timeline.to_json_event(branch)}
-    end)
   end
 
   defp mode_atom("chat"), do: :chat
