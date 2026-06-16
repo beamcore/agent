@@ -57,53 +57,20 @@ defmodule Beamcore.Agent do
   end
 
   @doc """
-  Returns an OpenaiEx client for the active provider.
-  """
-  def client, do: Beamcore.Provider.Registry.client()
-
-  @doc """
   Start the primary interactive agent chat experience.
   """
-  def chat(mode \\ :auto, opts \\ [])
+  def chat(opts \\ [])
 
-  def chat(:auto, opts) do
+  def chat(opts) when is_list(opts) do
     with_workspace(opts, fn opts ->
-      case ensure_chat_config(opts) do
-        :ok -> start_tui(opts)
-      end
+      start_tui(opts)
     end)
   end
 
-  def chat(:tui, opts) do
+  def chat(_mode, opts) when is_list(opts) do
     with_workspace(opts, fn opts ->
-      case ensure_chat_config(opts),
-        do: (:ok -> start_tui(opts))
+      start_tui(opts)
     end)
-  end
-
-  @doc false
-  def chat_mode(_opts \\ []), do: :tui
-
-  defp ensure_chat_config(opts) do
-    cond do
-      Keyword.has_key?(opts, :client) ->
-        :ok
-
-      true ->
-        case Beamcore.Provider.Registry.validate_selection(Beamcore.Config.active_provider()) do
-          {:ok, _provider} ->
-            :ok
-
-          {:error, _reason} ->
-            print_missing_config_error()
-            :ok
-        end
-    end
-  end
-
-  defp print_missing_config_error do
-    Beamcore.AppLog.warn("Provider configuration missing")
-    {:error, :missing_config}
   end
 
   defp start_tui(opts),

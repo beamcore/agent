@@ -99,7 +99,7 @@ defmodule Beamcore.Provider.ModelMetadata do
     end
   end
 
-  def unknown(provider, model) do
+  defp unknown(provider, model) do
     %__MODULE__{
       provider_id: provider,
       model: model,
@@ -110,41 +110,7 @@ defmodule Beamcore.Provider.ModelMetadata do
     }
   end
 
-  def to_safe_map(%__MODULE__{} = metadata) do
-    %{
-      provider_id: metadata.provider_id,
-      model: metadata.model,
-      context_window: metadata.context_window,
-      max_output_tokens: metadata.max_output_tokens,
-      tokenizer: metadata.tokenizer,
-      supports_usage: metadata.supports_usage,
-      supports_model_metadata: metadata.supports_model_metadata,
-      source: metadata.source,
-      accuracy: metadata.accuracy,
-      fetched_at: metadata.fetched_at
-    }
-  end
-
-  def from_provider_api(provider_info, model, attrs) when is_map(attrs) do
-    caps = provider_info.capabilities
-
-    %__MODULE__{
-      provider_id: provider_info.id,
-      model: model || provider_info.default_model,
-      context_window: positive_int(attrs, "context_window"),
-      max_output_tokens: positive_int(attrs, "max_output_tokens"),
-      tokenizer:
-        Map.get(attrs, "tokenizer") || Map.get(attrs, :tokenizer) || tokenizer_for(provider_info),
-      supports_usage: caps.token_accounting,
-      supports_model_metadata: true,
-      source: :provider_api,
-      accuracy: provider_accuracy(attrs),
-      fetched_at: timestamp(),
-      raw: sanitize_raw(Map.get(attrs, "raw") || Map.get(attrs, :raw) || %{})
-    }
-  end
-
-  def positive_int(map, key) when is_map(map) do
+  defp positive_int(map, key) when is_map(map) do
     value = Map.get(map, key) || Map.get(map, String.to_atom(key))
 
     cond do
@@ -176,21 +142,6 @@ defmodule Beamcore.Provider.ModelMetadata do
 
   defp tokenizer_for(%{capabilities: %{token_accounting: true}}), do: :provider_reported
   defp tokenizer_for(_provider_info), do: :chars_per_token_estimate
-
-  defp provider_accuracy(attrs) do
-    case positive_int(attrs, "context_window") || positive_int(attrs, "max_output_tokens") do
-      nil -> :unknown
-      _ -> :reported
-    end
-  end
-
-  defp sanitize_raw(raw) when is_map(raw) do
-    raw
-    |> Map.drop(["api_key", :api_key, "authorization", :authorization, "token", :token])
-    |> Map.take(["model_info", "parameters", "details", :model_info, :parameters, :details])
-  end
-
-  defp sanitize_raw(_raw), do: %{}
 
   defp timestamp, do: DateTime.utc_now() |> DateTime.to_iso8601()
 end

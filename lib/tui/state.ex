@@ -14,18 +14,10 @@ defmodule Beamcore.TUI.State do
             messages: [],
             activity: [],
             selected_activity: 0,
-            selected_event_id: nil,
-            activity_focused?: false,
-            activity_follow_tail?: true,
-            activity_unseen_count: 0,
-            activity_viewport_height: 0,
             chat_viewport_height: 0,
             status: :idle,
             scroll_offset: 0,
-            activity_scroll_offset: 0,
-            details_scroll_offset: 0,
             show_help: false,
-            show_activity_details: false,
             show_commands: false,
             command_matches: [],
             command_selected: 0,
@@ -35,7 +27,6 @@ defmodule Beamcore.TUI.State do
             render_dirty?: true,
             worker: nil,
             ctrl_c_pending: false,
-            pending_login?: false,
             unicode?: true,
             history: [],
             history_index: nil,
@@ -207,7 +198,6 @@ defmodule Beamcore.TUI.State do
   def resume(state), do: %{clear_wait_status(state) | status: :idle} |> mark_dirty()
 
   def set_session(state, session) do
-    state = update_activity_live_follow(state, session)
     %{state | session: session} |> mark_dirty()
   end
 
@@ -325,131 +315,6 @@ defmodule Beamcore.TUI.State do
 
   defp auto_scroll_on_new_message(state), do: state
 
-  def scroll_activity_up(state, amount \\ 1),
-    do:
-      state
-      |> Map.put(:activity_follow_tail?, false)
-      |> Map.update!(:activity_scroll_offset, &(&1 + amount))
-      |> Map.put(:activity_focused?, true)
-      |> mark_dirty()
-
-  def scroll_activity_down(state, amount \\ 1),
-    do:
-      state
-      |> Map.update!(:activity_scroll_offset, &max(&1 - amount, 0))
-      |> maybe_resume_activity_follow()
-      |> Map.put(:activity_focused?, true)
-      |> mark_dirty()
-
-  def reset_activity_scroll(state),
-    do:
-      state
-      |> follow_activity_tail()
-      |> Map.put(:activity_focused?, true)
-      |> mark_dirty()
-
-  defp follow_activity_tail(state),
-    do:
-      %{
-        state
-        | activity_scroll_offset: 0,
-          activity_follow_tail?: true,
-          activity_unseen_count: 0,
-          selected_activity: max(length(timeline_items(state)) - 1, 0)
-      }
-      |> put_selected_event_id()
-
-  def scroll_details_up(state, amount \\ 1),
-    do:
-      %{state | details_scroll_offset: max(state.details_scroll_offset - amount, 0)}
-      |> mark_dirty()
-
-  def scroll_details_down(state, amount \\ 1),
-    do: %{state | details_scroll_offset: state.details_scroll_offset + amount} |> mark_dirty()
-
-  def reset_details_scroll(state), do: %{state | details_scroll_offset: 0} |> mark_dirty()
-
-  defp auto_scroll_on_new_activity(%{activity_scroll_offset: offset} = state) when offset <= 2,
-    do: follow_activity_tail(state)
-
-  defp auto_scroll_on_new_activity(state), do: state
-
-  def focus_activity(state) do
-    state
-    |> Map.put(:activity_focused?, true)
-    |> put_selected_event_id()
-    |> mark_dirty()
-  end
-
-  def blur_activity(state), do: %{state | activity_focused?: false} |> mark_dirty()
-
-  def move_activity_selection(state, offset) do
-    items = timeline_items(state)
-    max_index = max(length(items) - 1, 0)
-    selected = clamp(state.selected_activity + offset, 0, max_index)
-
-    %{
-      state
-      | selected_activity: selected,
-        activity_focused?: true,
-        activity_follow_tail?: selected == max_index,
-        activity_unseen_count: if(selected == max_index, do: 0, else: state.activity_unseen_count)
-    }
-    |> ensure_selected_visible()
-    |> put_selected_event_id()
-    |> mark_dirty()
-  end
-
-  def activity_page(state, direction) do
-    amount = max(state.activity_viewport_height - 2, 1)
-    move_activity_selection(state, if(direction == :up, do: -amount, else: amount))
-  end
-
-  def activity_home(state) do
-    %{
-      state
-      | selected_activity: 0,
-        activity_scroll_offset: max(length(timeline_items(state)) - 1, 0),
-        activity_follow_tail?: false,
-        activity_focused?: true
-    }
-    |> put_selected_event_id()
-    |> mark_dirty()
-  end
-
-  def activity_end(state), do: reset_activity_scroll(state)
-
-  def set_activity_viewport_height(state, height) do
-    # Keep the legacy field stable without walking the full timeline on resize.
-    %{state | activity_viewport_height: max(height, 0)} |> mark_dirty()
-  end
-
-  def visible_timeline_items(state, viewport_height, overscan \\ 2) do
-    source = timeline_source(state)
-    count = length(source)
-    height = max(viewport_height, 1)
-
-    start =
-      cond do
-        count == 0 -> 0
-        state.activity_follow_tail? -> max(count - height - overscan, 0)
-        true -> max(state.selected_activity - div(height, 2) - overscan, 0)
-      end
-
-    stop = min(start + height + overscan * 2, count)
-
-    source
-    |> Enum.slice(start, stop - start)
-    |> Enum.map(&timeline_source_to_activity(&1, state))
-  end
-
-  def activity_indicator(%{activity_follow_tail?: true}), do: ""
-
-  def activity_indicator(%{activity_unseen_count: count}) when count > 0,
-    do: "Paused · #{count} new events"
-
-  def activity_indicator(%{activity_follow_tail?: false}), do: "Paused"
-
   def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0}
   def usage(session), do: Session.usage(session)
 
@@ -475,7 +340,6 @@ defmodule Beamcore.TUI.State do
     event = compact_activity(name, args, status)
 
     %{state | activity: Enum.take([event | state.activity], @max_activity)}
-    |> auto_scroll_on_new_activity()
     |> mark_dirty()
   end
 
@@ -492,7 +356,6 @@ defmodule Beamcore.TUI.State do
       end
 
     %{state | activity: Enum.take(activity, @max_activity)}
-    |> auto_scroll_on_new_activity()
     |> mark_dirty()
   end
 
@@ -518,39 +381,6 @@ defmodule Beamcore.TUI.State do
   end
 
   def timeline_items(state), do: state.activity
-
-  def timeline_item_count(%{session: %{timeline: timeline}})
-      when is_list(timeline) and length(timeline) > 0 do
-    length(timeline)
-  end
-
-  def timeline_item_count(state), do: length(state.activity || [])
-
-  def timeline_item_at(%{session: %{timeline: timeline}} = state, index)
-      when is_list(timeline) and length(timeline) > 0 and is_integer(index) do
-    timeline
-    |> Enum.at(max(index, 0))
-    |> case do
-      nil -> nil
-      event -> timeline_source_to_activity(event, state)
-    end
-  end
-
-  def timeline_item_at(state, index) when is_integer(index) do
-    Enum.at(state.activity || [], max(index, 0))
-  end
-
-  defp timeline_source(%{session: %{timeline: timeline}})
-       when is_list(timeline) and length(timeline) > 0 do
-    timeline
-  end
-
-  defp timeline_source(state), do: state.activity
-
-  defp timeline_source_to_activity(%{type: type} = event, state) when is_atom(type),
-    do: timeline_event_to_activity(event, state.session)
-
-  defp timeline_source_to_activity(item, _state), do: item
 
   defp timeline_event_to_activity(event, _session) do
     args = %{
@@ -624,39 +454,6 @@ defmodule Beamcore.TUI.State do
 
   def compact_args(args), do: args
 
-  defp update_activity_live_follow(state, _session) do
-    # Keep old fields stable while keeping this path O(1) for long chats.
-    state
-  end
-
-  defp maybe_resume_activity_follow(%{activity_scroll_offset: 0} = state),
-    do: %{state | activity_follow_tail?: true, activity_unseen_count: 0}
-
-  defp maybe_resume_activity_follow(state), do: state
-
-  defp ensure_selected_visible(state) do
-    max_index = max(length(timeline_items(state)) - 1, 0)
-    distance_from_tail = max(max_index - state.selected_activity, 0)
-    %{state | activity_scroll_offset: distance_from_tail}
-  end
-
-  defp put_selected_event_id(state), do: put_selected_event_id(state, state)
-
-  defp put_selected_event_id(state, item_state) do
-    event_id =
-      item_state
-      |> timeline_items()
-      |> Enum.at(state.selected_activity)
-      |> case do
-        %{id: id} -> id
-        _ -> nil
-      end
-
-    %{state | selected_event_id: event_id}
-  end
-
-  defp clamp(value, min_value, max_value), do: value |> max(min_value) |> min(max_value)
-
   defp compact_activity_result(nil), do: nil
 
   defp compact_activity_result(result) when is_binary(result) do
@@ -667,10 +464,6 @@ defmodule Beamcore.TUI.State do
     result
     |> inspect(pretty: false, limit: 16, printable_limit: 1_000)
     |> ToolDisplay.compact_text(1_200)
-  end
-
-  def compact_text(value, limit \\ 180) do
-    ToolDisplay.compact_text(value, limit)
   end
 
   # File finder state management

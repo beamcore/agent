@@ -48,8 +48,6 @@ defmodule Beamcore.Provider.Registry do
           reachable?: :unknown
         }
 
-  def defaults, do: @defaults
-
   @spec list() :: [provider_info()]
   def list do
     custom = Beamcore.Config.list_providers()

@@ -15,23 +15,13 @@ defmodule Beamcore.TUI.Wrap do
     |> Enum.reverse()
   end
 
-  def text(text, width), do: text |> lines(width) |> Enum.join("\n")
-
   def markdown_lines(text, width) do
     text
     |> normalize_markdown_for_estimation()
     |> lines(width)
   end
 
-  def markdown_text(text, width), do: text |> markdown_lines(width) |> Enum.join("\n")
-
-  def markdown_display_text(text, width) do
-    text
-    |> normalize_markdown_for_display()
-    |> text(width)
-  end
-
-  def truncate_line(text, width) do
+  defp truncate_line(text, width) do
     width = max(width, 1)
     text = to_string(text)
 

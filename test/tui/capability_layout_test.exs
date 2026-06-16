@@ -4,18 +4,6 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
   alias Beamcore.TUI.Layout
   alias ExRatatui.Layout.Rect
 
-  test "chat entrypoint selects TUI when supported" do
-    assert Beamcore.Agent.chat_mode(supported?: true) == :tui
-  end
-
-  test "ordinary development terminal sizes do not force plain fallback" do
-    assert Beamcore.Agent.chat_mode(
-             interactive?: true,
-             term: "xterm-256color",
-             terminal_size: {80, 24}
-           ) == :tui
-  end
-
   test "chat entrypoint can force TUI" do
     assert Beamcore.Agent.chat(:tui, client: :test_client, tui_start: fn -> :tui_started end) ==
              :tui_started

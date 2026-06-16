@@ -98,26 +98,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
     System.cmd(command, args, opts)
   end
 
-  @doc """
-  Removes a file or directory when the caller explicitly confirms the destructive action.
-  """
-  def remove(path, opts \\ [])
-
-  def remove(path, opts) when is_binary(path) and is_list(opts) do
-    if Keyword.get(opts, :confirm) == true do
-      with {:ok, absolute} <- PathInput.resolve(path),
-           :ok <- do_remove(absolute) do
-        :ok
-      else
-        {:error, reason} -> {:error, reason}
-      end
-    else
-      {:error, "Removal requires confirm: true."}
-    end
-  end
-
-  def remove(path, _opts), do: {:error, "Removal path must be a string, got: #{inspect(path)}"}
-
   defp normalize_code(code) when is_binary(code) do
     code
     |> String.trim()
@@ -381,20 +361,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   catch
     _, _ -> :ok
-  end
-
-  defp do_remove(path) do
-    if File.dir?(path) and File.lstat!(path).type != :symlink do
-      File.rm_rf(path)
-    else
-      File.rm(path)
-    end
-    |> case do
-      :ok -> :ok
-      {:ok, _paths} -> :ok
-      {:error, reason} -> {:error, "remove failed: #{reason}"}
-      {:error, reason, _path} -> {:error, "remove failed: #{reason}"}
-    end
   end
 
   defp reason_for_classification("execution_guard", _message), do: :guard_blocked
