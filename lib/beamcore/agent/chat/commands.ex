@@ -5,64 +5,43 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   alias Beamcore.Agent.Chat.Session
 
-  @doc false
-  def compress_session(session, output) do
-    handle_compress(session, output)
-  end
-
-  def provider_defaults do
-    Beamcore.Provider.Registry.defaults()
-    |> Map.new(fn {name, config} ->
-      {name, %{base_url: config.base_url, default_model: config.default_model}}
-    end)
-  end
-
   @doc """
   Handle a command and return the updated session.
   """
   def execute(command, session, opts \\ []) do
     output = Keyword.get(opts, :output, fn msg -> Beamcore.AppLog.info(msg) end)
-    custom_output? = Keyword.has_key?(opts, :output)
 
     case command do
       "compress" -> handle_compress(session, output)
       "new" -> handle_new(session, nil, output)
       "new " <> arg -> handle_new(session, String.trim(arg), output)
-      "context" -> handle_context(session, output)
-      "context clear" -> handle_context_clear(session, output)
       "env" -> handle_env(session, output)
-      "yolo" -> handle_yolo(session, output)
       "api" -> handle_api(["list"], session, output)
       "api " <> args -> handle_api(String.split(args, " ", trim: true), session, output)
       "help" -> handle_help(session, output)
-      _ -> handle_unknown(command, session, output, custom_output?)
+      _ -> handle_unknown(command, session, output)
     end
   end
 
   defp handle_new(session, session_id, output) do
-    if session_id do
-      output.("Resuming session '#{session_id}'...")
-    else
-      output.("Starting new session...")
-    end
-
     opts = [
       workspace_root: session.workspace_root,
       screen_type: session.screen_type,
       roles: session.roles
     ]
 
-    if session_id do
-      case Session.resume(session_id, session.client, opts) do
-        {:ok, resumed} ->
-          resumed
+    case session_id do
+      nil ->
+        output.("Starting new session...")
+        Session.new(session.client, opts)
 
-        {:error, _reason} ->
-          opts = Keyword.put(opts, :session_id, session_id)
-          Session.new(session.client, opts)
-      end
-    else
-      Session.new(session.client, opts)
+      id ->
+        output.("Resuming session '#{id}'...")
+
+        case Session.resume(id, session.client, opts) do
+          {:ok, resumed} -> resumed
+          {:error, _} -> Session.new(session.client, Keyword.put(opts, :session_id, id))
+        end
     end
   end
 
@@ -96,11 +75,6 @@ defmodule Beamcore.Agent.Chat.Commands do
       Enum.map_join(settings, "\n", fn {k, v} -> "#{k}: #{v}" end)
 
     output.("Settings:\n#{settings_str}\n\nProviders:\n#{provider_str}")
-    session
-  end
-
-  defp handle_yolo(session, output) do
-    output.("Beamcore is already running in autonomous yolo mode.")
     session
   end
 
@@ -147,54 +121,31 @@ defmodule Beamcore.Agent.Chat.Commands do
         output.("Switched active provider to '#{provider}'.")
         new_session
 
-      ["add", provider, token] ->
-        defaults = Map.get(provider_defaults(), provider, %{})
-        base_url = Map.get(defaults, :base_url)
-        default_model = Map.get(defaults, :default_model)
+      ["add", provider, token | rest] ->
+        known = Beamcore.Provider.Registry.get(provider)
+        base_url = List.first(rest) || (known && known.base_url)
+
+        model =
+          if length(rest) > 1,
+            do: List.last(rest),
+            else: (known && known.default_model) || "default"
 
         if base_url do
           Beamcore.Config.put_provider(provider, %{
             api_key: token,
             base_url: base_url,
-            default_model: default_model
+            default_model: model
           })
 
-          output.("Provider '#{provider}' configured successfully with defaults.")
+          output.("Provider '#{provider}' configured successfully.")
           Beamcore.Config.set_active_provider(session.screen_type, provider)
-          Beamcore.Config.set_active_model(session.screen_type, default_model)
-          Session.set_primary_provider(session, provider, default_model)
+          Beamcore.Config.set_active_model(session.screen_type, model)
+          Session.set_primary_provider(session, provider, model)
         else
-          output.("Error: Unknown provider '#{provider}'. Please specify base URL and model:")
+          output.("Error: Unknown provider '#{provider}'. Please specify base URL:")
           output.("Usage: /api add <provider> <token> <base_url> [<default_model>]")
           session
         end
-
-      ["add", provider, token, base_url] ->
-        defaults = Map.get(provider_defaults(), provider, %{})
-        default_model = Map.get(defaults, :default_model) || "default"
-
-        Beamcore.Config.put_provider(provider, %{
-          api_key: token,
-          base_url: base_url,
-          default_model: default_model
-        })
-
-        output.("Provider '#{provider}' configured successfully.")
-        Beamcore.Config.set_active_provider(session.screen_type, provider)
-        Beamcore.Config.set_active_model(session.screen_type, default_model)
-        Session.set_primary_provider(session, provider, default_model)
-
-      ["add", provider, token, base_url, default_model] ->
-        Beamcore.Config.put_provider(provider, %{
-          api_key: token,
-          base_url: base_url,
-          default_model: default_model
-        })
-
-        output.("Provider '#{provider}' configured successfully.")
-        Beamcore.Config.set_active_provider(session.screen_type, provider)
-        Beamcore.Config.set_active_model(session.screen_type, default_model)
-        Session.set_primary_provider(session, provider, default_model)
 
       ["delete", provider] ->
         providers = Beamcore.Config.list_providers()
@@ -251,14 +202,10 @@ defmodule Beamcore.Agent.Chat.Commands do
     Available commands:
       /new  - Start a new chat session
       /compress - Compress/rollover the session context
-      /context - Show compact session context
-      /context clear - Clear compact session context
-      /stop - Pause the session to add improved direction
       /api list - List all configured API providers
       /api use <provider> - Switch active API provider
       /api add <provider> <token> [<base_url>] [<default_model>] - Add/update provider config
       /api delete <provider> - Delete a provider config
-      /yolo - Reaffirm the default autonomous mode
       /env  - Print env variables with secrets redacted
       /help - Show this help message
     """)
@@ -266,18 +213,7 @@ defmodule Beamcore.Agent.Chat.Commands do
     session
   end
 
-  defp handle_context(session, output) do
-    output.(Beamcore.Agent.Chat.Context.summary(session.context))
-
-    session
-  end
-
-  defp handle_context_clear(session, output) do
-    output.("Session context cleared.")
-    %{session | context: Beamcore.Agent.Chat.Context.new()}
-  end
-
-  defp handle_unknown(command, session, output, _custom_output?) do
+  defp handle_unknown(command, session, output) do
     output.("Error: Unknown command: /#{command}")
     session
   end
