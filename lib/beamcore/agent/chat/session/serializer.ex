@@ -74,7 +74,6 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
           else: Beamcore.Agent.Chat.ToolRuntime.default()
         ),
       workspace_root: workspace_root,
-      context: Beamcore.Agent.Chat.Context.new(),
       roles: restore_roles(Map.get(data, "roles"), mode_settings),
       screen_type: screen_type,
       mode_settings: mode_settings,

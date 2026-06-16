@@ -5,7 +5,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   alias Beamcore.Agent.Chat.{
     API,
-    Context,
     ModeSettings,
     Session,
     ToolRuntime
@@ -55,7 +54,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     emit(opts, {:status, :thinking})
 
-    session = %{session | context: Context.from_user_request(session.context, content, caps)}
     user_message = %{role: "user", content: content}
     Session.log(session, user_message)
 
@@ -232,7 +230,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
               session =
                 session
-                |> update_context(name, args, content)
                 |> maybe_post_tool_checkpoint(name, args, content)
                 |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
                   role: tool_role(session),
@@ -380,7 +377,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp prepare_api_messages(session, messages, caps, tools) do
     prepared =
       messages
-      |> Session.prepare_for_api(session.context)
+      |> Session.prepare_for_api()
       |> inject_runtime_message(caps, tools)
 
     metadata = model_metadata(session)
@@ -711,7 +708,4 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp decode_tool_args(_args), do: %{}
-
-  defp update_context(session, name, args, content),
-    do: %{session | context: Context.update_from_tool(session.context, name, args, content)}
 end

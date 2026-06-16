@@ -20,7 +20,6 @@ defmodule Beamcore.Agent.Chat.Session do
     :session_paused,
     :runtime_caps,
     :workspace_root,
-    :context,
     :roles,
     :screen_type,
     :mode_settings,
@@ -111,7 +110,6 @@ defmodule Beamcore.Agent.Chat.Session do
       session_paused: false,
       runtime_caps: runtime_caps,
       workspace_root: workspace_root,
-      context: Beamcore.Agent.Chat.Context.new(),
       roles: roles,
       screen_type: screen_type,
       mode_settings: mode_settings,
@@ -326,24 +324,10 @@ defmodule Beamcore.Agent.Chat.Session do
   defdelegate summarize_and_rollover(session, messages, pid), to: Compaction
 
   @doc """
-  Prepares messages for an API call: structural cleanup + context injection.
+  Prepares messages for an API call: structural cleanup.
   """
-  def prepare_for_api(messages, context) do
-    cleaned = MessageCleaner.clean(messages)
-
-    if context do
-      inject_context(cleaned, context)
-    else
-      cleaned
-    end
-  end
-
-  defp inject_context([system | rest], context) do
-    [system, Beamcore.Agent.Chat.Context.to_message(context) | rest]
-  end
-
-  defp inject_context(messages, context) do
-    [Beamcore.Agent.Chat.Context.to_message(context) | messages]
+  def prepare_for_api(messages) do
+    MessageCleaner.clean(messages)
   end
 
   # --- Message cleaning delegation ---

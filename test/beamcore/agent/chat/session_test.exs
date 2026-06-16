@@ -162,26 +162,17 @@ defmodule Beamcore.Agent.Chat.SessionTest do
   end
 
   describe "trim_and_clean_messages/2" do
-    test "prepare_for_api includes compact session context message" do
-      context =
-        Beamcore.Agent.Chat.Context.new()
-        |> Beamcore.Agent.Chat.Context.update_from_tool(
-          "eeva",
-          %{"code" => "File.read!(\"README.md\")"},
-          Jason.encode!(%{"ok" => true, "filesystem_changes" => %{"mutations" => []}})
-        )
-
+    test "prepare_for_api cleans messages" do
       messages = [
         %{role: "system", content: "sys"},
         %{role: "user", content: "hello"}
       ]
 
-      prepared = Session.prepare_for_api(messages, context)
+      prepared = Session.prepare_for_api(messages)
 
-      assert Enum.at(prepared, 1).role == "system"
-      assert Enum.at(prepared, 1).content =~ "Known session context"
-      assert Enum.at(prepared, 1).content =~ "README.md"
-      refute Enum.at(prepared, 1).content =~ "file content should not appear"
+      assert length(prepared) == 2
+      assert Enum.at(prepared, 0).role == "system"
+      assert Enum.at(prepared, 1).role == "user"
     end
 
     test "does not truncate large message content" do
@@ -210,7 +201,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", content: long_output}
       ]
 
-      prepared = Session.prepare_for_api(messages, nil)
+      prepared = Session.prepare_for_api(messages)
       tool_msg = Enum.find(prepared, fn m -> m.role == "tool" end)
 
       assert tool_msg.content == long_output
@@ -264,7 +255,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
-      prepared = Session.prepare_for_api(messages, nil)
+      prepared = Session.prepare_for_api(messages)
       assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
       [tool_call] = assistant.tool_calls
       args = Jason.decode!(tool_call["function"]["arguments"])
@@ -303,7 +294,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
-      prepared = Session.prepare_for_api(messages, nil)
+      prepared = Session.prepare_for_api(messages)
       assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
       [tool_call] = assistant.tool_calls
       args = Jason.decode!(tool_call["function"]["arguments"])
@@ -475,47 +466,6 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert Session.needs_rollover_now?(session2)
     end
 
-    test "Context.compact/1 trims context fields" do
-      context = Beamcore.Agent.Chat.Context.new()
-
-      # Populate fields with many items to test trimming
-      context = %{
-        context
-        | inspected_files:
-            MapSet.new([
-              "a.ex",
-              "b.ex",
-              "c.ex",
-              "d.ex",
-              "e.ex",
-              "f.ex",
-              "g.ex",
-              "h.ex",
-              "i.ex",
-              "j.ex",
-              "k.ex",
-              "l.ex",
-              "m.ex",
-              "n.ex",
-              "o.ex",
-              "p.ex",
-              "q.ex",
-              "r.ex",
-              "s.ex",
-              "t.ex",
-              "u.ex",
-              "v.ex"
-            ]),
-          blocked_attempts: ["att1", "att2", "att3", "att4"]
-      }
-
-      compacted = Beamcore.Agent.Chat.Context.compact(context)
-
-      assert MapSet.size(compacted.inspected_files) == 20
-      assert length(compacted.blocked_attempts) == 3
-      assert compacted.current_task == nil
-    end
-
     test "summarize_and_rollover/3 performs fallback local compaction if API call fails" do
       client = Beamcore.Provider.Registry.client()
       session = Session.new(client)
@@ -530,11 +480,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         Process.delete(:mock_completions_create)
       end)
 
-      # 2. Modify session context
+      # 2. Modify session
       session = %{
         session
-        | context: session.context,
-          session_id: "fallback-session-id",
+        | session_id: "fallback-session-id",
           last_prompt_tokens: 155_000,
           needs_compaction: true
       }

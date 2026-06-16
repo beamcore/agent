@@ -55,8 +55,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
             compaction_count: session.compaction_count + 1,
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
-            total_tokens: 0,
-            context: Beamcore.Agent.Chat.Context.compact(session.context)
+            total_tokens: 0
         }
 
         new_session =
@@ -102,8 +101,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
             last_prompt_tokens: 0,
             total_prompt_tokens: 0,
             total_completion_tokens: 0,
-            total_tokens: 0,
-            context: Beamcore.Agent.Chat.Context.compact(session.context)
+            total_tokens: 0
         }
         |> Beamcore.Agent.Chat.Session.append_timeline(
           :compression,
