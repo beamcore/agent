@@ -103,11 +103,11 @@ defmodule Beamcore.Provider.Router do
   defp scheduler_interval(%{capabilities: %{local: true}}), do: 0
   defp scheduler_interval(_provider_info), do: Application.get_env(:agent, :rate_limit_ms, 1000)
 
-  defp apply_cooldown(key, %OpenaiEx.Error{} = error, opts) do
-    error
-    |> Beamcore.Agent.Chat.RateLimit.retry_after_ms()
-    |> cooldown_key(key, opts)
+  defp apply_cooldown(key, %OpenaiEx.Error{kind: :rate_limit}, opts) do
+    cooldown_key(15_000, key, opts)
   end
+
+  defp apply_cooldown(_key, %OpenaiEx.Error{}, _opts), do: :ok
 
   defp apply_cooldown(key, %Error{retry_after_ms: retry_after_ms}, opts) do
     cooldown_key(retry_after_ms, key, opts)

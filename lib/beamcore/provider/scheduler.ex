@@ -2,9 +2,7 @@ defmodule Beamcore.Provider.Scheduler do
   @moduledoc """
   Provider-neutral request gate keyed by provider/account/model.
 
-  This scheduler is intentionally separate from the legacy global
-  `Beamcore.RateLimiter` so callers can migrate role by role without changing
-  existing behavior. A cooldown on one key never blocks unrelated keys.
+  A cooldown on one key never blocks unrelated keys.
   """
 
   use GenServer
