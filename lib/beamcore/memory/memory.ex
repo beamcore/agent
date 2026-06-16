@@ -59,7 +59,7 @@ defmodule Beamcore.Memory do
   """
   def start_link(opts \\ []) do
     name =
-      if opts[:global] || System.get_env("MEMORY_GLOBAL") == "true" do
+      if opts[:global] do
         {:global, __MODULE__}
       else
         __MODULE__
@@ -311,16 +311,8 @@ defmodule Beamcore.Memory do
   end
 
   def detect_org_repo(workspace_root) when is_binary(workspace_root) do
-    env_org = System.get_env("BEAMCORE_ORG")
-    env_repo = System.get_env("BEAMCORE_REPO")
-
-    if env_org && env_repo do
-      {env_org, env_repo}
-    else
-      git_root = Path.expand(workspace_root)
-
-      detect_org_repo_from_git(git_root)
-    end
+    git_root = Path.expand(workspace_root)
+    detect_org_repo_from_git(git_root)
   end
 
   defp detect_org_repo_from_git(git_root) do
@@ -351,7 +343,6 @@ defmodule Beamcore.Memory do
     dets_path =
       opts[:dets_path] ||
         Application.get_env(:agent, :memory_dets_path) ||
-        System.get_env("MEMORY_DETS_PATH") ||
         @default_dets_path
 
     expanded_path = Beamcore.Agent.Tools.PathInput.canonical_path(dets_path)
@@ -778,7 +769,6 @@ defmodule Beamcore.Memory do
 
     dets_path =
       Application.get_env(:agent, :memory_dets_path) ||
-        System.get_env("MEMORY_DETS_PATH") ||
         @default_dets_path
 
     expanded_path = Beamcore.Agent.Tools.PathInput.canonical_path(dets_path)

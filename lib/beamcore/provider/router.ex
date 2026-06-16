@@ -84,16 +84,7 @@ defmodule Beamcore.Provider.Router do
   end
 
   defp receive_timeout(%{capabilities: %{local: true}}) do
-    case System.get_env("BEAMCORE_LOCAL_PROVIDER_RECEIVE_TIMEOUT_MS") do
-      value when is_binary(value) ->
-        case Integer.parse(value) do
-          {ms, ""} when ms > 0 -> ms
-          _ -> Application.get_env(:agent, :local_provider_receive_timeout_ms, 120_000)
-        end
-
-      _ ->
-        Application.get_env(:agent, :local_provider_receive_timeout_ms, 120_000)
-    end
+    Beamcore.Config.get_setting(:local_provider_receive_timeout_ms, 120_000)
   end
 
   defp receive_timeout(_provider_info),

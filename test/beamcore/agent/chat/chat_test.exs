@@ -2,10 +2,13 @@ defmodule ChatTest do
   use ExUnit.Case
 
   setup do
-    Beamcore.Agent.TestEnv.setup_env(%{
-      "OPENAI_API_KEY" => "test-api-key",
-      "ACTIVE_PROVIDER" => "openai"
+    Beamcore.Config.put_provider("openai", %{
+      api_key: "test-api-key",
+      base_url: "https://api.openai.com/v1",
+      default_model: "gpt-4o"
     })
+
+    Beamcore.Config.set_active_provider("openai")
   end
 
   test "chat session structure" do
@@ -40,23 +43,23 @@ defmodule ChatTest do
     assert Enum.at(new_messages, 0).content == "ping"
   end
 
-  describe "Beamcore.Agent.Chat.API.execute/4 input validation" do
+  describe "Beamcore.Agent.Chat.API.execute/3 input validation" do
     test "returns error for empty messages list" do
       client = Beamcore.Provider.Registry.client()
-      result = Beamcore.Agent.Chat.API.execute(client, [], nil, :main)
+      result = Beamcore.Agent.Chat.API.execute(client, [], nil)
       assert result == {:error, "Messages must be a non-empty list."}
     end
 
     test "returns error for non-list messages" do
       client = Beamcore.Provider.Registry.client()
-      result = Beamcore.Agent.Chat.API.execute(client, "not a list", nil, :main)
+      result = Beamcore.Agent.Chat.API.execute(client, "not a list", nil)
       assert result == {:error, "Messages must be a non-empty list."}
     end
 
     test "returns error for non-list tools" do
       client = Beamcore.Provider.Registry.client()
       messages = [%{role: "user", content: "test"}]
-      result = Beamcore.Agent.Chat.API.execute(client, messages, "not a list", :main)
+      result = Beamcore.Agent.Chat.API.execute(client, messages, "not a list")
       assert result == {:error, "Tools must be a list."}
     end
 
@@ -66,10 +69,10 @@ defmodule ChatTest do
       tools = [%{type: "function", function: %{name: "eeva", description: "test"}}]
       # This test will not fail the validation, but may fail later due to API calls
       # We only test that validation passes
-      assert Beamcore.Agent.Chat.API.execute(client, messages, tools, :main) !=
+      assert Beamcore.Agent.Chat.API.execute(client, messages, tools) !=
                {:error, "Messages must be a non-empty list."}
 
-      assert Beamcore.Agent.Chat.API.execute(client, messages, tools, :main) !=
+      assert Beamcore.Agent.Chat.API.execute(client, messages, tools) !=
                {:error, "Tools must be a list."}
     end
 
@@ -78,10 +81,10 @@ defmodule ChatTest do
       messages = [%{role: "user", content: "test"}]
       # This test will not fail the validation, but may fail later due to API calls
       # We only test that validation passes
-      assert Beamcore.Agent.Chat.API.execute(client, messages, nil, :main) !=
+      assert Beamcore.Agent.Chat.API.execute(client, messages, nil) !=
                {:error, "Messages must be a non-empty list."}
 
-      assert Beamcore.Agent.Chat.API.execute(client, messages, nil, :main) !=
+      assert Beamcore.Agent.Chat.API.execute(client, messages, nil) !=
                {:error, "Tools must be a list."}
     end
   end

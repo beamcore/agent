@@ -40,9 +40,3 @@ config/                   # Elixir config (config.exs)
 - Errors surfaced compactly to users; crash details go to `~/.beamcore/logs/`
 - Secrets redacted in logs and env display; destructive ops require `confirm: true`
 
-## Key Env Vars
-- `OPENAI_API_KEY`, `DEEPSEEK_API_KEY` — provider keys
-- `BEAMCORE_AGENT_PROVIDER`, `BEAMCORE_AGENT_MODEL` — override defaults
-- `BEAMCORE_EEVA_TIMEOUT_MS`, `BEAMCORE_EEVA_MAX_CODE_BYTES` — Eeva limits
-- `BEAMCORE_MAX_TOOL_CALLS` — cap model tool iterations
-

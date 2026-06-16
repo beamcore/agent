@@ -460,11 +460,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   end
 
   defp limit(name, default) do
-    env = "BEAMCORE_EEVA_" <> (name |> Atom.to_string() |> String.upcase())
-
-    case Integer.parse(System.get_env(env, "")) do
-      {value, ""} when value > 0 -> value
-      _ -> default
-    end
+    config_key = :"eeva_#{name}"
+    Beamcore.Config.get_setting(config_key, default)
   end
 end

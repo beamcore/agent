@@ -10,10 +10,10 @@ defmodule Beamcore.Provider.RouterTest do
     previous_path = Application.get_env(:agent, :config_dets_path)
     Application.put_env(:agent, :config_dets_path, path)
 
-    Beamcore.Agent.TestEnv.setup_env(%{
-      "OPENAI_API_KEY" => "test-openai-key",
-      "API_KEY" => nil,
-      "ACTIVE_PROVIDER" => nil
+    Beamcore.Config.put_provider("openai", %{
+      api_key: "test-openai-key",
+      base_url: "https://api.openai.com/v1",
+      default_model: "gpt-4o"
     })
 
     on_exit(fn ->

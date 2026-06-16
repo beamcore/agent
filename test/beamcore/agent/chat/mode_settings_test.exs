@@ -4,48 +4,62 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
   alias Beamcore.Agent.Chat.ModeSettings
 
   setup do
-    Beamcore.Agent.TestEnv.setup_env(%{
-      "BEAMCORE_CHAT_PROVIDER" => nil,
-      "BEAMCORE_CHAT_MODEL" => nil,
-      "BEAMCORE_AGENT_PROVIDER" => nil,
-      "BEAMCORE_AGENT_MODEL" => nil,
-      "BEAMCORE_MAX_TOOL_CALLS" => nil,
-      "BEAMCORE_CHAT_TOOL_DEPTH_LIMIT" => nil,
-      "BEAMCORE_AGENT_TOOL_DEPTH_LIMIT" => nil,
-      "ACTIVE_PROVIDER" => "openai"
-    })
-  end
-
-  test "resolves F2 chat provider and model from environment" do
-    Beamcore.Agent.TestEnv.with_env(
-      %{
-        "BEAMCORE_CHAT_PROVIDER" => "openai",
-        "BEAMCORE_CHAT_MODEL" => "gpt-test"
-      },
-      fn ->
-        settings = ModeSettings.resolve(:chat)
-
-        assert settings.mode == :chat
-        assert settings.provider == "openai"
-        assert settings.model == "gpt-test"
+    # Clean up any mode settings from prior tests
+    Enum.each(
+      [
+        :mode_chat_provider,
+        :mode_chat_model,
+        :mode_agent_provider,
+        :mode_agent_model,
+        :max_tool_calls,
+        :mode_chat_tool_depth_limit,
+        :mode_agent_tool_depth_limit
+      ],
+      fn key ->
+        Beamcore.Config.delete(key)
       end
     )
+
+    Beamcore.Config.set_active_provider("openai")
+
+    on_exit(fn ->
+      Enum.each(
+        [
+          :mode_chat_provider,
+          :mode_chat_model,
+          :mode_agent_provider,
+          :mode_agent_model,
+          :max_tool_calls,
+          :mode_chat_tool_depth_limit,
+          :mode_agent_tool_depth_limit
+        ],
+        fn key ->
+          Beamcore.Config.delete(key)
+        end
+      )
+    end)
+  end
+
+  test "resolves F2 chat provider and model from Config" do
+    Beamcore.Config.put(:mode_chat_provider, "openai")
+    Beamcore.Config.put(:mode_chat_model, "gpt-test")
+
+    settings = ModeSettings.resolve(:chat)
+
+    assert settings.mode == :chat
+    assert settings.provider == "openai"
+    assert settings.model == "gpt-test"
   end
 
   test "unknown legacy research screen resolves to agent settings" do
-    Beamcore.Agent.TestEnv.with_env(
-      %{
-        "BEAMCORE_AGENT_PROVIDER" => "openai",
-        "BEAMCORE_AGENT_MODEL" => "gpt-test"
-      },
-      fn ->
-        settings = ModeSettings.resolve(:research)
+    Beamcore.Config.put(:mode_agent_provider, "openai")
+    Beamcore.Config.put(:mode_agent_model, "gpt-test")
 
-        assert settings.mode == :agent
-        assert settings.provider == "openai"
-        assert settings.model == "gpt-test"
-      end
-    )
+    settings = ModeSettings.resolve(:research)
+
+    assert settings.mode == :agent
+    assert settings.provider == "openai"
+    assert settings.model == "gpt-test"
   end
 
   test "unknown screen resolves to agent settings" do
@@ -59,9 +73,9 @@ defmodule Beamcore.Agent.Chat.ModeSettingsTest do
   end
 
   test "global tool-call limit is explicit configuration" do
-    Beamcore.Agent.TestEnv.with_env(%{"BEAMCORE_MAX_TOOL_CALLS" => "42"}, fn ->
-      assert ModeSettings.resolve(:agent).tool_depth_limit == 42
-      assert ModeSettings.resolve(:chat).tool_depth_limit == 42
-    end)
+    Beamcore.Config.put(:max_tool_calls, "42")
+
+    assert ModeSettings.resolve(:agent).tool_depth_limit == 42
+    assert ModeSettings.resolve(:chat).tool_depth_limit == 42
   end
 end

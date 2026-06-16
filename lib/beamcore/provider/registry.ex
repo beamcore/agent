@@ -16,7 +16,6 @@ defmodule Beamcore.Provider.Registry do
       adapter: OpenAICompatible,
       base_url: "https://api.openai.com/v1",
       auth: :bearer,
-      secret_envs: ["OPENAI_API_KEY", "API_KEY"],
       default_model: "gpt-4o",
       requires_api_key?: true,
       local?: false
@@ -26,7 +25,6 @@ defmodule Beamcore.Provider.Registry do
       adapter: OpenAICompatible,
       base_url: "https://api.deepseek.com/v1",
       auth: :bearer,
-      secret_envs: ["DEEPSEEK_API_KEY", "API_KEY"],
       default_model: "deepseek-chat",
       requires_api_key?: true,
       local?: false
@@ -116,20 +114,11 @@ defmodule Beamcore.Provider.Registry do
   def resolve_api_key(%{auth: :none}), do: nil
   def resolve_api_key(%{auth: "none"}), do: nil
 
-  def resolve_api_key(%{config: %{"api_key" => key}, default_config: default})
-      when is_binary(key) do
-    env_value = env_secret_value(default)
-
-    if env_value do
-      env_value
-    else
-      Beamcore.Config.decrypted_api_key(key)
-    end
+  def resolve_api_key(%{config: %{"api_key" => key}}) when is_binary(key) do
+    Beamcore.Config.decrypted_api_key(key)
   end
 
-  def resolve_api_key(%{default_config: default}) do
-    env_secret_value(default) || legacy_secret_value(default)
-  end
+  def resolve_api_key(_provider_info), do: nil
 
   @doc """
   Returns an OpenaiEx client for the active provider.
@@ -184,21 +173,6 @@ defmodule Beamcore.Provider.Registry do
 
       {:error, _reason} = error ->
         error
-    end
-  end
-
-  @doc """
-  Returns true if an environment-variable API key is set for the active provider.
-  """
-  def env_api_key_present? do
-    provider_name = Beamcore.Config.active_provider()
-
-    case get(provider_name) do
-      %{default_config: default} ->
-        env_secret_value(default) != nil
-
-      _ ->
-        false
     end
   end
 
@@ -283,13 +257,12 @@ defmodule Beamcore.Provider.Registry do
     }
   end
 
-  defp custom_default(name) do
+  defp custom_default(_name) do
     %{
       id: :openai_compatible,
       adapter: OpenAICompatible,
       base_url: nil,
       auth: :bearer,
-      secret_envs: [provider_env_key(name), "API_KEY"],
       default_model: nil,
       requires_api_key?: true,
       local?: false
@@ -321,39 +294,7 @@ defmodule Beamcore.Provider.Registry do
 
   defp configured?(_name, _config, %{requires_api_key?: false}), do: true
 
-  defp configured?(_name, config, default) do
-    (is_map(config) and is_binary(Map.get(config, "api_key"))) ||
-      is_binary(legacy_secret_value(default)) ||
-      is_binary(env_secret_value(default))
-  end
-
-  defp legacy_secret_value(_default), do: nil
-
-  defp env_secret_value(default) do
-    default
-    |> Map.get(:secret_envs, [])
-    |> Enum.find_value(fn env_key ->
-      case System.get_env(env_key) do
-        nil ->
-          nil
-
-        "" ->
-          nil
-
-        value ->
-          trimmed = String.trim(value)
-          if trimmed == "", do: nil, else: trimmed
-      end
-    end)
-  end
-
-  defp provider_env_key(name) do
-    normalized =
-      name
-      |> String.upcase()
-      |> String.replace(~r/[^A-Z0-9]+/, "_")
-      |> String.trim("_")
-
-    "#{normalized}_API_KEY"
+  defp configured?(_name, config, _default) do
+    is_map(config) and is_binary(Map.get(config, "api_key"))
   end
 end

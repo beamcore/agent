@@ -9,13 +9,10 @@ defmodule Beamcore.Agent.Chat.API do
                         :completions_module,
                         OpenaiEx.Chat.Completions
                       )
-  @default_model nil
 
   def default_model do
-    System.get_env("API_MODEL") ||
-      System.get_env("API_CHAT_MODEL") ||
-      get_active_provider_default_model() ||
-      Application.get_env(:agent, :chat_model, @default_model)
+    get_active_provider_default_model() ||
+      Application.get_env(:agent, :chat_model)
   end
 
   defp get_active_provider_default_model do
@@ -30,91 +27,52 @@ defmodule Beamcore.Agent.Chat.API do
   @doc """
   Execute an API call with retry logic.
   """
-  def execute(client, messages, tools, context \\ :main, opts \\ []) do
-    # Input validation
-    if !is_list(messages) || length(messages) == 0 do
-      {:error, "Messages must be a non-empty list."}
-    else
-      if tools && !is_list(tools) do
+  def execute(client, messages, tools, opts \\ []) do
+    cond do
+      !is_list(messages) || length(messages) == 0 ->
+        {:error, "Messages must be a non-empty list."}
+
+      tools && !is_list(tools) ->
         {:error, "Tools must be a list."}
-      else
+
+      true ->
         tools = tools || []
-
         model = Keyword.get(opts, :model, default_model())
-
         retry_config = Keyword.get(opts, :retry_config) || retry_config()
 
         Beamcore.Retry.execute(
           fn ->
             try do
-              response = execute_provider_call(client, model, messages, tools, opts)
+              request = build_request(model, messages, tools, opts)
 
-              case response do
-                {:error, %OpenaiEx.Error{kind: :bad_request}} ->
-                  format_response(response, context, opts)
+              case Keyword.get(opts, :selection) do
+                %{provider: _} = selection ->
+                  Beamcore.Provider.Router.chat(selection, request, opts)
 
-                {:error, %OpenaiEx.Error{status_code: 400}} ->
-                  format_response(response, context, opts)
-
-                {:error, error} ->
-                  if is_binary(error) &&
-                       (String.contains?(error, "bad_request") ||
-                          String.contains?(error, "status_code: 400")) do
-                    format_response(response, context, opts)
-                  else
-                    format_response(response, context, opts)
-                  end
-
-                response ->
-                  format_response(response, context, opts)
+                _ ->
+                  Beamcore.RateLimiter.wait()
+                  @completions_module.create(client, request)
               end
+              |> format_response(opts)
             rescue
-              e ->
-                {:error, e}
+              e -> {:error, e}
             end
           end,
           retry_config
         )
-      end
     end
   end
 
-  defp execute_provider_call(client, model, messages, tools, opts) do
-    case Keyword.get(opts, :selection) do
-      %{provider: _provider} = selection ->
-        request = %{
-          model: model,
-          messages: messages,
-          tools: tools
-        }
+  defp build_request(model, messages, tools, opts) do
+    base = %{model: model, messages: messages, tools: tools}
 
-        request =
-          [:temperature, :top_p, :max_tokens]
-          |> Enum.reduce(request, fn key, acc ->
-            case Keyword.get(opts, key) do
-              nil -> acc
-              val -> Map.put(acc, key, val)
-            end
-          end)
-
-        Beamcore.Provider.Router.chat(selection, request, opts)
-
-      _ ->
-        Beamcore.RateLimiter.wait()
-
-        params = %{model: model, messages: messages, tools: tools}
-
-        params =
-          [:temperature, :top_p, :max_tokens]
-          |> Enum.reduce(params, fn key, acc ->
-            case Keyword.get(opts, key) do
-              nil -> acc
-              val -> Map.put(acc, key, val)
-            end
-          end)
-
-        @completions_module.create(client, params)
-    end
+    [:temperature, :top_p, :max_tokens]
+    |> Enum.reduce(base, fn key, acc ->
+      case Keyword.get(opts, key) do
+        nil -> acc
+        val -> Map.put(acc, key, val)
+      end
+    end)
   end
 
   defp retry_config do
@@ -134,39 +92,32 @@ defmodule Beamcore.Agent.Chat.API do
 
   defp format_response(
          {:ok,
-          %{"choices" => [%{"message" => %{"tool_calls" => tool_calls} = message} | _]} =
-            response_map},
-         context,
-         opts
-       )
-       when is_list(tool_calls) do
-    format_response_with_context(response_map, message, tool_calls, context, opts)
-  end
-
-  defp format_response(
-         {:ok, %{"choices" => [%{"message" => message} | _]} = response_map},
-         _context,
+          %{"choices" => [%{"message" => %{"tool_calls" => _} = message} | _]} = response_map},
          _opts
        ) do
     {:ok, %{message: message, raw_response: response_map}}
   end
 
-  defp format_response({:ok, response_map}, _context, _opts) do
-    # Fallback clause
-    message = (response_map["choices"] |> List.first())["message"]
+  defp format_response(
+         {:ok, %{"choices" => [%{"message" => message} | _]} = response_map},
+         _opts
+       ) do
     {:ok, %{message: message, raw_response: response_map}}
   end
 
-  defp format_response({:error, %OpenaiEx.Error{} = error}, _context, _opts) do
+  defp format_response({:ok, response_map}, _opts) do
+    case response_map["choices"] do
+      [%{"message" => message} | _] -> {:ok, %{message: message, raw_response: response_map}}
+      _ -> {:ok, %{message: nil, raw_response: response_map}}
+    end
+  end
+
+  defp format_response({:error, %OpenaiEx.Error{} = error}, _opts) do
     {:error, error}
   end
 
-  defp format_response({:error, reason}, _context, _opts) do
+  defp format_response({:error, reason}, _opts) do
     {:error, reason}
-  end
-
-  defp format_response_with_context(response_map, message, _tool_calls, _context, _opts) do
-    {:ok, %{message: message, raw_response: response_map}}
   end
 
   @doc """

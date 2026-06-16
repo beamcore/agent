@@ -74,12 +74,28 @@ defmodule Beamcore.Agent.Chat.Commands do
   end
 
   defp handle_env(session, output) do
-    env_str =
-      System.get_env()
-      |> Enum.sort()
-      |> Enum.map_join("\n", fn {key, value} -> "#{key}=#{redact_env_value(key, value)}" end)
+    providers = Beamcore.Config.list_providers()
+    active = Beamcore.Config.active_provider()
 
-    output.(env_str)
+    provider_str =
+      providers
+      |> Enum.sort()
+      |> Enum.map_join("\n", fn {name, config} ->
+        base_url = Map.get(config, "base_url", "n/a")
+        model = Map.get(config, "default_model", "n/a")
+        flag = if name == active, do: " *", else: ""
+        "  #{name}#{flag}: #{base_url} (#{model})"
+      end)
+
+    settings = [
+      {"active_provider", active || "(none)"},
+      {"active_model", Beamcore.Agent.Chat.API.default_model() || "(none)"}
+    ]
+
+    settings_str =
+      Enum.map_join(settings, "\n", fn {k, v} -> "#{k}: #{v}" end)
+
+    output.("Settings:\n#{settings_str}\n\nProviders:\n#{provider_str}")
     session
   end
 
@@ -269,26 +285,5 @@ defmodule Beamcore.Agent.Chat.Commands do
   defp handle_unknown(command, session, output, true) do
     output.("Error: Unknown command: /#{command}")
     session
-  end
-
-  defp redact_env_value(key, value) do
-    if secret_env_key?(key), do: "[REDACTED]", else: value
-  end
-
-  defp secret_env_key?(key) do
-    key = String.upcase(key)
-
-    Enum.any?(
-      [
-        "OPENAI_API_KEY",
-        "API_KEY",
-        "TOKEN",
-        "SECRET",
-        "PASSWORD",
-        "COOKIE",
-        "KEY"
-      ],
-      &String.contains?(key, &1)
-    )
   end
 end

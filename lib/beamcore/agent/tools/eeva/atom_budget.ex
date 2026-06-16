@@ -43,8 +43,8 @@ defmodule Beamcore.Agent.Tools.Eeva.AtomBudget do
 
   @impl true
   def handle_call({:admit, candidates}, _from, state) do
-    per_call = env_limit("BEAMCORE_EEVA_MAX_NEW_ATOMS_PER_CALL", @default_per_call)
-    total = env_limit("BEAMCORE_EEVA_MAX_TOTAL_NEW_ATOMS", @default_total)
+    per_call = Beamcore.Config.get_setting(:eeva_max_new_atoms_per_call, @default_per_call)
+    total = Beamcore.Config.get_setting(:eeva_max_total_new_atoms, @default_total)
 
     unknown =
       candidates
@@ -101,12 +101,5 @@ defmodule Beamcore.Agent.Tools.Eeva.AtomBudget do
     true
   rescue
     ArgumentError -> false
-  end
-
-  defp env_limit(name, default) do
-    case Integer.parse(System.get_env(name, "")) do
-      {value, ""} when value > 0 -> value
-      _ -> default
-    end
   end
 end
