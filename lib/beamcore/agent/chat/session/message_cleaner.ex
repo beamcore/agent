@@ -7,36 +7,52 @@ defmodule Beamcore.Agent.Chat.Session.MessageCleaner do
   """
 
   @doc """
-  Trims and cleans a message list before it is sent to the summarizer.
-  Ensures it is under the token/character threshold and conforms to message alternation requirements.
+  Cleans a message list without truncating. Fixes orphaned tool responses,
+  dangling tool calls, empty assistant messages, and enforces role alternation.
   """
-  def trim_and_clean(messages, limit \\ 30) do
+  def clean(messages) do
+    {system_messages, cleaned} = split_system(messages)
+    system_messages ++ cleaned
+  end
+
+  @doc """
+  Cleans and truncates a message list to the given message count limit.
+  """
+  def trim_and_clean(messages, limit) do
+    {system_messages, cleaned} = split_system(messages)
+
+    trimmed =
+      if length(cleaned) > limit do
+        Enum.take(cleaned, -limit)
+      else
+        cleaned
+      end
+
+    system_messages ++ trimmed
+  end
+
+  defp split_system(messages) do
     {system_messages, other_messages} =
       Enum.split_with(messages, fn m ->
         (m[:role] || m["role"]) == "system"
       end)
 
-    normalized_messages = normalize_all_tool_calls(other_messages)
-    cleaned_messages = clean_orphaned_tools(normalized_messages)
-    cleaned_messages = clean_dangling_tool_calls(cleaned_messages)
-    cleaned_messages = remove_empty_assistant_messages(cleaned_messages)
-    user_starting_messages = ensure_starts_with_user(cleaned_messages)
-    final_messages = merge_consecutive_roles(user_starting_messages)
+    cleaned =
+      other_messages
+      |> normalize_all_tool_calls()
+      |> clean_orphaned_tools()
+      |> clean_dangling_tool_calls()
+      |> remove_empty_assistant_messages()
+      |> ensure_starts_with_user()
+      |> merge_consecutive_roles()
 
-    trimmed_messages =
-      if length(final_messages) > limit do
-        Enum.take(final_messages, -limit)
-      else
-        final_messages
-      end
-
-    trimmed_messages =
-      case trimmed_messages do
+    cleaned =
+      case cleaned do
         [] -> [%{role: "user", content: "Continuing the conversation."}]
         other -> other
       end
 
-    system_messages ++ trimmed_messages
+    {system_messages, cleaned}
   end
 
   defp normalize_all_tool_calls(messages) do

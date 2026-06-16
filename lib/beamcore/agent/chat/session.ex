@@ -274,17 +274,15 @@ defmodule Beamcore.Agent.Chat.Session do
 
   # --- Compaction delegation ---
 
-  defdelegate prepare_for_api(messages, limit \\ 304), to: Compaction
+  defdelegate prepare_for_api(messages, limit), to: Compaction
   defdelegate prepare_for_api(messages, context, limit), to: Compaction
   defdelegate prepare_for_api(messages, context, limit, budget), to: Compaction
-  defdelegate compact_history(messages, limit \\ 632), to: Compaction
-  defdelegate compact_raw_response(response), to: Compaction
-  defdelegate compact_for_api(message), to: Compaction
+  defdelegate compact_history(messages), to: Compaction
   defdelegate summarize_and_rollover(session, messages, pid), to: Compaction
 
   # --- Message cleaning delegation ---
 
-  defdelegate trim_and_clean_messages(messages, limit \\ 30),
+  defdelegate trim_and_clean_messages(messages, limit),
     to: MessageCleaner,
     as: :trim_and_clean
 end

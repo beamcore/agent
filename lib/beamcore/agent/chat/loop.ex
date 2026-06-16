@@ -182,7 +182,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     case api_result do
       {:ok, %{message: message, raw_response: raw_response}} ->
-        Session.log(session, Session.compact_raw_response(raw_response))
+        Session.log(session, raw_response)
 
         {cleaned_content, reasoning} = API.extract_reasoning(message)
 
@@ -221,8 +221,7 @@ defmodule Beamcore.Agent.Chat.Loop do
         end
 
         message = normalize_tool_calls(message)
-        compacted_message = Session.compact_for_api(message)
-        new_messages = messages ++ [compacted_message]
+        new_messages = messages ++ [message]
 
         if has_tool_calls?(message) do
           # Agent has more work to do — continue the tool chain.

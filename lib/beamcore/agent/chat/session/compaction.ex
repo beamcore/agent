@@ -3,25 +3,16 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
   Message compaction, API preparation, and session rollover logic.
 
   Handles preparing message histories for API calls (with context injection and budget fitting),
-  compacting histories after turns, compacting raw API responses, and performing transparent
-  session rollovers with summarization.
+  cleaning histories after turns, and performing transparent session rollovers with summarization.
   """
 
   alias Beamcore.Agent.Chat.Session.MessageCleaner
 
-  @api_message_limit 304
-  @history_message_limit 632
-
   @doc """
   Prepares message history for an API request without mutating the persisted log.
-
-  Tool outputs and long assistant/user messages are compacted before they are sent
-  back to the model.
   """
-  def prepare_for_api(messages, limit \\ @api_message_limit) do
-    messages
-    |> MessageCleaner.trim_and_clean(limit)
-    |> Enum.map(&compact_for_api/1)
+  def prepare_for_api(messages, limit) do
+    MessageCleaner.trim_and_clean(messages, limit)
   end
 
   @doc """
@@ -44,36 +35,11 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
   end
 
   @doc """
-  Compact the in-memory history kept after a turn.
+  Clean the in-memory history kept after a turn (structural fixes only, no truncation).
   """
-  def compact_history(messages, limit \\ @history_message_limit) do
-    messages
-    |> MessageCleaner.trim_and_clean(limit)
-    |> Enum.map(&compact_for_api/1)
+  def compact_history(messages) do
+    MessageCleaner.clean(messages)
   end
-
-  @doc """
-  Compact raw API responses before persistent logging.
-  """
-  def compact_raw_response(%{"choices" => choices} = response) when is_list(choices) do
-    compacted_choices =
-      Enum.map(choices, fn
-        %{"message" => message} = choice ->
-          Map.put(choice, "message", message)
-
-        choice ->
-          choice
-      end)
-
-    Map.put(response, "choices", compacted_choices)
-  end
-
-  def compact_raw_response(response), do: response
-
-  @doc """
-  Compact a single message before storing it in active chat history.
-  """
-  def compact_for_api(message), do: message
 
   @doc """
   Summarizes the current session context and rolls over into a new session.
@@ -86,18 +52,15 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
 
     trimmed = MessageCleaner.trim_and_clean(messages, 30)
 
+    primary = Beamcore.Provider.Selection.primary(session.roles)
+
     case Beamcore.Agent.Chat.API.execute(
            session.client,
            trimmed ++ [summary_prompt],
            [],
            :main,
-           selection: Beamcore.Provider.Selection.primary(session.roles),
-           model:
-             Map.get(
-               Beamcore.Provider.Selection.primary(session.roles),
-               :model,
-               "mistral-small-2603"
-             ),
+           selection: primary,
+           model: Map.get(primary, :model),
            silent: true
          ) do
       {:ok, %{message: %{"content" => summary}}} ->
@@ -149,10 +112,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
       {:error, _reason} ->
         system_msg = List.first(session.messages)
 
-        fallback =
-          messages
-          |> MessageCleaner.trim_and_clean(10)
-          |> Enum.map(&compact_for_api/1)
+        fallback = MessageCleaner.trim_and_clean(messages, 10)
 
         fallback =
           if system_msg do

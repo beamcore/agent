@@ -189,7 +189,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "user", content: large_content}
       ]
 
-      trimmed = Session.trim_and_clean_messages(messages)
+      trimmed = Session.trim_and_clean_messages(messages, 30)
       user_msg = Enum.find(trimmed, fn m -> m.role == "user" end)
       assert user_msg.content == large_content
     end
@@ -207,7 +207,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", content: long_output}
       ]
 
-      prepared = Session.prepare_for_api(messages)
+      prepared = Session.prepare_for_api(messages, 30)
       tool_msg = Enum.find(prepared, fn m -> m.role == "tool" end)
 
       assert tool_msg.content == long_output
@@ -261,7 +261,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
-      prepared = Session.prepare_for_api(messages)
+      prepared = Session.prepare_for_api(messages, 30)
       assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
       [tool_call] = assistant.tool_calls
       args = Jason.decode!(tool_call["function"]["arguments"])
@@ -300,49 +300,13 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
-      prepared = Session.prepare_for_api(messages)
+      prepared = Session.prepare_for_api(messages, 30)
       assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
       [tool_call] = assistant.tool_calls
       args = Jason.decode!(tool_call["function"]["arguments"])
 
       assert args["workdir"] == "."
       assert args["patch_content"] == patch
-    end
-
-    test "compact_raw_response logs uncompacted mutation tool calls" do
-      content = String.duplicate("hello\n", 100)
-
-      response = %{
-        "choices" => [
-          %{
-            "message" => %{
-              "tool_calls" => [
-                %{
-                  "id" => "call_1",
-                  "function" => %{
-                    "name" => "eeva",
-                    "arguments" =>
-                      Jason.encode!(%{"path" => "scratch/a.ex", "content" => content})
-                  }
-                }
-              ]
-            }
-          }
-        ]
-      }
-
-      compacted = Session.compact_raw_response(response)
-
-      args =
-        compacted["choices"]
-        |> hd()
-        |> get_in(["message", "tool_calls"])
-        |> hd()
-        |> get_in(["function", "arguments"])
-        |> Jason.decode!()
-
-      assert args["path"] == "scratch/a.ex"
-      assert args["content"] == content
     end
 
     test "removes leading and orphaned tool messages" do
@@ -353,7 +317,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "2", content: "another_orphaned_tool"}
       ]
 
-      trimmed = Session.trim_and_clean_messages(messages)
+      trimmed = Session.trim_and_clean_messages(messages, 30)
 
       # system message should be kept, and orphaned tools should be removed, leaving only the user message
       assert length(trimmed) == 2
@@ -369,7 +333,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "user", content: "interruption"}
       ]
 
-      trimmed = Session.trim_and_clean_messages(messages)
+      trimmed = Session.trim_and_clean_messages(messages, 30)
 
       # The assistant message had a dangling tool call. A synthetic
       # "[Interrupted]" tool response is injected, then the empty assistant
@@ -390,7 +354,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "user", content: "interruption"}
       ]
 
-      trimmed = Session.trim_and_clean_messages(messages)
+      trimmed = Session.trim_and_clean_messages(messages, 30)
 
       # Assistant keeps content, dangling tool_call is stripped, and a synthetic
       # "[Interrupted]" tool response is injected after it.
@@ -415,7 +379,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", content: "tool_result"}
       ]
 
-      trimmed = Session.trim_and_clean_messages(messages)
+      trimmed = Session.trim_and_clean_messages(messages, 30)
       assert length(trimmed) == 4
       assert Enum.map(trimmed, & &1.role) == ["system", "user", "assistant", "tool"]
     end
@@ -429,7 +393,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "assistant", content: "response 2"}
       ]
 
-      trimmed = Session.trim_and_clean_messages(messages)
+      trimmed = Session.trim_and_clean_messages(messages, 30)
       assert length(trimmed) == 3
       assert Enum.map(trimmed, & &1.role) == ["system", "user", "assistant"]
       assert Enum.at(trimmed, 1).content == "hello 1\n\nhello 2"
