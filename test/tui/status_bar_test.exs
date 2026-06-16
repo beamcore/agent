@@ -13,8 +13,7 @@ defmodule Beamcore.TUI.StatusBarTest do
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
       total_tokens: 0,
-      last_prompt_tokens: 0,
-      needs_compaction: false
+      last_prompt_tokens: 0
     }
 
     widget =
@@ -45,8 +44,7 @@ defmodule Beamcore.TUI.StatusBarTest do
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
       total_tokens: 0,
-      last_prompt_tokens: 0,
-      needs_compaction: false
+      last_prompt_tokens: 0
     }
 
     state =

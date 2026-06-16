@@ -12,12 +12,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   alias Beamcore.Agent.Tools.Dispatcher
 
-  require Logger
-
-  @event_content_limit 1_200
-  @event_content_head 420
-  @event_content_tail 260
-
   def send_message(session, content, pid, runtime_caps \\ nil, opts \\ []) do
     with {:ok, session} <- ensure_client(session, opts) do
       do_send_message(session, content, pid, runtime_caps, opts)
@@ -58,84 +52,68 @@ defmodule Beamcore.Agent.Chat.Loop do
     Session.log(session, user_message)
 
     messages = session.messages ++ [user_message]
-    session = maybe_goal_checkpoint(session, content)
 
     process_messages(session, messages, pid, 0, caps, opts)
   end
 
-  defp process_messages(session, messages, pid, depth, caps, opts)
-       when depth >= 0 do
-    do_process_messages(session, messages, pid, depth, caps, opts)
-  end
+  defp process_messages(session, messages, pid, depth, caps, opts) do
+    tools = Dispatcher.tool_specs(caps)
+    settings = mode_settings(session)
 
-  defp do_process_messages(session, messages, pid, depth, caps, opts) do
-    if session.session_paused do
-      emit(
-        opts,
-        {:error,
-         "Session paused: context exceeds 200k tokens. Run /compress to compress the session before continuing."}
-      )
+    opts =
+      case session.screen_type do
+        :agent -> Keyword.put_new(opts, :temperature, 0.2)
+        _ -> opts
+      end
 
-      emit(opts, {:status, :idle})
-      session
-    else
-      tools = Dispatcher.tool_specs(caps)
-      settings = mode_settings(session)
+    {:ok, api_messages, estimate, metadata} =
+      prepare_api_messages(session, messages, caps, tools)
 
-      opts =
-        case session.screen_type do
-          :agent -> Keyword.put_new(opts, :temperature, 0.2)
-          _ -> opts
+    emit(opts, {:model_context, model_context_event(session, estimate, metadata)})
+
+    session =
+      Session.append_timeline(session, :model_call, model_call_summary(session), %{
+        role: :agent,
+        title: model_call_title(session),
+        metadata:
+          %{
+            provider: provider_name(session),
+            model: model_name(session),
+            depth: depth
+          }
+          |> Map.merge(model_context_event(session, estimate, metadata))
+      })
+
+    call_started = System.monotonic_time(:millisecond)
+
+    api_result =
+      API.execute(session.client, api_messages, tools,
+        selection: Beamcore.Provider.Selection.primary(session.roles),
+        model: model_name(session),
+        silent: Keyword.get(opts, :silent, false),
+        retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
+        temperature: Keyword.get(opts, :temperature),
+        max_tokens: metadata.max_output_tokens,
+        wait_fun: fn wait_ms ->
+          sleep_before_retry(
+            opts,
+            :cooldown,
+            wait_ms,
+            "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
+          )
         end
-
-      {:ok, api_messages, estimate, metadata} =
-        prepare_api_messages(session, messages, caps, tools)
-
-      emit(opts, {:model_context, model_context_event(session, estimate, metadata)})
-
-      session =
-        Session.append_timeline(session, :model_call, model_call_summary(session), %{
-          role: model_call_role(session),
-          title: model_call_title(session),
-          metadata:
-            %{
-              provider: provider_name(session),
-              model: model_name(session),
-              depth: depth
-            }
-            |> Map.merge(model_context_event(session, estimate, metadata)),
-          checkpoint: false
-        })
-
-      call_started = System.monotonic_time(:millisecond)
-
-      api_result =
-        API.execute(session.client, api_messages, tools,
-          selection: Beamcore.Provider.Selection.primary(session.roles),
-          model: model_name(session),
-          silent: Keyword.get(opts, :silent, false),
-          retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
-          temperature: Keyword.get(opts, :temperature),
-          max_tokens: metadata.max_output_tokens,
-          wait_fun: fn wait_ms ->
-            sleep_before_retry(
-              opts,
-              :cooldown,
-              wait_ms,
-              "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
-            )
-          end
-        )
-
-      call_elapsed = System.monotonic_time(:millisecond) - call_started
-
-      handle_api_result(
-        api_result,
-        session,
-        messages,
-        message_context(pid, caps, opts, settings, call_elapsed, depth)
       )
-    end
+
+    call_elapsed = System.monotonic_time(:millisecond) - call_started
+
+    handle_api_result(api_result, session, messages, %{
+      pid: pid,
+      caps: caps,
+      opts: opts,
+      settings: settings,
+      call_elapsed: call_elapsed,
+      depth: depth
+    })
   end
 
   defp handle_api_result(api_result, session, messages, ctx) do
@@ -167,33 +145,12 @@ defmodule Beamcore.Agent.Chat.Loop do
             session
           end
 
-        session = Session.append_timeline(session, :checkpoint_saved, "Model response received.")
-
         emit(opts, {:session, session})
-
-        # Emit warnings when context is getting large
-        if session.session_paused do
-          emit(
-            opts,
-            {:error,
-             "Session paused: context exceeds 200k tokens. Run /compress to compress the session before continuing."}
-          )
-        else
-          if session.warn_user do
-            emit(
-              opts,
-              {:assistant,
-               "Warning: context exceeds 150k tokens. Consider running /compress to compress the session."}
-            )
-          end
-        end
 
         message = normalize_tool_calls(message)
         new_messages = messages ++ [message]
 
         if has_tool_calls?(message) do
-          # Agent has more work to do — continue the tool chain.
-          # Even if needs_compaction is true, we let it finish.
           {tool_responses, session} =
             Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
               name = tool_call["function"]["name"]
@@ -203,24 +160,18 @@ defmodule Beamcore.Agent.Chat.Loop do
               emit(opts, {:status, :tool_running})
               emit(opts, {:tool_running, name, args})
 
-              session = maybe_pre_tool_checkpoint(session, name, args)
-
               content = Dispatcher.execute(name, args, caps)
 
-              event_content = compact_event_content(content)
-              emit(opts, {:tool_finished, name, args, event_content})
+              emit(opts, {:tool_finished, name, args, content})
 
               session =
-                session
-                |> maybe_post_tool_checkpoint(name, args, content)
-                |> Session.append_timeline(:tool_call, "Tool #{name} completed.", %{
-                  role: tool_role(session),
+                Session.append_timeline(session, :tool_call, "Tool #{name} completed.", %{
+                  role: :agent,
                   title: "Tool call: #{name}",
                   metadata: %{
                     tool: name,
-                    result: event_content
-                  },
-                  checkpoint: false
+                    result: content
+                  }
                 })
 
               emit(opts, {:session, session})
@@ -252,16 +203,6 @@ defmodule Beamcore.Agent.Chat.Loop do
           finish_turn(session, opts)
         end
 
-      {:error, %OpenaiEx.Error{kind: :rate_limit} = error} ->
-        Beamcore.AppLog.warn("Rate limit retries exhausted, auto-retrying",
-          provider: provider_name(session),
-          model: model_name(session),
-          status_code: error.status_code
-        )
-
-        emit(opts, {:assistant, "Rate limited by provider. Retrying..."})
-        process_messages(session, messages, pid, depth, caps, opts)
-
       {:error, %OpenaiEx.Error{kind: :api_timeout_error}} ->
         message = timeout_message(session, settings, call_elapsed)
 
@@ -276,21 +217,10 @@ defmodule Beamcore.Agent.Chat.Loop do
         emit(opts, {:status, :error})
 
         Session.append_timeline(session, :failed, message,
-          role: model_call_role(session),
+          role: :agent,
           title: "Provider timeout",
           metadata: timeout_metadata(session, settings, call_elapsed)
         )
-
-      {:error, %Beamcore.Provider.Error{kind: :rate_limit} = error} ->
-        Beamcore.AppLog.warn("Rate limit retries exhausted, auto-retrying",
-          provider: provider_name(session),
-          model: model_name(session),
-          kind: error.kind,
-          message: error.message
-        )
-
-        emit(opts, {:assistant, "Rate limited by provider. Retrying..."})
-        process_messages(session, messages, pid, depth, caps, opts)
 
       {:error, %Beamcore.Provider.Error{} = error} ->
         Beamcore.AppLog.error("Provider error",
@@ -330,17 +260,6 @@ defmodule Beamcore.Agent.Chat.Loop do
         emit(opts, {:status, :error})
         Session.append_timeline(session, :failed, message)
     end
-  end
-
-  defp message_context(pid, caps, opts, settings, call_elapsed, depth) do
-    %{
-      pid: pid,
-      caps: caps,
-      opts: opts,
-      settings: settings,
-      call_elapsed: call_elapsed,
-      depth: depth
-    }
   end
 
   defp prepare_api_messages(session, messages, caps, tools) do
@@ -390,6 +309,10 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp retry_config(settings, opts) do
     %Beamcore.Retry.Config{
       max_retries: settings.retry_limit,
+      initial_backoff: Beamcore.Retry.default_initial_backoff(),
+      max_backoff: Beamcore.Retry.default_max_backoff(),
+      backoff_multiplier: Beamcore.Retry.default_backoff_multiplier(),
+      retryable_errors: Beamcore.Retry.default_retryable_errors(),
       sleep_fun: fn wait_ms ->
         sleep_before_retry(
           opts,
@@ -402,7 +325,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp sleep_before_retry(opts, reason, wait_ms, message) do
-    wait_ms = max(wait_ms, 0)
+    wait_ms = (wait_ms && max(wait_ms, 0)) || 0
 
     Beamcore.AppLog.warn("Provider retry scheduled",
       reason: reason,
@@ -420,88 +343,21 @@ defmodule Beamcore.Agent.Chat.Loop do
     )
   end
 
-  defp model_call_role(_session), do: :agent
-
   defp model_call_title(%{screen_type: :chat}), do: "Chat model call"
   defp model_call_title(_session), do: "Agent model call"
 
   defp model_call_summary(session),
     do: "Agent called #{provider_name(session)}/#{model_name(session)}."
 
-  defp tool_role(_session), do: :agent
-
-  defp maybe_goal_checkpoint(%{screen_type: :agent} = session, content) do
-    Session.append_timeline(session, :decision, "F1 accepted goal: #{short_text(content)}",
-      role: :user,
-      title: "F1 goal accepted",
-      metadata: %{mode: "F1 Dev"},
-      checkpoint: false
-    )
-  end
-
-  defp maybe_goal_checkpoint(session, _content), do: session
-
-  defp maybe_pre_tool_checkpoint(%{screen_type: :agent} = session, "eeva", _args), do: session
-
-  defp maybe_pre_tool_checkpoint(session, _name, _args), do: session
-
-  defp maybe_post_tool_checkpoint(%{screen_type: :agent} = session, "eeva", _args, content) do
-    if tool_success?(content) and filesystem_mutation?(content) do
-      Session.append_timeline(session, :file_change, "After Eeva workspace mutation.",
-        role: :agent,
-        title: "F1 Eeva mutation completed",
-        metadata: %{
-          mode: "F1 Dev",
-          tool: "eeva"
-        }
-      )
-    else
-      session
-    end
-  end
-
-  defp maybe_post_tool_checkpoint(session, _name, _args, _content), do: session
-
-  defp filesystem_mutation?(content) when is_binary(content) do
-    case Jason.decode(content) do
-      {:ok, %{"filesystem_changes" => %{"changed_path_count" => count}}}
-      when is_integer(count) and count > 0 ->
-        true
-
-      _ ->
-        false
-    end
-  end
-
-  defp filesystem_mutation?(_content), do: false
-
-  defp tool_success?(content) when is_binary(content) do
-    case Jason.decode(content) do
-      {:ok, %{"ok" => false}} -> false
-      _ -> not String.starts_with?(String.trim_leading(content), "Error:")
-    end
-  end
-
-  defp tool_success?(_), do: true
-
-  defp short_text(content) when is_binary(content) do
-    content
-    |> String.replace(~r/\s+/, " ")
-    |> String.slice(0, 120)
-  end
-
-  defp short_text(_), do: ""
-
   defp timeout_message(session, settings, elapsed_ms) do
-    role = model_call_role(session) |> to_string() |> String.capitalize()
     configured = receive_timeout_ms(settings)
 
-    "#{role} timed out waiting for the complete non-streaming provider response after #{format_ms(elapsed_ms)}. Provider: #{provider_name(session)}. Model: #{model_name(session)}. Configured receive timeout: #{format_ms(configured)}."
+    "Agent timed out waiting for the complete non-streaming provider response after #{format_ms(elapsed_ms)}. Provider: #{provider_name(session)}. Model: #{model_name(session)}. Configured receive timeout: #{format_ms(configured)}."
   end
 
   defp timeout_metadata(session, settings, elapsed_ms) do
     %{
-      role: model_call_role(session),
+      role: :agent,
       provider: provider_name(session),
       model: model_name(session),
       stage: :model_call,
@@ -522,7 +378,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp format_ms(ms), do: "#{ms}ms"
 
   defp finish_turn(session, opts) do
-    session = Session.append_timeline(session, :completed, "Turn completed.", checkpoint: false)
+    session = Session.append_timeline(session, :completed, "Turn completed.")
     emit(opts, {:session, session})
     emit(opts, {:status, :idle})
 
@@ -531,19 +387,8 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp emit(opts, event) do
     case Keyword.get(opts, :event_handler) do
-      handler when is_function(handler, 1) ->
-        try do
-          handler.(event)
-        rescue
-          error ->
-            log_emit_failure(event, Exception.message(error))
-        catch
-          kind, reason ->
-            log_emit_failure(event, "#{inspect(kind)} #{inspect(reason)}")
-        end
-
-      nil ->
-        :ok
+      handler when is_function(handler, 1) -> handler.(event)
+      nil -> :ok
     end
   end
 
@@ -551,43 +396,6 @@ defmodule Beamcore.Agent.Chat.Loop do
     do: emit(opts, {:assistant, content})
 
   defp emit_assistant(_opts, _content), do: :ok
-
-  defp compact_event_content(content) when is_binary(content) do
-    if String.length(content) <= @event_content_limit do
-      content
-    else
-      char_count = String.length(content)
-      line_count = line_count(content)
-      omitted = max(char_count - @event_content_head - @event_content_tail, 0)
-      head = String.slice(content, 0, @event_content_head)
-      tail = String.slice(content, char_count - @event_content_tail, @event_content_tail)
-
-      """
-      #{head}
-
-      [tool output omitted: #{omitted} chars omitted from #{char_count} chars, #{line_count} lines]
-
-      #{tail}
-      """
-      |> String.trim()
-    end
-  end
-
-  defp compact_event_content(content), do: inspect(content)
-
-  defp line_count(""), do: 0
-  defp line_count(content), do: content |> String.split("\n") |> length()
-
-  defp log_emit_failure(event, reason) do
-    Logger.debug(fn ->
-      "TUI event handler failed for #{inspect(event_name(event))}: #{reason}"
-    end)
-
-    :ok
-  end
-
-  defp event_name(event) when is_tuple(event) and tuple_size(event) > 0, do: elem(event, 0)
-  defp event_name(event), do: event
 
   defp api_error_text(error) do
     if error.message do

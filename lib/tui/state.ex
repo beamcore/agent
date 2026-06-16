@@ -65,7 +65,7 @@ defmodule Beamcore.TUI.State do
           %{
             role: :system,
             content:
-              "Beamcore is not configured for the selected primary provider. Use /api list, /api add, or /login to configure one."
+              "Beamcore is not configured for the selected primary provider. Use /api list or /api add to configure one."
           }
         ]
 
@@ -450,7 +450,7 @@ defmodule Beamcore.TUI.State do
 
   def activity_indicator(%{activity_follow_tail?: false}), do: "Paused"
 
-  def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0, needs_compaction: false}
+  def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0}
   def usage(session), do: Session.usage(session)
 
   def model(nil), do: Beamcore.Agent.Chat.API.default_model()

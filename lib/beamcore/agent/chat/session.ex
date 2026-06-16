@@ -14,10 +14,7 @@ defmodule Beamcore.Agent.Chat.Session do
     :total_completion_tokens,
     :total_tokens,
     :last_prompt_tokens,
-    :needs_compaction,
     :compaction_count,
-    :warn_user,
-    :session_paused,
     :runtime_caps,
     :workspace_root,
     :roles,
@@ -31,9 +28,6 @@ defmodule Beamcore.Agent.Chat.Session do
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
   @animals ~w(cat dog bird fish elephant lion tiger bear wolf fox owl hawk eagle shark whale dolphin octopus spider snake frog)
   @qualities ~w(hairy slimy fluffy scaly shiny bumpy soft hard fast slow loud quiet smart silly funny brave shy happy sad angry)
-
-  @grace_threshold 150_000
-  @hard_limit 200_000
 
   @doc """
   Generates a funny session name in the format "color-property-animal".
@@ -104,10 +98,7 @@ defmodule Beamcore.Agent.Chat.Session do
       total_completion_tokens: 0,
       total_tokens: 0,
       last_prompt_tokens: 0,
-      needs_compaction: false,
       compaction_count: 0,
-      warn_user: false,
-      session_paused: false,
       runtime_caps: runtime_caps,
       workspace_root: workspace_root,
       roles: roles,
@@ -272,30 +263,14 @@ defmodule Beamcore.Agent.Chat.Session do
   end
 
   def update_usage(session, usage) do
-    last_prompt = usage["prompt_tokens"] || 0
-
-    warn = last_prompt >= @grace_threshold
-    paused = last_prompt >= @hard_limit
-
     %{
       session
       | total_prompt_tokens: session.total_prompt_tokens + (usage["prompt_tokens"] || 0),
         total_completion_tokens:
           session.total_completion_tokens + (usage["completion_tokens"] || 0),
         total_tokens: session.total_tokens + (usage["total_tokens"] || 0),
-        last_prompt_tokens: last_prompt,
-        needs_compaction: session.needs_compaction || warn,
-        warn_user: session.warn_user || warn,
-        session_paused: session.session_paused || paused
+        last_prompt_tokens: usage["prompt_tokens"] || 0
     }
-  end
-
-  @doc """
-  Returns true if the session has hit the hard limit and must rollover
-  immediately, even mid-tool-chain.
-  """
-  def needs_rollover_now?(session) do
-    (session.last_prompt_tokens || 0) >= @hard_limit
   end
 
   @doc """
@@ -306,16 +281,8 @@ defmodule Beamcore.Agent.Chat.Session do
       prompt_tokens: session.total_prompt_tokens,
       completion_tokens: session.total_completion_tokens,
       total_tokens: session.total_tokens,
-      last_prompt_tokens: session.last_prompt_tokens || 0,
-      needs_compaction: session.needs_compaction || false
+      last_prompt_tokens: session.last_prompt_tokens || 0
     }
-  end
-
-  @doc """
-  Clears warning and pause flags after compaction.
-  """
-  def clear_warnings(session) do
-    %{session | warn_user: false, session_paused: false, needs_compaction: false}
   end
 
   # --- Compaction delegation ---

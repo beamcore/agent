@@ -215,6 +215,8 @@ defmodule Beamcore.Agent.Tools.EevaTest do
   end
 
   test "memory API tolerates model-style recall and clamps runaway limits" do
+    Beamcore.Config.put(:eeva_timeout_ms, "10000")
+
     result =
       Eeva.execute(%{
         "code" =>
