@@ -39,7 +39,7 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       },
       "workspace_root" => session.workspace_root,
       "intermediate_state" => session.intermediate_state || %{},
-      "interrupted" => session.interrupted? || false
+      "interrupted?" => session.interrupted? || false
     }
   end
 
@@ -80,7 +80,7 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       runtime_caps:
         if(screen_type == :chat,
           do: Beamcore.Agent.Chat.ToolRuntime.chat(),
-          else: nil
+          else: Beamcore.Agent.Chat.ToolRuntime.default()
         ),
       workspace_root: workspace_root,
       context: Beamcore.Agent.Chat.Context.new(),
@@ -93,7 +93,7 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
       branch_id: timeline_state.branch_id,
       active_checkpoint_id: timeline_state.active_checkpoint_id,
       intermediate_state: Map.get(data, "intermediate_state", %{}),
-      interrupted?: false
+      interrupted?: Map.get(data, "interrupted?", false) || Map.get(data, "interrupted", false)
     }
     |> Beamcore.Agent.Chat.Session.TimelineOps.append_timeline(:resumed, "Session resumed.",
       role: :system,
@@ -117,6 +117,7 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
     end)
   end
 
+  @doc false
   def stringify_roles(nil), do: nil
   def stringify_roles(%Selection{} = roles), do: Map.from_struct(roles)
   def stringify_roles(roles), do: roles
@@ -128,17 +129,17 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
     }
   end
 
-  defp restore_roles(%{"primary" => primary} = roles, _settings) do
-    %Selection{
-      primary: safe_selection(primary),
-      fallback: safe_selection(Map.get(roles, "fallback"))
-    }
-  end
-
   defp restore_roles(%{"primary" => primary, "fallback" => fallback}, _settings) do
     %Selection{
       primary: safe_selection(primary),
       fallback: safe_selection(fallback)
+    }
+  end
+
+  defp restore_roles(%{"primary" => primary} = _roles, _settings) do
+    %Selection{
+      primary: safe_selection(primary),
+      fallback: nil
     }
   end
 
@@ -154,6 +155,7 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
     }
   end
 
+  @doc false
   def stringify_branches(branches) do
     Map.new(branches, fn {id, branch} ->
       {id, Beamcore.Agent.Timeline.to_json_event(branch)}

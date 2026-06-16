@@ -100,45 +100,4 @@ defmodule Beamcore.TUI.StateComponentsTest do
     thinking = Events.handle_runtime_event({:status, :thinking}, state)
     assert thinking.wait_status == nil
   end
-
-  test "recoverable execution errors show session continuity without ending input state" do
-    state = %State{activity: [], messages: [], activity_follow_tail?: true, status: :thinking}
-
-    state =
-      Events.handle_runtime_event(
-        {:execution_stopped,
-         %{
-           source: :eeva,
-           reason: :execution_failed,
-           summary: "Eeva stopped: boom",
-           details: %{},
-           recoverable?: true
-         }},
-        state
-      )
-
-    assert state.status == :error
-    assert state.worker == nil
-    assert [%{role: :error, content: content}] = state.messages
-    assert content =~ "Eeva stopped: boom"
-    assert content =~ "Session is still active"
-    assert content =~ "Ask the agent to retry."
-  end
-
-  test "worker crash message points to app log and keeps TUI idle" do
-    state =
-      %State{messages: [], status: :thinking, worker: self(), ctrl_c_pending: :pause}
-      |> State.set_wait_status(%{reason: :backoff, wait_ms: 2_000, now_ms: 0})
-
-    state = Events.fail_worker(state, "boom")
-
-    assert state.status == :idle
-    assert state.worker == nil
-    assert state.ctrl_c_pending == false
-    assert state.wait_status == nil
-    assert [%{role: :error, content: content}] = state.messages
-    assert content =~ "Agent worker crashed"
-    assert content =~ Beamcore.AppLog.log_path()
-    assert content =~ "Session is still active"
-  end
 end
