@@ -223,45 +223,6 @@ defmodule Beamcore.TUI.Events do
 
   def handle_runtime_event(_event, state), do: state
 
-  def handle_restore_progress(event, state) do
-    status = if event.status == "failed", do: :failed, else: :completed
-
-    session =
-      Session.append_timeline(state.session, :restore_stage, event.summary,
-        role: :system,
-        title: event.summary,
-        status: status,
-        reversible: false,
-        metadata: event
-      )
-
-    state
-    |> State.set_session(session)
-    |> State.set_status(:restoring)
-  end
-
-  def handle_restore_completed(action, checkpoint_id, {:ok, session, filesystem_result}, state) do
-    session = merge_restore_progress_events(state.session, session, filesystem_result)
-    label = if action == :fork, do: "Forked from", else: "Rewound to"
-
-    state
-    |> interrupt_worker()
-    |> State.set_session(session)
-    |> State.select_checkpoint(checkpoint_id)
-    |> State.set_status(:idle)
-    |> State.add_message(:system, "#{label} checkpoint #{checkpoint_id}.")
-  end
-
-  def handle_restore_completed(_action, _checkpoint_id, {:error, reason}, state) do
-    state
-    |> State.set_status(:idle)
-    |> State.add_message(:system, ErrorFormatter.format(reason))
-  end
-
-  def handle_restore_completed(action, checkpoint_id, {:error, _session_id, reason}, state) do
-    handle_restore_completed(action, checkpoint_id, {:error, reason}, state)
-  end
-
   defp append_timeline_event(%{session: nil} = state, _type, _summary, _metadata, _title),
     do: state
 
@@ -270,8 +231,7 @@ defmodule Beamcore.TUI.Events do
       Session.append_timeline(session, type, summary,
         role: :system,
         title: title,
-        metadata: metadata,
-        checkpoint: false
+        metadata: metadata
       )
 
     State.set_session(state, session)
@@ -876,33 +836,6 @@ defmodule Beamcore.TUI.Events do
         state
         |> State.add_message(:system, "Session resumed.")
     end
-  end
-
-  defp merge_restore_progress_events(current_session, restored_session, filesystem_result) do
-    restore_id = filesystem_result["recovery_id"]
-
-    progress_events =
-      current_session.timeline
-      |> Enum.filter(fn event ->
-        event.type == :restore_stage and
-          is_map(event.metadata) and
-          event.metadata.restore_id == restore_id
-      end)
-
-    if progress_events == [] do
-      restored_session
-    else
-      existing_ids = MapSet.new(Enum.map(restored_session.timeline || [], & &1.id))
-      new_events = Enum.reject(progress_events, &MapSet.member?(existing_ids, &1.id))
-      %{restored_session | timeline: (restored_session.timeline || []) ++ new_events}
-    end
-  end
-
-  defp interrupt_worker(%{worker: nil} = state), do: state
-
-  defp interrupt_worker(state) do
-    Process.exit(state.worker, :kill)
-    %{state | worker: nil, status: :paused}
   end
 
   defp apply_command_result({:run_pending, session, content, caps}, state, _command) do

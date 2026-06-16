@@ -46,7 +46,6 @@ defmodule Beamcore.TUI.State do
             file_finder_results: [],
             file_finder_selected: 0,
             file_finder_cache: nil,
-            selected_checkpoint_id: nil,
             notice: nil,
             screen_type: :agent
 
@@ -208,11 +207,8 @@ defmodule Beamcore.TUI.State do
   def resume(state), do: %{clear_wait_status(state) | status: :idle} |> mark_dirty()
 
   def set_session(state, session) do
-    selected_checkpoint_id = state.selected_checkpoint_id || active_checkpoint_id(session)
     state = update_activity_live_follow(state, session)
-
-    %{state | session: session, selected_checkpoint_id: selected_checkpoint_id}
-    |> mark_dirty()
+    %{state | session: session} |> mark_dirty()
   end
 
   def start_worker(state, pid),
@@ -517,25 +513,22 @@ defmodule Beamcore.TUI.State do
   end
 
   def timeline_items(%{session: %{timeline: timeline}} = state)
-      when is_list(timeline) and length(timeline) > 1 do
-    timeline
-    |> Enum.reject(&(&1.type == :checkpoint_saved))
-    |> Enum.map(&timeline_event_to_activity(&1, state.session))
+      when is_list(timeline) and length(timeline) > 0 do
+    Enum.map(timeline, &timeline_event_to_activity(&1, state.session))
   end
 
   def timeline_items(state), do: state.activity
 
   def timeline_item_count(%{session: %{timeline: timeline}})
-      when is_list(timeline) and length(timeline) > 1 do
-    Enum.count(timeline, &(&1.type != :checkpoint_saved))
+      when is_list(timeline) and length(timeline) > 0 do
+    length(timeline)
   end
 
   def timeline_item_count(state), do: length(state.activity || [])
 
   def timeline_item_at(%{session: %{timeline: timeline}} = state, index)
-      when is_list(timeline) and length(timeline) > 1 and is_integer(index) do
+      when is_list(timeline) and length(timeline) > 0 and is_integer(index) do
     timeline
-    |> Stream.reject(&(&1.type == :checkpoint_saved))
     |> Enum.at(max(index, 0))
     |> case do
       nil -> nil
@@ -548,8 +541,8 @@ defmodule Beamcore.TUI.State do
   end
 
   defp timeline_source(%{session: %{timeline: timeline}})
-       when is_list(timeline) and length(timeline) > 1 do
-    Enum.reject(timeline, &(&1.type == :checkpoint_saved))
+       when is_list(timeline) and length(timeline) > 0 do
+    timeline
   end
 
   defp timeline_source(state), do: state.activity
@@ -559,113 +552,30 @@ defmodule Beamcore.TUI.State do
 
   defp timeline_source_to_activity(item, _state), do: item
 
-  def active_checkpoint_id(%{active_checkpoint_id: checkpoint_id}), do: checkpoint_id
-  def active_checkpoint_id(_session), do: nil
-
-  def select_checkpoint(state, checkpoint_id) when is_binary(checkpoint_id) do
-    %{state | selected_checkpoint_id: checkpoint_id} |> mark_dirty()
-  end
-
-  def selected_checkpoint(state) do
-    checkpoint_id = state.selected_checkpoint_id || active_checkpoint_id(state.session)
-
-    Enum.find(state.session.checkpoints || [], fn checkpoint ->
-      checkpoint.id == checkpoint_id
-    end)
-  end
-
-  def branch_summary(%{session: %{branches: branches, branch_id: active_branch}})
-      when is_map(branches) do
-    branches
-    |> Enum.map(fn {id, branch} ->
-      marker = if id == active_branch, do: "*", else: " "
-      "#{marker} #{branch.title || id} (#{branch.status})"
-    end)
-    |> Enum.join(" · ")
-  end
-
-  def branch_summary(_state), do: "no branches"
-
-  defp timeline_event_to_activity(event, session) do
-    checkpoint = checkpoint_for_event(session, event)
-    checkpoint_id = (checkpoint && checkpoint.id) || event.checkpoint_id
-    checkpoint_owner? = not is_nil(checkpoint) and checkpoint.event_id == event.id
-    active? = checkpoint_owner? and checkpoint_id == active_checkpoint_id(session)
-    branch = Map.get(session.branches || %{}, event.branch_id, %{})
-    branch_status = branch[:status] || branch["status"] || :started
-
-    args =
-      %{
-        role: event.role,
-        branch: event.branch_id,
-        checkpoint: checkpoint_id
-      }
-      |> maybe_put_checkpoint_context(if(checkpoint_owner?, do: checkpoint, else: nil))
-      |> maybe_put_filesystem_revision(checkpoint)
-      |> maybe_put_reversible(event.reversible)
+  defp timeline_event_to_activity(event, _session) do
+    args = %{
+      role: event.role
+    }
 
     %{
       id: event.id,
       timestamp: event.timestamp,
       timestamp_ms: timeline_timestamp_ms(event.timestamp),
       name: to_string(event.type),
-      target: checkpoint_id || event.branch_id,
-      status: timeline_status(event, active?, branch_status),
-      label: timeline_label(event, active?),
+      target: event.id,
+      status: timeline_status(event),
+      label: "[#{event.role}] #{event.title}",
       summary: event.summary,
       result: inspect(event.metadata || %{}, pretty: true),
       args: args,
-      checkpoint?: checkpoint_owner?,
-      checkpoint_active?: active?,
       timeline_event: event
     }
   end
 
-  defp maybe_put_checkpoint_context(args, nil), do: args
-
-  defp maybe_put_checkpoint_context(args, checkpoint) do
-    message_index = max(length(checkpoint.messages || []), 1)
-    request = checkpoint.user_request || ""
-
-    args
-    |> Map.put(:chat_message, message_index)
-    |> Map.put(:checkpoint_description, request)
-  end
-
-  defp maybe_put_reversible(args, value) when is_boolean(value),
-    do: Map.put(args, :reversible, value)
-
-  defp maybe_put_reversible(args, _value), do: args
-
-  defp maybe_put_filesystem_revision(args, checkpoint) do
-    case checkpoint && checkpoint[:filesystem_revision] do
-      %{"revision_id" => revision_id} = revision ->
-        args
-        |> Map.put(:filesystem_revision, revision_id)
-        |> Map.put(:filesystem_paths, revision["changed_path_count"] || 0)
-        |> Map.put(:filesystem_bytes, revision["stored_bytes"] || 0)
-
-      _ ->
-        args
-    end
-  end
-
-  defp checkpoint_for_event(session, event) do
-    Enum.find(session.checkpoints || [], fn checkpoint ->
-      checkpoint.id == event.checkpoint_id or checkpoint.event_id == event.id
-    end)
-  end
-
-  defp timeline_label(event, active?) do
-    active = if active?, do: "[active] ", else: ""
-    "#{active}[#{event.role}] #{event.title}"
-  end
-
-  defp timeline_status(%{status: :abandoned}, _active?, _branch_status), do: :blocked
-  defp timeline_status(%{status: :failed}, _active?, _branch_status), do: :error
-  defp timeline_status(_event, true, _branch_status), do: :running
-  defp timeline_status(_event, _active?, :abandoned), do: :blocked
-  defp timeline_status(_event, _active?, _branch_status), do: :done
+  defp timeline_status(%{status: :abandoned}), do: :blocked
+  defp timeline_status(%{status: :failed}), do: :error
+  defp timeline_status(%{status: :started}), do: :running
+  defp timeline_status(_event), do: :done
 
   defp timeline_timestamp_ms(timestamp) when is_binary(timestamp) do
     case DateTime.from_iso8601(timestamp) do

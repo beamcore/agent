@@ -87,7 +87,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         }
 
         new_session =
-          Beamcore.Agent.Chat.Session.TimelineOps.append_timeline(
+          Beamcore.Agent.Chat.Session.append_timeline(
             new_session,
             :compression,
             "Session context compacted.",
@@ -132,7 +132,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
             total_tokens: 0,
             context: Beamcore.Agent.Chat.Context.compact(session.context)
         }
-        |> Beamcore.Agent.Chat.Session.TimelineOps.append_timeline(
+        |> Beamcore.Agent.Chat.Session.append_timeline(
           :compression,
           "Session context compacted with local fallback."
         )

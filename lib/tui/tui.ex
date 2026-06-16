@@ -186,21 +186,6 @@ defmodule Beamcore.TUI do
   defp put_screen_state(state, :f1, f1_state), do: %{state | f1_state: f1_state}
   defp put_screen_state(state, :f2, f2_state), do: %{state | f2_state: f2_state}
 
-  defp update_screen_by_session(state, session_id, fun) when is_binary(session_id) do
-    cond do
-      state.f1_state.session.session_id == session_id ->
-        {:noreply, %{state | f1_state: fun.(state.f1_state)}}
-
-      state.f2_state.session.session_id == session_id ->
-        {:noreply, %{state | f2_state: fun.(state.f2_state)}}
-
-      true ->
-        {:noreply, state}
-    end
-  end
-
-  defp update_screen_by_session(state, _session_id, _fun), do: {:noreply, state}
-
   defp animating?(%{status: status}), do: status in @animated_statuses
   defp animating?(_state), do: false
 
@@ -276,27 +261,6 @@ defmodule Beamcore.TUI do
         Beamcore.AppLog.warn("TUI received error from unknown worker", error: formatted_error)
         {:noreply, state}
     end
-  end
-
-  @impl true
-  def handle_info({:restore_progress, _restore_id, event}, state) do
-    update_screen_by_session(state, event.session_id, fn screen_state ->
-      Events.handle_restore_progress(event, screen_state)
-    end)
-  end
-
-  @impl true
-  def handle_info({:restore_completed, _restore_id, action, checkpoint_id, result}, state) do
-    session_id =
-      case result do
-        {:ok, session, _filesystem_result} -> session.session_id
-        {:error, id, _reason} -> id
-        _ -> nil
-      end
-
-    update_screen_by_session(state, session_id, fn screen_state ->
-      Events.handle_restore_completed(action, checkpoint_id, result, screen_state)
-    end)
   end
 
   @impl true
