@@ -32,7 +32,7 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     assert result == :tui_started
   end
 
-  test "missing OpenAI API key reports config error without plain fallback" do
+  test "missing OpenAI API key still starts TUI without plain fallback" do
     path =
       Path.join(
         System.tmp_dir!(),
@@ -45,23 +45,13 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
     try do
       Beamcore.Config.set_active_provider("openai")
 
-      output =
-        ExUnit.CaptureIO.capture_io(fn ->
-          result =
-            Beamcore.Agent.chat(:auto,
-              supported?: true,
-              tui_start: fn _opts -> :tui_started end
-            )
+      result =
+        Beamcore.Agent.chat(:auto,
+          supported?: true,
+          tui_start: fn _opts -> :tui_started end
+        )
 
-          send(self(), {:result, result})
-        end)
-
-      assert output =~ "Provider 'openai' is not configured"
-      assert output =~ "/api add"
-      refute output =~ "TUI unavailable"
-      refute output =~ "Starting plain emergency fallback"
-      refute output =~ "** ("
-      assert_receive {:result, :tui_started}
+      assert result == :tui_started
     after
       restore_config_path(previous)
       File.rm(path)

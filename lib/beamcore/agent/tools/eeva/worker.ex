@@ -207,7 +207,14 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
   defp with_serialized_cwd(workspace_root, fun) do
     :global.trans({__MODULE__, :cwd}, fn ->
       old_cwd = safe_cwd()
-      File.cd!(workspace_root)
+
+      if File.dir?(workspace_root) do
+        File.cd!(workspace_root)
+      else
+        Beamcore.AppLog.warn("Workspace root does not exist, using current dir",
+          workspace_root: workspace_root
+        )
+      end
 
       try do
         fun.()
