@@ -176,7 +176,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "user", content: "hello"}
       ]
 
-      prepared = Session.prepare_for_api(messages, context, 24)
+      prepared = Session.prepare_for_api(messages, context)
 
       assert Enum.at(prepared, 1).role == "system"
       assert Enum.at(prepared, 1).content =~ "Known session context"
@@ -210,7 +210,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", content: long_output}
       ]
 
-      prepared = Session.prepare_for_api(messages, 30)
+      prepared = Session.prepare_for_api(messages, nil)
       tool_msg = Enum.find(prepared, fn m -> m.role == "tool" end)
 
       assert tool_msg.content == long_output
@@ -264,7 +264,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
-      prepared = Session.prepare_for_api(messages, 30)
+      prepared = Session.prepare_for_api(messages, nil)
       assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
       [tool_call] = assistant.tool_calls
       args = Jason.decode!(tool_call["function"]["arguments"])
@@ -303,7 +303,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         %{role: "tool", tool_call_id: "call_1", name: "eeva", content: "ok"}
       ]
 
-      prepared = Session.prepare_for_api(messages, 30)
+      prepared = Session.prepare_for_api(messages, nil)
       assistant = Enum.find(prepared, fn m -> m.role == "assistant" end)
       [tool_call] = assistant.tool_calls
       args = Jason.decode!(tool_call["function"]["arguments"])

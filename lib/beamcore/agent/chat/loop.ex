@@ -108,64 +108,53 @@ defmodule Beamcore.Agent.Chat.Loop do
           _ -> opts
         end
 
-      with {:ok, api_messages, budget_plan, metadata} <-
-             prepare_api_messages(session, messages, caps, tools, settings) do
-        emit(opts, {:model_context, model_context_event(session, budget_plan, metadata)})
+      {:ok, api_messages, estimate, metadata} =
+        prepare_api_messages(session, messages, caps, tools)
 
-        session =
-          Session.append_timeline(session, :model_call, model_call_summary(session), %{
-            role: model_call_role(session),
-            title: model_call_title(session),
-            metadata:
-              %{
-                provider: provider_name(session),
-                model: model_name(session),
-                depth: depth
-              }
-              |> Map.merge(model_context_event(session, budget_plan, metadata)),
-            checkpoint: false
-          })
+      emit(opts, {:model_context, model_context_event(session, estimate, metadata)})
 
-        call_started = System.monotonic_time(:millisecond)
+      session =
+        Session.append_timeline(session, :model_call, model_call_summary(session), %{
+          role: model_call_role(session),
+          title: model_call_title(session),
+          metadata:
+            %{
+              provider: provider_name(session),
+              model: model_name(session),
+              depth: depth
+            }
+            |> Map.merge(model_context_event(session, estimate, metadata)),
+          checkpoint: false
+        })
 
-        api_result =
-          API.execute(session.client, api_messages, tools,
-            selection: Beamcore.Provider.Selection.primary(session.roles),
-            model: model_name(session),
-            silent: Keyword.get(opts, :silent, false),
-            retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
-            temperature: Keyword.get(opts, :temperature),
-            max_tokens: budget_plan.reserved_output_tokens,
-            wait_fun: fn wait_ms ->
-              sleep_before_retry(
-                opts,
-                :cooldown,
-                wait_ms,
-                "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
-              )
-            end
-          )
+      call_started = System.monotonic_time(:millisecond)
 
-        call_elapsed = System.monotonic_time(:millisecond) - call_started
-
-        handle_api_result(
-          api_result,
-          session,
-          messages,
-          message_context(pid, caps, opts, settings, call_elapsed, depth)
+      api_result =
+        API.execute(session.client, api_messages, tools,
+          selection: Beamcore.Provider.Selection.primary(session.roles),
+          model: model_name(session),
+          silent: Keyword.get(opts, :silent, false),
+          retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
+          temperature: Keyword.get(opts, :temperature),
+          max_tokens: metadata.max_output_tokens || settings.output_budget || 2_000,
+          wait_fun: fn wait_ms ->
+            sleep_before_retry(
+              opts,
+              :cooldown,
+              wait_ms,
+              "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
+            )
+          end
         )
-      else
-        {:error, budget_plan} ->
-          message = context_budget_error(session, budget_plan)
-          emit(opts, {:error, message})
-          emit(opts, {:status, :error})
 
-          Session.append_timeline(session, :failed, message,
-            role: model_call_role(session),
-            title: "Model context budget exceeded",
-            metadata: budget_plan
-          )
-      end
+      call_elapsed = System.monotonic_time(:millisecond) - call_started
+
+      handle_api_result(
+        api_result,
+        session,
+        messages,
+        message_context(pid, caps, opts, settings, call_elapsed, depth)
+      )
     end
   end
 
@@ -388,50 +377,31 @@ defmodule Beamcore.Agent.Chat.Loop do
     }
   end
 
-  defp prepare_api_messages(session, messages, caps, tools, settings) do
+  defp prepare_api_messages(session, messages, caps, tools) do
     prepared =
       messages
-      |> Session.prepare_for_api(session.context, settings.history_limit, settings.input_budget)
+      |> Session.prepare_for_api(session.context)
       |> inject_runtime_message(caps, tools)
 
     metadata = model_metadata(session)
+    estimate = Beamcore.Agent.Chat.Budget.estimate_tokens(prepared)
 
-    case Beamcore.Agent.Chat.Budget.prepare_for_model(prepared, tools, metadata, settings) do
-      {:ok, fitted, budget_plan} -> {:ok, fitted, budget_plan, metadata}
-      {:error, budget_plan} -> {:error, budget_plan}
-    end
+    {:ok, prepared, estimate, metadata}
   end
 
   defp model_metadata(session) do
     Beamcore.Provider.ModelMetadata.resolve(provider_name(session), model_name(session))
   end
 
-  defp model_context_event(session, budget_plan, metadata) do
-    budget_plan
-    |> Map.take([
-      :context_window,
-      :context_source,
-      :context_accuracy,
-      :tokenizer,
-      :estimated_input_tokens,
-      :final_estimated_input_tokens,
-      :reserved_output_tokens,
-      :tool_schema_tokens,
-      :safety_margin,
-      :usable_input_budget,
-      :budget_remaining,
-      :compacted,
-      :estimate_source
-    ])
-    |> Map.put(:provider, provider_name(session))
-    |> Map.put(:model, model_name(session))
-    |> Map.put(:metadata_source, metadata.source)
-    |> Map.put(:metadata_accuracy, metadata.accuracy)
-  end
-
-  defp context_budget_error(session, budget_plan) do
-    "Model context budget exceeded for #{provider_name(session)}/#{model_name(session)}. " <>
-      "Estimated input #{budget_plan.final_estimated_input_tokens} tokens exceeds usable budget #{budget_plan.usable_input_budget} after compaction."
+  defp model_context_event(session, estimate, metadata) do
+    %{
+      estimated_input_tokens: estimate,
+      context_window: metadata.context_window,
+      context_source: metadata.source,
+      context_accuracy: metadata.accuracy,
+      provider: provider_name(session),
+      model: model_name(session)
+    }
   end
 
   defp mode_settings(%{mode_settings: %ModeSettings{} = settings}), do: settings
