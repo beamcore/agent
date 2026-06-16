@@ -55,16 +55,7 @@ defmodule Beamcore.Provider.Usage do
     }
   end
 
-  def estimated(input_tokens, output_tokens \\ nil) do
-    %__MODULE__{
-      input_tokens: input_tokens,
-      output_tokens: output_tokens,
-      total_tokens: maybe_total(input_tokens, output_tokens),
-      source: :estimated
-    }
-  end
-
-  def unknown, do: %__MODULE__{}
+  defp unknown, do: %__MODULE__{}
 
   def to_raw_usage(%__MODULE__{} = usage) do
     %{

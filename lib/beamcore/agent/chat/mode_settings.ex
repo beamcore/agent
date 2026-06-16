@@ -41,12 +41,12 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
     }
   end
 
-  def normalize_mode(nil), do: :agent
-  def normalize_mode(:f1), do: :agent
-  def normalize_mode(:f2), do: :chat
-  def normalize_mode(mode) when mode in [:agent, :chat], do: mode
+  defp normalize_mode(nil), do: :agent
+  defp normalize_mode(:f1), do: :agent
+  defp normalize_mode(:f2), do: :chat
+  defp normalize_mode(mode) when mode in [:agent, :chat], do: mode
 
-  def normalize_mode(mode) when is_binary(mode) do
+  defp normalize_mode(mode) when is_binary(mode) do
     case mode do
       "agent" -> :agent
       "chat" -> :chat
@@ -54,7 +54,7 @@ defmodule Beamcore.Agent.Chat.ModeSettings do
     end
   end
 
-  def normalize_mode(mode) do
+  defp normalize_mode(mode) do
     raise ArgumentError, "Unknown mode: #{inspect(mode)}"
   end
 

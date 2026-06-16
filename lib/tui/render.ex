@@ -38,23 +38,11 @@ defmodule Beamcore.TUI.Render do
     ]
   end
 
-  defp wide(state, areas) do
-    [
-      {Chat.widget(state, areas.chat), areas.chat},
-      {Input.widget(state), areas.input},
-      {StatusBar.widget(state, areas.status.width), areas.status}
-    ]
-  end
+  defp wide(state, areas), do: standard_widgets(state, areas)
+  defp medium(state, areas), do: standard_widgets(state, areas)
+  defp narrow(state, areas), do: standard_widgets(state, areas)
 
-  defp medium(state, areas) do
-    [
-      {Chat.widget(state, areas.chat), areas.chat},
-      {Input.widget(state), areas.input},
-      {StatusBar.widget(state, areas.status.width), areas.status}
-    ]
-  end
-
-  defp narrow(state, areas) do
+  defp standard_widgets(state, areas) do
     [
       {Chat.widget(state, areas.chat), areas.chat},
       {Input.widget(state), areas.input},

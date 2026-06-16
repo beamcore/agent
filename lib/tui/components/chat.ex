@@ -131,7 +131,7 @@ defmodule Beamcore.TUI.Components.Chat do
   end
 
   defp message_items(%{messages: []} = state, wrap_width) do
-    text = state |> EmptyState.text() |> Wrap.text(wrap_width)
+    text = state |> EmptyState.text() |> Wrap.lines(wrap_width) |> Enum.join("\n")
     [{EmptyState.widget(text), max(5, line_count(text))}]
   end
 

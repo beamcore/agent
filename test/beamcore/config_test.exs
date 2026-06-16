@@ -22,15 +22,13 @@ defmodule Beamcore.ConfigTest do
   end
 
   test "stores and clears api key in config.dets", %{path: path} do
-    refute Config.configured?(:api_key)
+    refute Config.get(:api_key)
 
     assert :ok = Config.put(:api_key, " test-token ")
-    assert Config.configured?(:api_key)
     assert Config.get(:api_key) == "test-token"
     assert File.exists?(path)
 
     assert :ok = Config.delete(:api_key)
-    refute Config.configured?(:api_key)
     assert Config.get(:api_key) == nil
   end
 
@@ -48,7 +46,7 @@ defmodule Beamcore.ConfigTest do
 
   test "rejects blank token" do
     assert {:error, :empty_value} = Config.put(:api_key, "   ")
-    refute Config.configured?(:api_key)
+    refute Config.get(:api_key)
   end
 
   defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)

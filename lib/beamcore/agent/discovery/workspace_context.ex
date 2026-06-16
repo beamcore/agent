@@ -30,11 +30,6 @@ defmodule Beamcore.Agent.Discovery.WorkspaceContext do
     |> Enum.reverse()
   end
 
-  @doc """
-  Returns the list of well-known instruction filenames that are searched.
-  """
-  def instruction_files, do: @instruction_files
-
   @doc false
   defp read_file(path) do
     case File.read(path) do

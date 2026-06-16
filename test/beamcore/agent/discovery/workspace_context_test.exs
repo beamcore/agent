@@ -70,13 +70,4 @@ defmodule Beamcore.Agent.Discovery.WorkspaceContextTest do
       assert [{"CLAUDE.md", "only claude"}] = result
     end
   end
-
-  describe "instruction_files/0" do
-    test "returns the list of well-known filenames" do
-      files = WorkspaceContext.instruction_files()
-      assert "AGENTS.md" in files
-      assert "CLAUDE.md" in files
-      assert length(files) == 2
-    end
-  end
 end

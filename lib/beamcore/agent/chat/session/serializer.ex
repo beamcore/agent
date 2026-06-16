@@ -139,10 +139,9 @@ defmodule Beamcore.Agent.Chat.Session.Serializer do
   defp safe_metadata(map) when is_map(map), do: map
   defp safe_metadata(_), do: %{}
 
-  @doc false
-  def stringify_roles(nil), do: nil
-  def stringify_roles(%Selection{} = roles), do: Map.from_struct(roles)
-  def stringify_roles(roles), do: roles
+  defp stringify_roles(nil), do: nil
+  defp stringify_roles(%Selection{} = roles), do: Map.from_struct(roles)
+  defp stringify_roles(roles), do: roles
 
   defp restore_roles(nil, settings) do
     %Selection{

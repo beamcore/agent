@@ -5,7 +5,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
   alias Beamcore.TUI.State
 
   test "internal event buffer keeps compact recent execution notices" do
-    state = %State{activity: [], activity_follow_tail?: true}
+    state = %State{activity: []}
 
     state =
       Enum.reduce(1..260, state, fn n, current ->
@@ -16,26 +16,15 @@ defmodule Beamcore.TUI.StateComponentsTest do
     assert hd(state.activity).label =~ "step = 260"
   end
 
-  test "internal event slices remain bounded for status/debug uses" do
-    state = %State{activity: [], activity_follow_tail?: true}
-
-    state =
-      Enum.reduce(1..100, state, fn n, current ->
-        State.add_activity(current, "eeva", %{"code" => "step = #{n}"}, :done)
-      end)
-
-    assert length(State.visible_timeline_items(state, 12)) <= 16
-  end
-
   test "internal execution notice remains compact" do
-    state = %State{activity: [], activity_follow_tail?: true}
+    state = %State{activity: []}
     state = State.add_activity(state, "eeva", %{"code" => "File.read!(\"README.md\")"}, :done)
     assert hd(state.activity).label =~ "eeva"
     assert hd(state.activity).summary =~ "File.read!"
   end
 
   test "rate-limit execution notice stays recoverable and non-error status" do
-    state = %State{activity: [], messages: [], activity_follow_tail?: true, status: :thinking}
+    state = %State{activity: [], messages: [], status: :thinking}
 
     state =
       Events.handle_runtime_event(
@@ -56,7 +45,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
   end
 
   test "retry wait event creates UI-only countdown state" do
-    state = %State{activity: [], messages: [], activity_follow_tail?: true, status: :thinking}
+    state = %State{activity: [], messages: [], status: :thinking}
 
     state =
       Events.handle_runtime_event(

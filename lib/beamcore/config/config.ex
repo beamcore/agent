@@ -39,15 +39,8 @@ defmodule Beamcore.Config do
 
   # -- public API ----------------------------------------------------------
 
-  def path do
+  defp path do
     Application.get_env(:agent, :config_dets_path) || @default_path
-  end
-
-  def configured?(key) when is_atom(key) do
-    case get(key) do
-      value when is_binary(value) -> String.trim(value) != ""
-      _ -> false
-    end
   end
 
   def get(key) when is_atom(key), do: call({:get, key}, nil)
@@ -73,14 +66,6 @@ defmodule Beamcore.Config do
           _ -> value
         end
     end
-  end
-
-  def put_setting(key, value) when is_atom(key) and is_integer(value) do
-    put(key, Integer.to_string(value))
-  end
-
-  def put_setting(key, value) when is_atom(key) and is_binary(value) do
-    put(key, value)
   end
 
   def list_providers do
@@ -151,11 +136,6 @@ defmodule Beamcore.Config do
   def set_active_model(screen_type, model) when is_binary(model) do
     screen_type = screen_type || :agent
     put(:"active_model_#{screen_type}", model)
-  end
-
-  def mode_selection(screen_type) do
-    settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
-    %{provider: settings.provider, model: settings.model, mode: settings.mode}
   end
 
   defp default_provider_for_screen(_other), do: active_provider()

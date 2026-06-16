@@ -858,8 +858,7 @@ defmodule Beamcore.TUI.Events do
       | session: session,
         messages: [],
         activity: [],
-        selected_activity: 0,
-        activity_scroll_offset: 0
+        selected_activity: 0
     }
     |> State.add_message(:system, msg)
   end
@@ -928,7 +927,6 @@ defmodule Beamcore.TUI.Events do
     state
     |> Map.put(:show_help, false)
     |> Map.put(:show_commands, false)
-    |> Map.put(:show_activity_details, false)
   end
 
   defp key_press?(%{kind: kind}), do: kind in [nil, "press", :press]
