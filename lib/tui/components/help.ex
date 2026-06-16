@@ -19,6 +19,7 @@ defmodule Beamcore.TUI.Components.Help do
     Keys
     Enter            Insert newline
     Ctrl+S           Send
+    Ctrl+A           Select all input text
     Ctrl+Enter       Send if supported by terminal
     Shift+Enter      Insert newline if supported by terminal
     Ctrl+J / Alt+Enter  Insert newline fallback

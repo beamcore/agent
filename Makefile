@@ -132,7 +132,7 @@ deps:
 
 ## compile: Compile the project
 compile:
-	mix compile
+	EX_RATATUI_BUILD=1 mix compile
 
 ## release: Build a prod release
 release: deps compile
@@ -140,7 +140,7 @@ release: deps compile
 
 ## test: Run ExUnit tests
 test:
-	mix test
+	EX_RATATUI_BUILD=1 mix test
 
 ## format: Format source code
 format:
