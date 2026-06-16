@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.Chat.Session.MessageCleaner do
   Trims and cleans a message list before it is sent to the summarizer.
   Ensures it is under the token/character threshold and conforms to message alternation requirements.
   """
-  def trim_and_clean(messages, _limit \\ 30) do
+  def trim_and_clean(messages, limit \\ 30) do
     {system_messages, other_messages} =
       Enum.split_with(messages, fn m ->
         (m[:role] || m["role"]) == "system"
@@ -23,13 +23,20 @@ defmodule Beamcore.Agent.Chat.Session.MessageCleaner do
     user_starting_messages = ensure_starts_with_user(cleaned_messages)
     final_messages = merge_consecutive_roles(user_starting_messages)
 
-    final_messages =
-      case final_messages do
+    trimmed_messages =
+      if length(final_messages) > limit do
+        Enum.take(final_messages, -limit)
+      else
+        final_messages
+      end
+
+    trimmed_messages =
+      case trimmed_messages do
         [] -> [%{role: "user", content: "Continuing the conversation."}]
         other -> other
       end
 
-    system_messages ++ final_messages
+    system_messages ++ trimmed_messages
   end
 
   defp normalize_all_tool_calls(messages) do
@@ -183,11 +190,36 @@ defmodule Beamcore.Agent.Chat.Session.MessageCleaner do
             curr_content = msg[:content] || msg["content"] || ""
             merged_content = prev_content <> "\n\n" <> curr_content
 
+            prev_tool_calls = prev[:tool_calls] || prev["tool_calls"]
+            curr_tool_calls = msg[:tool_calls] || msg["tool_calls"]
+
             merged_msg =
               if Map.has_key?(prev, :content) do
                 Map.put(prev, :content, merged_content)
               else
                 Map.put(prev, "content", merged_content)
+              end
+
+            merged_msg =
+              cond do
+                is_nil(curr_tool_calls) or curr_tool_calls == [] ->
+                  merged_msg
+
+                is_nil(prev_tool_calls) or prev_tool_calls == [] ->
+                  if Map.has_key?(merged_msg, :tool_calls) do
+                    Map.put(merged_msg, :tool_calls, curr_tool_calls)
+                  else
+                    Map.put(merged_msg, "tool_calls", curr_tool_calls)
+                  end
+
+                true ->
+                  combined = prev_tool_calls ++ curr_tool_calls
+
+                  if Map.has_key?(merged_msg, :tool_calls) do
+                    Map.put(merged_msg, :tool_calls, combined)
+                  else
+                    Map.put(merged_msg, "tool_calls", combined)
+                  end
               end
 
             [merged_msg | rest]

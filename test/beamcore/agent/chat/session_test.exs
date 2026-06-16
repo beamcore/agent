@@ -436,7 +436,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert Enum.at(trimmed, 2).content == "response 1\n\nresponse 2"
     end
 
-    test "does not limit total non-system messages to target count" do
+    test "limits total non-system messages to target count" do
       messages =
         [
           %{role: "system", content: "sys"}
@@ -448,10 +448,9 @@ defmodule Beamcore.Agent.Chat.SessionTest do
             ]
           end)
 
-      # 40 non-system messages total.
-      # It should preserve all non-system messages
+      # 40 non-system messages total, limit 10 => keeps last 10 + 1 system
       trimmed = Session.trim_and_clean_messages(messages, 10)
-      assert length(trimmed) == 41
+      assert length(trimmed) == 11
       assert Enum.at(trimmed, 0).role == "system"
       assert Enum.at(trimmed, 1).role == "user"
     end

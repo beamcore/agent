@@ -59,7 +59,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
     compacted_choices =
       Enum.map(choices, fn
         %{"message" => message} = choice ->
-          Map.put(choice, "message", compact_tool_calls(message))
+          Map.put(choice, "message", message)
 
         choice ->
           choice
@@ -73,11 +73,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
   @doc """
   Compact a single message before storing it in active chat history.
   """
-  def compact_for_api(message) do
-    message
-    |> compact_tool_calls()
-    |> truncate_for_api()
-  end
+  def compact_for_api(message), do: message
 
   @doc """
   Summarizes the current session context and rolls over into a new session.
@@ -151,10 +147,19 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         new_session
 
       {:error, _reason} ->
+        system_msg = List.first(session.messages)
+
         fallback =
           messages
           |> MessageCleaner.trim_and_clean(10)
           |> Enum.map(&compact_for_api/1)
+
+        fallback =
+          if system_msg do
+            [system_msg | fallback]
+          else
+            fallback
+          end
 
         %{
           session
@@ -180,10 +185,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
 
   defp inject_context_message(messages, context),
     do: [Beamcore.Agent.Chat.Context.to_message(context) | messages]
-
-  defp truncate_for_api(message), do: message
-
-  defp compact_tool_calls(message), do: message
 
   defp validate_summary(summary) do
     default = "Previous context was compacted. Continuing with current session state."
