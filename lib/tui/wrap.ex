@@ -3,7 +3,9 @@ defmodule Beamcore.TUI.Wrap do
   Width-aware wrapping helpers for TUI text.
   """
 
-  @ellipsis "…"
+  alias Beamcore.TUI.Wrap.Markdown
+
+  @ellipsis "\u2026"
 
   def lines(text, width) do
     width = max(width, 8)
@@ -17,7 +19,7 @@ defmodule Beamcore.TUI.Wrap do
 
   def markdown_lines(text, width) do
     text
-    |> normalize_markdown_for_estimation()
+    |> Markdown.normalize_for_estimation()
     |> lines(width)
   end
 
@@ -30,112 +32,6 @@ defmodule Beamcore.TUI.Wrap do
     else
       String.slice(text, 0, max(width - 1, 0)) <> @ellipsis
     end
-  end
-
-  defp normalize_markdown_for_estimation(text), do: normalize_markdown_for_display(text)
-
-  defp normalize_markdown_for_display(text) do
-    text
-    |> to_string()
-    |> String.split("\n")
-    |> process_markdown_lines(false, [])
-    |> Enum.join("\n")
-  end
-
-  defp process_markdown_lines([], _in_fence?, acc), do: Enum.reverse(acc)
-
-  defp process_markdown_lines([line | rest], in_fence?, acc) do
-    trimmed = String.trim(line)
-
-    if String.starts_with?(trimmed, "```") do
-      process_markdown_lines(rest, not in_fence?, acc)
-    else
-      if in_fence? do
-        # Inside code block: preserve exactly as is
-        process_markdown_lines(rest, true, [line | acc])
-      else
-        # Outside code block: apply filters and normalization
-        cond do
-          markdown_table_separator?(line) or markdown_rule?(line) ->
-            process_markdown_lines(rest, false, acc)
-
-          trimmed == "" ->
-            case acc do
-              [] -> process_markdown_lines(rest, false, acc)
-              ["" | _] -> process_markdown_lines(rest, false, acc)
-              _ -> process_markdown_lines(rest, false, ["" | acc])
-            end
-
-          true ->
-            normalized = normalize_markdown_line(line)
-            process_markdown_lines(rest, false, [normalized | acc])
-        end
-      end
-    end
-  end
-
-  defp markdown_table_separator?(line) do
-    line
-    |> String.trim()
-    |> then(&(Regex.match?(~r/^\|?[\s:|-]+\|?$/, &1) and String.contains?(&1, "-")))
-  end
-
-  defp markdown_rule?(line) do
-    line
-    |> String.trim()
-    |> then(&Regex.match?(~r/^[-*_]{3,}$/, &1))
-  end
-
-  defp normalize_markdown_line(line) do
-    line
-    |> normalize_markdown_table_row()
-    |> normalize_markdown_heading()
-    |> normalize_markdown_list_marker()
-    |> normalize_markdown_inline()
-    |> String.trim_trailing()
-  end
-
-  defp normalize_markdown_heading(line) do
-    trimmed = String.trim_leading(line)
-    marks = trimmed |> String.graphemes() |> Enum.take_while(&(&1 == "#")) |> length()
-
-    cond do
-      marks in 1..6 and String.starts_with?(String.slice(trimmed, marks, 1), " ") ->
-        "◆ " <> (String.slice(trimmed, marks, String.length(trimmed) - marks) |> String.trim())
-
-      true ->
-        line
-    end
-  end
-
-  defp normalize_markdown_table_row(line) do
-    trimmed = String.trim(line)
-
-    if String.starts_with?(trimmed, "|") and String.ends_with?(trimmed, "|") do
-      trimmed
-      |> String.trim("|")
-      |> String.split("|")
-      |> Enum.map(&String.trim/1)
-      |> Enum.reject(&(&1 == ""))
-      |> Enum.join("  ·  ")
-    else
-      line
-    end
-  end
-
-  defp normalize_markdown_inline(line) do
-    line
-    |> String.replace(~r/\*\*([^\s*](?:(?!\*\*).)*?[^\s*])\*\*/, "\\1")
-    |> String.replace(~r/(?<![a-zA-Z0-9])__([^\s_](?:(?!__).)*?[^\s_])__(?![a-zA-Z0-9])/, "\\1")
-    |> String.replace(~r/(?<!\*)\*([^\s*](?:[^*]*[^\s*])?)\*(?!\*)/, "\\1")
-    |> String.replace(~r/(?<![a-zA-Z0-9])_([^\s_](?:[^_]*[^\s_])?)_(?![a-zA-Z0-9])/, "\\1")
-    |> String.replace(~r/`([^`]+)`/, "\\1")
-  end
-
-  defp normalize_markdown_list_marker(line) do
-    line
-    |> String.replace(~r/^\s*[-*+]\s+/, "  • ")
-    |> String.replace(~r/^\s*(\d+)\.\s+/, "  \\1. ")
   end
 
   defp wrap_lines([], _width, _code?, acc), do: acc
