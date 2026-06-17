@@ -58,25 +58,14 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         }
 
         new_session =
-          Beamcore.Agent.Chat.Session.append_timeline(
-            new_session,
-            :compression,
-            "Session context compacted.",
-            %{
-              compaction_number: new_session.compaction_count,
-              previous_prompt_tokens: session.last_prompt_tokens,
-              previous_total_tokens: session.total_tokens
-            }
-          )
-
-        Beamcore.Agent.Chat.Session.log(new_session, %{
-          event: "transparent_compaction",
-          compaction_number: new_session.compaction_count,
-          previous_prompt_tokens: session.last_prompt_tokens,
-          previous_total_tokens: session.total_tokens,
-          messages_before: length(messages),
-          timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-        })
+          Beamcore.Agent.Chat.Session.log(new_session, %{
+            event: "transparent_compaction",
+            compaction_number: new_session.compaction_count,
+            previous_prompt_tokens: session.last_prompt_tokens,
+            previous_total_tokens: session.total_tokens,
+            messages_before: length(messages),
+            timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
+          })
 
         new_session
 
@@ -101,10 +90,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
             total_completion_tokens: 0,
             total_tokens: 0
         }
-        |> Beamcore.Agent.Chat.Session.append_timeline(
-          :compression,
-          "Session context compacted with local fallback."
-        )
     end
   end
 

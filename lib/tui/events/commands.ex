@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.Events.Commands do
   @moduledoc false
 
-  alias Beamcore.Agent.Chat.{Commands, Loop, Session}
+  alias Beamcore.Agent.Chat.{Commands, Loop}
   alias Beamcore.TUI.Events.Commands.Input, as: CmdInput
   alias Beamcore.TUI.State
 
@@ -28,10 +28,6 @@ defmodule Beamcore.TUI.Events.Commands do
 
       state
       |> Map.put(:worker, nil)
-      |> Map.update!(:session, fn
-        nil -> nil
-        session -> Session.interrupt(session, "Execution interrupted by user.")
-      end)
       |> State.pause()
       |> State.add_message(:system, "Execution interrupted. Type a message and send to resume.")
     else
@@ -40,10 +36,6 @@ defmodule Beamcore.TUI.Events.Commands do
         :system,
         "Session paused. Type a message and send to resume."
       )
-      |> Map.update!(:session, fn
-        nil -> nil
-        session -> Session.interrupt(session, "Session paused by user.")
-      end)
       |> State.pause()
     end
   end
@@ -60,12 +52,6 @@ defmodule Beamcore.TUI.Events.Commands do
   def resume_session(state, message) do
     message = String.trim(message)
     state = State.resume(state)
-
-    state =
-      Map.update!(state, :session, fn
-        nil -> nil
-        session -> Session.resume_interrupted(session, "Session resumed.")
-      end)
 
     cond do
       message != "" ->

@@ -44,13 +44,6 @@ defmodule Beamcore.TUI.State.Activity do
     }
   end
 
-  def timeline_items(%{session: %{timeline: timeline}} = state)
-      when is_list(timeline) and length(timeline) > 0 do
-    Enum.map(timeline, &timeline_event_to_activity(&1, state.session))
-  end
-
-  def timeline_items(state), do: state.activity
-
   def compact_args(args) when is_map(args) do
     args
     |> Enum.map(fn {key, val} ->
@@ -88,38 +81,6 @@ defmodule Beamcore.TUI.State.Activity do
   end
 
   def compact_args(args), do: args
-
-  defp timeline_event_to_activity(event, _session) do
-    args = %{role: event.role}
-
-    %{
-      id: event.id,
-      timestamp: event.timestamp,
-      timestamp_ms: timeline_timestamp_ms(event.timestamp),
-      name: to_string(event.type),
-      target: event.id,
-      status: timeline_status(event),
-      label: "[#{event.role}] #{event.title}",
-      summary: event.summary,
-      result: inspect(event.metadata || %{}, pretty: true),
-      args: args,
-      timeline_event: event
-    }
-  end
-
-  defp timeline_status(%{status: :abandoned}), do: :blocked
-  defp timeline_status(%{status: :failed}), do: :error
-  defp timeline_status(%{status: :started}), do: :running
-  defp timeline_status(_event), do: :done
-
-  defp timeline_timestamp_ms(timestamp) when is_binary(timestamp) do
-    case DateTime.from_iso8601(timestamp) do
-      {:ok, datetime, _offset} -> DateTime.to_unix(datetime, :millisecond)
-      _ -> System.system_time(:millisecond)
-    end
-  end
-
-  defp timeline_timestamp_ms(_), do: System.system_time(:millisecond)
 
   defp compact_activity_result(nil), do: nil
 

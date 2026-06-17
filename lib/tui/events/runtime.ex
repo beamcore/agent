@@ -3,7 +3,6 @@ defmodule Beamcore.TUI.Events.Runtime do
   Handles runtime events from the agent worker and worker lifecycle.
   """
 
-  alias Beamcore.Agent.Chat.Session
   alias Beamcore.TUI.{ErrorFormatter, State}
 
   def handle_event({:status, status}, state), do: State.set_status(state, status)
@@ -104,9 +103,7 @@ defmodule Beamcore.TUI.Events.Runtime do
     summary =
       "#{provider}/#{model} context #{window || "unknown"} (#{source}) · estimated input #{estimated || "unknown"} tokens"
 
-    state
-    |> append_timeline_event(:model_context, summary, metadata, "Model context budget")
-    |> State.add_activity("model_context", Map.put(metadata, :summary, summary), :completed)
+    State.add_activity(state, "model_context", Map.put(metadata, :summary, summary), :completed)
   end
 
   def handle_event({:provider_usage, usage}, state) when is_map(usage) do
@@ -114,9 +111,7 @@ defmodule Beamcore.TUI.Events.Runtime do
     total = Map.get(usage, :total_tokens) || Map.get(usage, "total_tokens")
     summary = "Provider usage #{total || "unknown"} tokens (#{source})"
 
-    state
-    |> append_timeline_event(:provider_usage, summary, usage, "Provider usage")
-    |> State.add_activity("provider_usage", Map.put(usage, :summary, summary), :completed)
+    State.add_activity(state, "provider_usage", Map.put(usage, :summary, summary), :completed)
   end
 
   def handle_event(_event, state), do: state
@@ -139,20 +134,6 @@ defmodule Beamcore.TUI.Events.Runtime do
     |> Map.put(:status, :idle)
     |> Map.put(:ctrl_c_pending, false)
     |> State.mark_dirty()
-  end
-
-  defp append_timeline_event(%{session: nil} = state, _type, _summary, _metadata, _title),
-    do: state
-
-  defp append_timeline_event(%{session: session} = state, type, summary, metadata, title) do
-    session =
-      Session.append_timeline(session, type, summary,
-        role: :system,
-        title: title,
-        metadata: metadata
-      )
-
-    State.set_session(state, session)
   end
 
   defp recoverable_error_text(message, extra \\ nil) do

@@ -9,7 +9,6 @@ defmodule Beamcore.TUI.State do
   defdelegate add_activity(state, name, args, status \\ :queued), to: Activity
   defdelegate update_activity(state, name, args, result), to: Activity
   defdelegate compact_activity(name, args, status, result \\ nil), to: Activity
-  defdelegate timeline_items(state), to: Activity
   defdelegate compact_args(args), to: Activity
 
   defdelegate activate_file_finder(state, query, results), to: FileFinder, as: :activate

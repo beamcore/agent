@@ -37,7 +37,12 @@ defmodule Beamcore.TUI.Components.Chat do
   end
 
   def visible_message_window(messages, wrap_width, viewport_height, distance_from_bottom) do
-    needed = max(@max_scan_messages, (distance_from_bottom || 0) + viewport_height + @chat_overscan_lines)
+    needed =
+      max(
+        @max_scan_messages,
+        (distance_from_bottom || 0) + viewport_height + @chat_overscan_lines
+      )
+
     trimmed = Enum.take(messages, -min(needed, length(messages)))
 
     visible_message_window(
