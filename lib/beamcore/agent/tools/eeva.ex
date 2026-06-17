@@ -33,8 +33,9 @@ defmodule Beamcore.Agent.Tools.Eeva do
       type: "function",
       function: %{
         name: name(),
-        description:
-          "Execute arbitrary Elixir code. This universal tool can inspect and edit files, run direct system commands such as git or mix, parse data, and interact with Beamcore.Memory. The runtime captures stdout/stderr and returns structured results. For delegating work to other models, use Beamcore.Agent.SubAgent -- spawn a sub-agent with SubAgent.run("task", tools: true) or offload to cheaper models with SubAgent.run("task", provider: "mistral").",
+        description: """
+        Execute arbitrary Elixir code. This universal tool can inspect and edit files, run direct system commands such as git or mix, parse data, and interact with Beamcore.Memory. The runtime captures stdout/stderr and returns structured results. For delegating work to other models, use Beamcore.Agent.SubAgent -- spawn a sub-agent with SubAgent.run("task", tools: true) or offload to cheaper models with SubAgent.run("task", provider: "mistral").
+        """,
         parameters: %{
           type: "object",
           properties: %{

@@ -25,14 +25,14 @@ defmodule Beamcore.Agent.SubAgent do
   def run!(task, opts \\ []) do
     case run(task, opts) do
       {:ok, response} -> response
-      {:error, reason} -> raise "SubAgent failed"
+      {:error, _reason} -> raise "SubAgent failed"
     end
   end
 
   defp execute(task, opts) do
     selection = build_selection(opts)
     temperature = Keyword.get(opts, :temperature, 0.7)
-    tools_requested = Keyword.get(opts, :tools, false)
+    tools_requested = Keyword.get(opts, :tools, true)
     system_prompt = Keyword.get(opts, :system, default_system_prompt())
 
     caps = Beamcore.Agent.Chat.ToolRuntime.default()
@@ -87,8 +87,15 @@ defmodule Beamcore.Agent.SubAgent do
 
   defp build_selection(opts) do
     provider = Keyword.get(opts, :provider) || Beamcore.Config.active_provider()
-    model = Keyword.get(opts, :model) || Beamcore.Agent.Chat.API.default_model()
+    model = Keyword.get(opts, :model) || provider_default_model(provider)
     %{provider: provider, model: model, enabled: true}
+  end
+
+  defp provider_default_model(provider) do
+    case Beamcore.Config.get_provider(provider) do
+      %{"default_model" => model} when is_binary(model) -> model
+      _ -> Beamcore.Agent.Chat.API.default_model()
+    end
   end
 
   defp get_tools(caps, true), do: Beamcore.Agent.Tools.Dispatcher.tool_specs(caps)
