@@ -4,7 +4,7 @@ defmodule Beamcore.TUI.State do
   """
 
   alias Beamcore.Agent.Chat.Session
-  alias Beamcore.TUI.State.{Activity, FileFinder, WaitStatus}
+  alias Beamcore.TUI.State.{Activity, Animation, Factory, FileFinder, Scroll, WaitStatus}
 
   defdelegate add_activity(state, name, args, status \\ :queued), to: Activity
   defdelegate update_activity(state, name, args, result), to: Activity
@@ -18,6 +18,17 @@ defmodule Beamcore.TUI.State do
 
   defdelegate set_wait_status(state, event), to: WaitStatus, as: :set
   defdelegate clear_wait_status(state), to: WaitStatus, as: :clear
+
+  defdelegate scroll_up(state, amount \\ 1), to: Scroll
+  defdelegate scroll_down(state, amount \\ 1), to: Scroll
+  defdelegate reset_scroll(state), to: Scroll
+  defdelegate chat_page(state, direction), to: Scroll
+  defdelegate set_chat_viewport_height(state, height), to: Scroll
+
+  defdelegate tick(state, now_ms), to: Animation
+  defdelegate animation_due?(state, now_ms), to: Animation
+  defdelegate animation_interval(state), to: Animation
+  defdelegate poll_timeout_ms(state, now_ms), to: Animation
 
   def wait_status_text(state, now_ms \\ System.monotonic_time(:millisecond)),
     do: WaitStatus.text(state, now_ms)
@@ -54,64 +65,7 @@ defmodule Beamcore.TUI.State do
             notice: nil,
             screen_type: :agent
 
-  def new(terminal, textarea, opts \\ []) do
-    client = client(opts)
-    history = Keyword.get(opts, :history, Beamcore.TUI.History.load())
-
-    memory_total = compute_memory_total()
-    screen_type = Keyword.get(opts, :screen_type, :agent)
-
-    provider_ready? = primary_provider_ready?(screen_type)
-
-    messages =
-      if client || provider_ready?,
-        do: [],
-        else: [
-          %{
-            role: :system,
-            content:
-              "Beamcore is not configured for the selected primary provider. Use /api list or /api add to configure one."
-          }
-        ]
-
-    %__MODULE__{
-      terminal: terminal,
-      textarea: textarea,
-      session: Session.new(client, opts),
-      messages: messages,
-      last_animation_tick_ms: System.monotonic_time(:millisecond),
-      unicode?: Beamcore.TUI.Capability.unicode?(opts),
-      history: history,
-      history_index: nil,
-      history_draft: "",
-      memory_total: memory_total,
-      screen_type: screen_type
-    }
-  end
-
-  defp client(opts) do
-    case Keyword.fetch(opts, :client) do
-      {:ok, client} -> client
-      :error -> nil
-    end
-  end
-
-  defp primary_provider_ready?(screen_type) do
-    settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
-
-    case Beamcore.Provider.Registry.validate_selection(settings.provider) do
-      {:ok, _provider} -> true
-      _ -> false
-    end
-  end
-
-  defp compute_memory_total() do
-    {org, repo} = Beamcore.Memory.detect_org_repo()
-
-    [:repo_map, :patterns, :decisions, :errors, :context]
-    |> Enum.map(fn type -> length(Beamcore.Memory.list(org, repo, type)) end)
-    |> Enum.sum()
-  end
+  defdelegate new(terminal, textarea, opts \\ []), to: Factory
 
   def add_message(state, role, content) when is_binary(content) do
     content = String.trim(content)
@@ -138,7 +92,7 @@ defmodule Beamcore.TUI.State do
   end
 
   def refresh_memory_total(state) do
-    %{state | memory_total: compute_memory_total()} |> mark_dirty()
+    %{state | memory_total: Factory.compute_memory_total()} |> mark_dirty()
   rescue
     _error -> state
   catch
@@ -197,86 +151,7 @@ defmodule Beamcore.TUI.State do
   def mark_dirty(state), do: %{state | render_dirty?: true}
   def clear_dirty(state), do: %{state | render_dirty?: false}
 
-  def tick(state, now_ms) do
-    %{state | spinner_step: state.spinner_step + 1, last_animation_tick_ms: now_ms}
-  end
-
-  def animation_due?(%{last_animation_tick_ms: 0} = _state, now_ms) when now_ms < 0, do: true
-
-  def animation_due?(state, now_ms) do
-    now_ms - state.last_animation_tick_ms >= animation_interval(state)
-  end
-
-  def animation_interval(%{status: status, messages: messages}) do
-    cond do
-      status in [:thinking, :tool_running, :local_search, :rate_limited] -> 160
-      messages == [] -> 360
-      true -> 420
-    end
-  end
-
-  def poll_timeout_ms(state, now_ms) do
-    elapsed = animation_elapsed_ms(state, now_ms)
-    until_animation = max(animation_interval(state) - elapsed, 0)
-
-    cond do
-      state.status in [:thinking, :tool_running, :local_search, :rate_limited] ->
-        clamp_poll(until_animation, 18, 42)
-
-      state.show_commands ->
-        24
-
-      state.worker != nil ->
-        clamp_poll(until_animation, 24, 48)
-
-      true ->
-        clamp_poll(until_animation, 10, 16)
-    end
-  end
-
-  defp animation_elapsed_ms(%{last_animation_tick_ms: 0}, now_ms) when now_ms < 0,
-    do: animation_interval(%{status: :thinking, messages: []})
-
-  defp animation_elapsed_ms(state, now_ms),
-    do: max(now_ms - state.last_animation_tick_ms, 0)
-
-  defp clamp_poll(value, min_value, max_value) do
-    value
-    |> max(min_value)
-    |> min(max_value)
-  end
-
-  # Intentionally unlimited backscroll to allow reading the full history.
-  def scroll_up(state, amount \\ 1),
-    do: %{state | scroll_offset: state.scroll_offset + amount} |> mark_dirty()
-
-  def scroll_down(state, amount \\ 1),
-    do: %{state | scroll_offset: max(state.scroll_offset - amount, 0)} |> mark_dirty()
-
-  def reset_scroll(state), do: %{state | scroll_offset: 0} |> mark_dirty()
-
-  @doc """
-  Scrolls the chat history by one viewport page. `:up` moves toward older
-  messages, `:down` toward the latest. Works regardless of composer content,
-  so it is the reliable way to page through history while typing.
-  """
-  def chat_page(state, direction) do
-    amount = max(state.chat_viewport_height - 2, 1)
-
-    case direction do
-      :up -> scroll_up(state, amount)
-      :down -> scroll_down(state, amount)
-    end
-  end
-
-  def set_chat_viewport_height(state, height) do
-    %{state | chat_viewport_height: max(height, 0)}
-  end
-
-  defp auto_scroll_on_new_message(%{scroll_offset: offset} = state) when offset <= 2,
-    do: reset_scroll(state)
-
-  defp auto_scroll_on_new_message(state), do: state
+  defp auto_scroll_on_new_message(state), do: Scroll.auto_scroll_on_new_message(state)
 
   def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0}
   def usage(session), do: Session.usage(session)

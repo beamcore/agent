@@ -1,6 +1,7 @@
 defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
   @moduledoc false
 
+  alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
 
   @whitespace_rx ~r/^\s+/
@@ -117,12 +118,12 @@ defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
     |> then(&%Line{spans: &1})
   end
 
-  defp style(:keyword), do: %ExRatatui.Style{fg: :cyan, modifiers: [:bold]}
-  defp style(:comment), do: %ExRatatui.Style{fg: :dark_gray, modifiers: [:dim]}
-  defp style(:string), do: %ExRatatui.Style{fg: :green}
-  defp style(:atom), do: %ExRatatui.Style{fg: :cyan}
-  defp style(:number), do: %ExRatatui.Style{fg: :yellow}
-  defp style(:module), do: %ExRatatui.Style{fg: :yellow, modifiers: [:bold]}
-  defp style(:operator), do: %ExRatatui.Style{fg: :dark_gray}
-  defp style(_), do: %ExRatatui.Style{}
+  defp style(:keyword), do: Theme.style(:syntax_keyword)
+  defp style(:comment), do: Theme.style(:syntax_comment)
+  defp style(:string), do: Theme.style(:syntax_string)
+  defp style(:atom), do: Theme.style(:syntax_atom)
+  defp style(:number), do: Theme.style(:syntax_number)
+  defp style(:module), do: Theme.style(:syntax_module)
+  defp style(:operator), do: Theme.style(:syntax_operator)
+  defp style(_), do: Theme.style(:syntax_default)
 end
