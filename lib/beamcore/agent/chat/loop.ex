@@ -168,9 +168,15 @@ defmodule Beamcore.Agent.Chat.Loop do
 
           Enum.each(tool_responses, &Session.log(session, &1))
 
+          # Emit intermediate session with accumulated messages so TUI state
+          # stays fresh. If the worker is interrupted (Ctrl+C), the TUI already
+          # has the messages up to this tool-call round.
+          all_messages = new_messages ++ tool_responses
+          emit(opts, {:session, %{session | messages: all_messages}})
+
           process_messages(
             session,
-            new_messages ++ tool_responses,
+            all_messages,
             pid,
             depth + 1,
             caps,
