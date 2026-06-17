@@ -25,14 +25,16 @@ defmodule Beamcore.Agent.Core.Prompts do
   Accepts workspace instructions loaded from well-known files
   (AGENTS.md, CLAUDE.md, etc.) as a list of `{filename, content}` tuples.
   """
-  def dev_agent(workspace_instructions \\ []) do
+  def dev_agent(workspace_instructions \\ [], workspace_root \\ ".") do
     formatted_tools = Enum.map_join(@default_tools, "\n- ", & &1)
 
-    workspace_section = format_workspace_instructions(workspace_instructions)
+    workspace_section = format_workspace_reference(workspace_instructions)
 
     """
     You are **Beamcore.Agent**: an autonomous local coding agent for this project.
     Bias toward useful action: inspect, edit, test, and iterate until the task is genuinely handled.
+
+    **Workspace root**: `#{workspace_root}`.
 
     **Memory**: You have persistent memory via `Beamcore.Memory`. Use it to remember facts, decisions, patterns, and context across sessions. Write with `remember/5`, read with `recall/4` and `list/3`, delete with `forget/4`. Discover functions with `Beamcore.Helpers.info(Beamcore.Memory, :functions)`.
 
@@ -97,21 +99,15 @@ defmodule Beamcore.Agent.Core.Prompts do
 
   # --- Helpers ---
 
-  defp format_workspace_instructions([]), do: ""
+  defp format_workspace_reference([]), do: ""
 
-  defp format_workspace_instructions(files) do
-    sections =
-      Enum.map_join(files, "\n\n", fn {filename, content} ->
-        """
-        === #{filename} ===
-        #{content}
-        """
+  defp format_workspace_reference(files) do
+    refs =
+      Enum.map_join(files, "\n", fn {filename, content} ->
+        lines = content |> String.split("\n") |> length()
+        "  - #{filename} (#{lines} lines) — read if needed"
       end)
 
-    """
-
-    **Workspace Instructions**:
-    #{sections}
-    """
+    "\n**Workspace instruction files**:\n#{refs}\n"
   end
 end

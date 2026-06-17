@@ -70,15 +70,13 @@ defmodule Beamcore.Agent.Tools.Eeva do
       error ->
         encode_error(
           "Unexpected Eeva failure: #{Exception.message(error)}",
-          "internal_error",
-          code
+          "internal_error"
         )
     catch
       kind, reason ->
         encode_error(
           "Unexpected Eeva #{kind}: #{inspect(reason)}",
-          "internal_error",
-          code
+          "internal_error"
         )
     end
   end
@@ -144,7 +142,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
         execute_prepared(code, prepared, caps)
 
       {:error, reason} ->
-        encode_error(reason, "execution_guard", code)
+        encode_error(reason, "execution_guard")
     end
   end
 
@@ -177,7 +175,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   end
 
-  defp format_result({:ok, %{status: :ok} = result}, code, prepared) do
+  defp format_result({:ok, %{status: :ok} = result}, _code, prepared) do
     {stdout, dropped} = truncate_output(result.output)
 
     %{
@@ -187,14 +185,13 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "stdout" => stdout,
       "stderr" => "",
       "result" => result.result,
-      "code" => code,
       "ast_nodes" => prepared.node_count,
       "summary" => append_truncation("Eeva completed successfully.", dropped)
     }
     |> Jason.encode!()
   end
 
-  defp format_result({:ok, %{status: :error} = result}, code, prepared) do
+  defp format_result({:ok, %{status: :error} = result}, _code, prepared) do
     {stdout, dropped} = truncate_output(result.output)
 
     summary =
@@ -212,7 +209,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "stdout" => stdout,
       "stderr" => Exception.format(result.kind, result.error, result.stacktrace),
       "result" => nil,
-      "code" => code,
       "ast_nodes" => prepared.node_count,
       "recoverable" => true,
       "session_active" => true,
@@ -222,7 +218,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
     |> Jason.encode!()
   end
 
-  defp format_result({:error, kind, reason}, code, prepared) do
+  defp format_result({:error, kind, reason}, _code, prepared) do
     emit_failure(execution_error_summary(kind, reason))
     summary = recoverable_summary(execution_error_summary(kind, reason))
 
@@ -233,7 +229,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "stdout" => "",
       "stderr" => inspect(reason),
       "result" => nil,
-      "code" => code,
       "ast_nodes" => prepared.node_count,
       "recoverable" => true,
       "session_active" => true,
@@ -305,7 +300,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   defp execution_error_summary(kind, reason),
     do: "Eeva execution failed (#{kind}): #{inspect(reason)}"
 
-  defp encode_error(message, classification, code \\ nil) do
+  defp encode_error(message, classification) do
     emit_failure(message, classification)
     summary = recoverable_summary(message)
 
@@ -316,7 +311,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "stdout" => "",
       "stderr" => message,
       "result" => nil,
-      "code" => code,
       "classification" => classification,
       "recoverable" => true,
       "session_active" => true,

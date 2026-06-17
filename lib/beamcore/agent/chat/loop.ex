@@ -51,7 +51,9 @@ defmodule Beamcore.Agent.Chat.Loop do
     user_message = %{role: "user", content: content}
     Session.log(session, user_message)
 
+    tools = Dispatcher.tool_specs(caps)
     messages = session.messages ++ [user_message]
+    messages = inject_runtime_message(messages, caps, tools)
 
     process_messages(session, messages, pid, 0, caps, opts)
   end
@@ -67,22 +69,9 @@ defmodule Beamcore.Agent.Chat.Loop do
       end
 
     {:ok, api_messages, estimate, metadata} =
-      prepare_api_messages(session, messages, caps, tools)
+      prepare_api_messages(session, messages)
 
     emit(opts, {:model_context, model_context_event(session, estimate, metadata)})
-
-    session =
-      Session.append_timeline(session, :model_call, model_call_summary(session), %{
-        role: :agent,
-        title: model_call_title(session),
-        metadata:
-          %{
-            provider: provider_name(session),
-            model: model_name(session),
-            depth: depth
-          }
-          |> Map.merge(model_context_event(session, estimate, metadata))
-      })
 
     call_started = System.monotonic_time(:millisecond)
 
@@ -164,16 +153,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
               emit(opts, {:tool_finished, name, args, content})
 
-              session =
-                Session.append_timeline(session, :tool_call, "Tool #{name} completed.", %{
-                  role: :agent,
-                  title: "Tool call: #{name}",
-                  metadata: %{
-                    tool: name,
-                    result: content
-                  }
-                })
-
               emit(opts, {:session, session})
 
               {
@@ -215,12 +194,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
-
-        Session.append_timeline(session, :failed, message,
-          role: :agent,
-          title: "Provider timeout",
-          metadata: timeout_metadata(session, settings, call_elapsed)
-        )
+        session
 
       {:error, %Beamcore.Provider.Error{} = error} ->
         Beamcore.AppLog.error("Provider error",
@@ -232,7 +206,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         emit(opts, {:error, error.message})
         emit(opts, {:status, :error})
-        Session.append_timeline(session, :failed, error.message)
+        session
 
       {:error, %OpenaiEx.Error{} = error} ->
         Beamcore.AppLog.error("API error",
@@ -245,7 +219,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         emit(opts, {:error, api_error_text(error)})
         emit(opts, {:status, :error})
-        Session.append_timeline(session, :failed, api_error_text(error))
+        session
 
       {:error, reason} ->
         message = "#{inspect(reason)}"
@@ -258,15 +232,14 @@ defmodule Beamcore.Agent.Chat.Loop do
 
         emit(opts, {:error, message})
         emit(opts, {:status, :error})
-        Session.append_timeline(session, :failed, message)
+        session
     end
   end
 
-  defp prepare_api_messages(session, messages, caps, tools) do
+  defp prepare_api_messages(session, messages) do
     prepared =
       messages
       |> Session.prepare_for_api()
-      |> inject_runtime_message(caps, tools)
 
     metadata = model_metadata(session)
     estimate = Beamcore.Agent.Chat.Budget.estimate_tokens(prepared)
@@ -343,31 +316,10 @@ defmodule Beamcore.Agent.Chat.Loop do
     )
   end
 
-  defp model_call_title(%{screen_type: :chat}), do: "Chat model call"
-  defp model_call_title(_session), do: "Agent model call"
-
-  defp model_call_summary(session),
-    do: "Agent called #{provider_name(session)}/#{model_name(session)}."
-
   defp timeout_message(session, settings, elapsed_ms) do
     configured = receive_timeout_ms(settings)
 
     "Agent timed out waiting for the complete non-streaming provider response after #{format_ms(elapsed_ms)}. Provider: #{provider_name(session)}. Model: #{model_name(session)}. Configured receive timeout: #{format_ms(configured)}."
-  end
-
-  defp timeout_metadata(session, settings, elapsed_ms) do
-    %{
-      role: :agent,
-      provider: provider_name(session),
-      model: model_name(session),
-      stage: :model_call,
-      timeout_type: :non_streaming_receive_timeout,
-      configured_duration_ms: receive_timeout_ms(settings),
-      elapsed_duration_ms: elapsed_ms,
-      attempt_number: 1,
-      max_attempts: settings.retry_limit + 1,
-      stream: false
-    }
   end
 
   defp receive_timeout_ms(_settings) do
@@ -378,7 +330,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp format_ms(ms), do: "#{ms}ms"
 
   defp finish_turn(session, opts) do
-    session = Session.append_timeline(session, :completed, "Turn completed.")
     emit(opts, {:session, session})
     emit(opts, {:status, :idle})
 

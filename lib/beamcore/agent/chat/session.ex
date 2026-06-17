@@ -3,7 +3,7 @@ defmodule Beamcore.Agent.Chat.Session do
   Manages chat sessions and persists them to disk.
   """
 
-  alias Beamcore.Agent.Chat.Session.{Compaction, MessageCleaner, Serializer}
+  alias Beamcore.Agent.Chat.Session.{Compaction, MessageCleaner}
 
   defstruct [
     :messages,
@@ -19,10 +19,7 @@ defmodule Beamcore.Agent.Chat.Session do
     :workspace_root,
     :roles,
     :screen_type,
-    :mode_settings,
-    :timeline,
-    :state_file,
-    :interrupted?
+    :mode_settings
   ]
 
   @colors ~w(red blue green yellow purple orange pink brown black white gray cyan magenta lime maroon navy olive teal silver gold)
@@ -44,7 +41,6 @@ defmodule Beamcore.Agent.Chat.Session do
     log_dir = Path.join([System.user_home!(), ".agent", "sessions"])
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
-    state_file = Path.join(log_dir, "#{session_id}.state.json")
 
     screen_type = Keyword.get(opts, :screen_type, :agent)
     mode_settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
@@ -67,7 +63,7 @@ defmodule Beamcore.Agent.Chat.Session do
         true ->
           %{
             role: "system",
-            content: Beamcore.Agent.Core.Prompts.dev_agent(workspace_instructions)
+            content: Beamcore.Agent.Core.Prompts.dev_agent(workspace_instructions, workspace_root)
           }
       end
 
@@ -103,42 +99,14 @@ defmodule Beamcore.Agent.Chat.Session do
       workspace_root: workspace_root,
       roles: roles,
       screen_type: screen_type,
-      mode_settings: mode_settings,
-      timeline: [],
-      state_file: state_file,
-      interrupted?: false
+      mode_settings: mode_settings
     }
 
-    session =
-      Enum.reduce(messages, session, fn msg, acc ->
-        log(acc, msg)
-      end)
-
-    append_timeline(session, :started, "Session started.",
-      role: :system,
-      title: "Session started",
-      metadata: %{
-        mode: mode_settings.mode,
-        provider: mode_settings.provider,
-        model: mode_settings.model
-      }
-    )
+    Enum.reduce(messages, session, fn msg, acc ->
+      log(acc, msg)
+    end)
   end
 
-  @doc """
-  Resume a saved session state by id.
-  """
-  def resume(session_id, client, opts \\ []) when is_binary(session_id) do
-    log_dir = Path.join([System.user_home!(), ".agent", "sessions"])
-    state_file = Path.join(log_dir, "#{session_id}.state.json")
-
-    with {:ok, content} <- File.read(state_file),
-         {:ok, data} <- Jason.decode(content) do
-      {:ok, Serializer.restore(data, client, opts)}
-    else
-      {:error, reason} -> {:error, reason}
-    end
-  end
 
   def set_primary_provider(session, provider, model \\ nil) do
     model = model || provider_default_model(provider) || Beamcore.Agent.Chat.API.default_model()
@@ -169,88 +137,6 @@ defmodule Beamcore.Agent.Chat.Session do
     json = Jason.encode!(data)
     File.write!(session.log_file, json <> "\n", [:append])
     session
-  end
-
-  @doc """
-  Appends a timeline event and persists the session state.
-  """
-  def append_timeline(session, type, summary, attrs \\ []) when is_atom(type) do
-    attrs_map = normalize_event_attrs(attrs)
-
-    event = %{
-      id:
-        "evt-#{System.system_time(:millisecond)}-#{System.unique_integer([:positive, :monotonic])}",
-      type: type,
-      role: Map.get(attrs_map, :role, :system),
-      title: Map.get(attrs_map, :title) || title_from_type(type),
-      summary: summary,
-      status: Map.get(attrs_map, :status, :completed),
-      metadata: Map.get(attrs_map, :metadata, %{}),
-      timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-    }
-
-    session = %{session | timeline: (session.timeline || []) ++ [event]}
-    save_state(session)
-
-    log(session, %{
-      event: "timeline",
-      timeline: %{
-        "id" => event.id,
-        "type" => to_string(event.type),
-        "role" => to_string(event.role),
-        "title" => event.title,
-        "summary" => event.summary,
-        "status" => to_string(event.status),
-        "metadata" => event.metadata,
-        "timestamp" => event.timestamp
-      }
-    })
-  end
-
-  @doc """
-  Marks the session as interrupted and appends a timeline event.
-  """
-  def interrupt(session, reason \\ "Session interrupted.") do
-    %{session | interrupted?: true}
-    |> append_timeline(:interrupted, reason,
-      role: :user,
-      title: "Session interrupted"
-    )
-  end
-
-  @doc """
-  Resumes an interrupted session and appends a timeline event.
-  """
-  def resume_interrupted(session, reason \\ "Session resumed.") do
-    %{session | interrupted?: false}
-    |> append_timeline(:resumed, reason,
-      role: :user,
-      title: "Session resumed"
-    )
-  end
-
-  @doc """
-  Persists the current session state to disk.
-  """
-  def save_state(session) do
-    if session.state_file do
-      tmp_path = session.state_file <> ".tmp-#{System.unique_integer([:positive])}"
-      File.write!(tmp_path, Jason.encode!(Serializer.snapshot(session)))
-      File.rename!(tmp_path, session.state_file)
-    end
-
-    session
-  end
-
-  defp normalize_event_attrs(attrs) when is_list(attrs), do: Enum.into(attrs, %{})
-  defp normalize_event_attrs(attrs) when is_map(attrs), do: attrs
-  defp normalize_event_attrs(_attrs), do: %{}
-
-  defp title_from_type(type) do
-    type
-    |> to_string()
-    |> String.replace("_", " ")
-    |> String.capitalize()
   end
 
   # --- Usage ---

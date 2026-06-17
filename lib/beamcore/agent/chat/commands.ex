@@ -36,12 +36,8 @@ defmodule Beamcore.Agent.Chat.Commands do
         Session.new(session.client, opts)
 
       id ->
-        output.("Resuming session '#{id}'...")
-
-        case Session.resume(id, session.client, opts) do
-          {:ok, resumed} -> resumed
-          {:error, _} -> Session.new(session.client, Keyword.put(opts, :session_id, id))
-        end
+        output.("Starting new session '#{id}'...")
+        Session.new(session.client, Keyword.put(opts, :session_id, id))
     end
   end
 
