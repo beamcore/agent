@@ -40,6 +40,10 @@ defmodule Beamcore.TUI.Events.Commands do
     end
   end
 
+  def run_command(state, "theme") do
+    %{state | show_theme_picker: true} |> State.mark_dirty()
+  end
+
   def run_command(state, command) do
     result =
       Commands.execute(command, state.session,

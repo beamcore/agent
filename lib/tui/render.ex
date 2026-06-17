@@ -54,19 +54,58 @@ defmodule Beamcore.TUI.Render do
   defp maybe_help(widgets, _state, _area), do: widgets
 
   defp maybe_commands(widgets, state, area) do
-    if state.show_commands and state.command_matches != [] do
-      widgets ++
-        SlashCommands.render_autocomplete(state.command_matches,
-          area: area,
-          selected: state.command_selected,
-          percent_width: 46,
-          percent_height: 34,
-          highlight_style: Theme.style(:accent),
-          style: Theme.style(:panel)
-        )
-    else
-      widgets
+    cond do
+      state.show_theme_picker ->
+        widgets ++ [render_theme_popup(state, area)]
+
+      state.show_commands and state.command_matches != [] ->
+        widgets ++
+          SlashCommands.render_autocomplete(state.command_matches,
+            area: area,
+            selected: state.command_selected,
+            percent_width: 46,
+            percent_height: 34,
+            highlight_style: Theme.style(:accent),
+            style: Theme.style(:panel)
+          )
+
+      true ->
+        widgets
     end
+  end
+
+  defp render_theme_popup(state, area) do
+    current = Theme.current_theme()
+
+    items =
+      Theme.list_themes()
+      |> Enum.sort()
+      |> Enum.map(fn name ->
+        if name == current,
+          do: "#{name}  (current)",
+          else: "#{name}"
+      end)
+
+    list = %List{
+      items: items,
+      selected: state.command_selected,
+      highlight_style: Theme.style(:accent),
+      style: Theme.style(:panel)
+    }
+
+    popup = %Popup{
+      content: list,
+      block: %Block{
+        title: "Themes",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: Theme.style(:border_hot)
+      },
+      percent_width: 28,
+      percent_height: 50
+    }
+
+    {popup, area}
   end
 
   defp maybe_file_finder(

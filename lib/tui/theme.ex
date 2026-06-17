@@ -3,26 +3,55 @@ defmodule Beamcore.TUI.Theme do
   Theme system for the TUI.
 
   Themes use terminal default colors where possible. Branded themes
-  use their signature RGB palette. Switch at runtime with `set_theme/1`.
+  use their signature RGB palette. Switch at runtime with `set_theme/1`
+  or via the `/theme` command.
 
-  Available themes:
-    :default      — terminal defaults, muted gray accents
-    :dracula      — purple/cyan on dark
-    :nord         — arctic blue tones
-    :solarized    — warm balanced palette
-    :tokyo_night  — cool blue/purple
-    :catppuccin   — pastel warm tones
+  20 themes available:
+    :default      — terminal defaults
+    :ayu          — clean modern
+    :catppuccin   — pastel warm (mocha)
+    :dracula      — purple/cyan
+    :everforest   — green nature
+    :github       — light clean
+    :gotham       — dark blue
+    :gruvbox      — retro warm
+    :kanagawa     — japanese ink
+    :melange      — muted warm
+    :molokai      — classic dark
+    :monokai      — classic vivid
+    :nightfox     — warm dark
+    :nord         — arctic blue
+    :one_dark     — atom dark
+    :palenight    — purple dark
+    :rose_pine    — soft pink
+    :solarized    — balanced
+    :tokyo_night  — cool purple
+    :zenburn      — low contrast
   """
 
   alias ExRatatui.Style
 
   @themes %{
     default: Beamcore.TUI.Themes.Default,
+    ayu: Beamcore.TUI.Themes.Ayu,
+    catppuccin: Beamcore.TUI.Themes.Catppuccin,
     dracula: Beamcore.TUI.Themes.Dracula,
+    everforest: Beamcore.TUI.Themes.Everforest,
+    github: Beamcore.TUI.Themes.GitHub,
+    gotham: Beamcore.TUI.Themes.Gotham,
+    gruvbox: Beamcore.TUI.Themes.Gruvbox,
+    kanagawa: Beamcore.TUI.Themes.Kanagawa,
+    melange: Beamcore.TUI.Themes.Melange,
+    molokai: Beamcore.TUI.Themes.Molokai,
+    monokai: Beamcore.TUI.Themes.Monokai,
+    nightfox: Beamcore.TUI.Themes.Nightfox,
     nord: Beamcore.TUI.Themes.Nord,
+    one_dark: Beamcore.TUI.Themes.OneDark,
+    palenight: Beamcore.TUI.Themes.Palenight,
+    rose_pine: Beamcore.TUI.Themes.RosePine,
     solarized: Beamcore.TUI.Themes.Solarized,
     tokyo_night: Beamcore.TUI.Themes.TokyoNight,
-    catppuccin: Beamcore.TUI.Themes.Catppuccin
+    zenburn: Beamcore.TUI.Themes.Zenburn
   }
 
   @default_theme :default
