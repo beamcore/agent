@@ -89,10 +89,12 @@ defmodule Beamcore.Agent.Tools.Eeva do
   @doc false
   def system_cmd(command, args, opts \\ [])
 
+  @valid_cmd_opts [:cd, :env, :arg0, :parallelism]
+
   def system_cmd(command, args, opts) when is_list(args) and is_list(opts) do
     opts =
       opts
-      |> Keyword.drop([:into, :stderr_to_stdout])
+      |> Keyword.take(@valid_cmd_opts)
       |> Keyword.put(:stderr_to_stdout, true)
 
     System.cmd(command, args, opts)
