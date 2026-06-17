@@ -107,7 +107,6 @@ defmodule Beamcore.Agent.Chat.Session do
     end)
   end
 
-
   def set_primary_provider(session, provider, model \\ nil) do
     model = model || provider_default_model(provider) || Beamcore.Agent.Chat.API.default_model()
     roles = session.roles || Beamcore.Provider.Selection.default()
