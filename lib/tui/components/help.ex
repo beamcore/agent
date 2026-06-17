@@ -14,6 +14,7 @@ defmodule Beamcore.TUI.Components.Help do
     /api add <args>  Add or update an API provider config
     /api delete <n>  Delete an API provider config
     /env             Show redacted environment
+    /theme           Switch UI themes
     /quit /exit /q   Exit
 
     Keys

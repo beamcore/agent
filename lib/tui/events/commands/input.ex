@@ -28,9 +28,16 @@ defmodule Beamcore.TUI.Events.Commands.Input do
         state
 
       String.starts_with?(value, "/") ->
-        ExRatatui.textarea_set_value(state.textarea, "")
-        state = maybe_record_command_history(state, value)
-        Commands.run_command(%{state | show_commands: false}, String.trim_leading(value, "/"))
+        command = String.trim_leading(value, "/")
+
+        if command == "theme" do
+          ExRatatui.textarea_set_value(state.textarea, "")
+          Commands.run_command(%{state | show_commands: false}, command)
+        else
+          ExRatatui.textarea_set_value(state.textarea, "")
+          state = maybe_record_command_history(state, value)
+          Commands.run_command(%{state | show_commands: false}, command)
+        end
 
       State.paused?(state) ->
         ExRatatui.textarea_set_value(state.textarea, "")
@@ -185,7 +192,8 @@ defmodule Beamcore.TUI.Events.Commands.Input do
       },
       %SlashCommands.Command{name: "quit", description: "Exit"},
       %SlashCommands.Command{name: "exit", description: "Exit"},
-      %SlashCommands.Command{name: "q", description: "Exit"}
+      %SlashCommands.Command{name: "q", description: "Exit"},
+      %SlashCommands.Command{name: "theme", description: "Switch UI themes"}
     ]
   end
 end

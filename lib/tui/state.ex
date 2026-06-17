@@ -63,7 +63,8 @@ defmodule Beamcore.TUI.State do
             file_finder_selected: 0,
             file_finder_cache: nil,
             notice: nil,
-            screen_type: :agent
+            screen_type: :agent,
+            show_theme_picker: false
 
   defdelegate new(terminal, textarea, opts \\ []), to: Factory
 

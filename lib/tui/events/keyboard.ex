@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.Events.Keyboard do
   @moduledoc false
 
   alias Beamcore.TUI.State
-  alias Beamcore.TUI.Events.{Commands, TextInput}
+  alias Beamcore.TUI.Events.{Commands, TextInput, ThemePicker}
 
   def handle_key("c", mods, state) do
     if ctrl?(mods), do: handle_ctrl_c(state), else: text_key("c", mods, state)
@@ -13,8 +13,14 @@ defmodule Beamcore.TUI.Events.Keyboard do
     {:noreply, close_panels(state)}
   end
 
+  def handle_key(code, mods, %{show_theme_picker: true} = state) do
+    ThemePicker.handle_key(code, mods, state)
+  end
+
   def handle_key("s", mods, state) do
-    if ctrl?(mods), do: {:noreply, Commands.submit(state)}, else: text_key("s", mods, state)
+    if ctrl?(mods),
+      do: {:noreply, Commands.submit(state)},
+      else: text_key("s", mods, state)
   end
 
   def handle_key("a", mods, state) do
@@ -59,18 +65,14 @@ defmodule Beamcore.TUI.Events.Keyboard do
   end
 
   def handle_key("enter", mods, state) do
-    if ctrl?(mods),
-      do: {:noreply, Commands.submit(state)},
-      else: {:noreply, insert_newline(state)}
+    cond do
+      ctrl?(mods) -> {:noreply, Commands.submit(state)}
+      state.show_commands -> {:noreply, Commands.accept_command_completion(state)}
+      true -> {:noreply, insert_newline(state)}
+    end
   end
 
   def handle_key(code, _mods, state) when code in ["esc", "escape"] do
-    state =
-      state
-      |> Map.put(:show_commands, false)
-      |> Map.put(:command_matches, [])
-      |> Map.put(:history_index, nil)
-
     {:noreply, state |> close_panels() |> State.mark_dirty()}
   end
 
@@ -166,6 +168,7 @@ defmodule Beamcore.TUI.Events.Keyboard do
     state
     |> Map.put(:show_help, false)
     |> Map.put(:show_commands, false)
+    |> Map.put(:show_theme_picker, false)
   end
 
   defp text_key(code, mods, state), do: TextInput.handle_text_key(code, mods, state)
