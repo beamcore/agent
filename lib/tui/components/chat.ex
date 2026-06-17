@@ -157,6 +157,9 @@ defmodule Beamcore.TUI.Components.Chat do
       %{role: :memory, content: content} ->
         bubble("Memory", content, Theme.style(:checkpoint), wrap_width, :plain)
 
+      %{role: :thinking, content: content} ->
+        bubble("Thinking", content, Theme.style(:thinking), wrap_width, :plain)
+
       %{role: :checkpoint, content: content} ->
         bubble("Checkpoint", content, Theme.style(:checkpoint), wrap_width, :plain)
 

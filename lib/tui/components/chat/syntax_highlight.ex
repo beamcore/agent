@@ -1,7 +1,6 @@
 defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
   @moduledoc false
 
-  alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
 
   @whitespace_rx ~r/^\s+/
@@ -103,7 +102,7 @@ defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
   defp to_spans(tokens) do
     case tokens do
       [] ->
-        [%Span{content: "  ", style: Theme.style(:base)}]
+        [%Span{content: "  ", style: %ExRatatui.Style{}}]
 
       [{type, first} | rest] ->
         first_span = %Span{content: "  " <> first, style: style(type)}
@@ -118,12 +117,12 @@ defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
     |> then(&%Line{spans: &1})
   end
 
-  defp style(:keyword), do: Theme.style(:accent)
-  defp style(:comment), do: Theme.style(:subtle)
-  defp style(:string), do: Theme.style(:done)
-  defp style(:atom), do: Theme.style(:checkpoint)
-  defp style(:number), do: Theme.style(:running)
-  defp style(:module), do: Theme.style(:status_hot)
-  defp style(:operator), do: Theme.style(:muted)
-  defp style(_), do: Theme.style(:base)
+  defp style(:keyword), do: %ExRatatui.Style{fg: :cyan, modifiers: [:bold]}
+  defp style(:comment), do: %ExRatatui.Style{fg: :dark_gray, modifiers: [:dim]}
+  defp style(:string), do: %ExRatatui.Style{fg: :green}
+  defp style(:atom), do: %ExRatatui.Style{fg: :cyan}
+  defp style(:number), do: %ExRatatui.Style{fg: :yellow}
+  defp style(:module), do: %ExRatatui.Style{fg: :yellow, modifiers: [:bold]}
+  defp style(:operator), do: %ExRatatui.Style{fg: :dark_gray}
+  defp style(_), do: %ExRatatui.Style{}
 end

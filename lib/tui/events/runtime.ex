@@ -19,6 +19,10 @@ defmodule Beamcore.TUI.Events.Runtime do
   def handle_event({:assistant, content}, state),
     do: state |> State.clear_notice() |> State.add_message(:assistant, content)
 
+  def handle_event({:thinking, content}, state) when is_binary(content) and content != "" do
+    State.add_message(state, :thinking, content)
+  end
+
   def handle_event({:thinking, _content}, state), do: state
 
   def handle_event({:error, content}, state),
