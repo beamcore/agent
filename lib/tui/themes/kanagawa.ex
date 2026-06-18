@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Kanagawa do
     syntax_number: %Style{fg: {:rgb, 228, 180, 99}},
     syntax_module: %Style{fg: {:rgb, 126, 167, 196}},
     syntax_operator: %Style{fg: {:rgb, 185, 144, 196}},
-    syntax_default: %Style{fg: {:rgb, 220, 215, 186}}
+    syntax_default: %Style{fg: {:rgb, 220, 215, 186}},
+    code_block: %Style{fg: {:rgb, 220, 215, 186}, bg: {:rgb, 28, 27, 25}},
+    code_header: %Style{fg: {:rgb, 112, 110, 100}, bg: {:rgb, 28, 27, 25}}
   }
 
   def styles, do: @styles

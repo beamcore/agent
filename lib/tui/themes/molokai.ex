@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Molokai do
     syntax_number: %Style{fg: {:rgb, 174, 129, 255}},
     syntax_module: %Style{fg: {:rgb, 102, 217, 239}},
     syntax_operator: %Style{fg: {:rgb, 249, 38, 114}},
-    syntax_default: %Style{fg: {:rgb, 248, 248, 242}}
+    syntax_default: %Style{fg: {:rgb, 248, 248, 242}},
+    code_block: %Style{fg: {:rgb, 248, 248, 242}, bg: {:rgb, 30, 30, 30}},
+    code_header: %Style{fg: {:rgb, 108, 108, 108}, bg: {:rgb, 30, 30, 30}}
   }
 
   def styles, do: @styles

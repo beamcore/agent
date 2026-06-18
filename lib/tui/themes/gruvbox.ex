@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Gruvbox do
     syntax_number: %Style{fg: {:rgb, 211, 134, 155}},
     syntax_module: %Style{fg: {:rgb, 250, 189, 47}},
     syntax_operator: %Style{fg: {:rgb, 250, 189, 47}},
-    syntax_default: %Style{fg: {:rgb, 235, 219, 178}}
+    syntax_default: %Style{fg: {:rgb, 235, 219, 178}},
+    code_block: %Style{fg: {:rgb, 235, 219, 178}, bg: {:rgb, 40, 40, 40}},
+    code_header: %Style{fg: {:rgb, 146, 131, 116}, bg: {:rgb, 40, 40, 40}}
   }
 
   def styles, do: @styles

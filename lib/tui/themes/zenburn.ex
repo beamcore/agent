@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Zenburn do
     syntax_number: %Style{fg: {:rgb, 136, 204, 204}},
     syntax_module: %Style{fg: {:rgb, 204, 170, 136}},
     syntax_operator: %Style{fg: {:rgb, 220, 170, 102}},
-    syntax_default: %Style{fg: {:rgb, 220, 220, 204}}
+    syntax_default: %Style{fg: {:rgb, 220, 220, 204}},
+    code_block: %Style{fg: {:rgb, 220, 220, 204}, bg: {:rgb, 50, 50, 45}},
+    code_header: %Style{fg: {:rgb, 136, 136, 120}, bg: {:rgb, 50, 50, 45}}
   }
 
   def styles, do: @styles

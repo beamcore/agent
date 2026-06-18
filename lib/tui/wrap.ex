@@ -40,7 +40,7 @@ defmodule Beamcore.TUI.Wrap do
     trimmed = String.trim(line)
 
     cond do
-      String.starts_with?(trimmed, "```") ->
+      fence_open?(trimmed) ->
         wrap_lines(rest, width, not code?, [truncate_line(line, width) | acc])
 
       code? ->
@@ -53,6 +53,10 @@ defmodule Beamcore.TUI.Wrap do
         wrapped = wrap_paragraph(line, width)
         wrap_lines(rest, width, code?, Enum.reverse(wrapped) ++ acc)
     end
+  end
+
+  defp fence_open?(line) do
+    String.starts_with?(line, "```")
   end
 
   defp wrap_paragraph(line, width) do

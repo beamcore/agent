@@ -51,7 +51,7 @@ defmodule Beamcore.TUI.Events.Runtime do
   end
 
   def handle_event({:eeva_preview, code}, state) do
-    State.add_message(state, :eeva_preview, "```elixir\n#{code}\n```")
+    State.add_message(state, :eeva_preview, code)
   end
 
   def handle_event({:eeva_failed, message}, state) do

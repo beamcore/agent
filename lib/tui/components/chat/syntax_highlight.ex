@@ -15,11 +15,11 @@ defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
   @identifier_rx ~r/^[a-z_][a-zA-Z0-9_?!]*/
   @operator_rx ~r/^(->|\|>|=>|==|!=|=~|<=|>=|<>|&&|\|\||\+\+|--|=|\+|-|\*|\/|%|<|>)/
 
-  def highlight_line(line, max_len) do
+  def highlight_line(line, max_len, base_style \\ nil) do
     line
     |> tokenize()
     |> limit_length(max_len)
-    |> to_spans()
+    |> to_spans(base_style)
   end
 
   defp tokenize(line) do
@@ -100,22 +100,29 @@ defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
     end
   end
 
-  defp to_spans(tokens) do
+  defp to_spans(tokens, base_style) do
     case tokens do
       [] ->
-        [%Span{content: "  ", style: %ExRatatui.Style{}}]
+        [%Span{content: "  ", style: base_style || %ExRatatui.Style{}}]
 
       [{type, first} | rest] ->
-        first_span = %Span{content: "  " <> first, style: style(type)}
+        first_span = %Span{content: "  " <> first, style: apply_base(style(type), base_style)}
 
         other_spans =
           Enum.map(rest, fn {type, content} ->
-            %Span{content: content, style: style(type)}
+            %Span{content: content, style: apply_base(style(type), base_style)}
           end)
 
         [first_span | other_spans]
     end
     |> then(&%Line{spans: &1})
+  end
+
+  defp apply_base(token_style, nil), do: token_style
+
+  defp apply_base(token_style, base_style) do
+    bg = base_style.bg
+    if bg, do: %{token_style | bg: bg}, else: token_style
   end
 
   defp style(:keyword), do: Theme.style(:syntax_keyword)

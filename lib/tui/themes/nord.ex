@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Nord do
     syntax_number: %Style{fg: {:rgb, 235, 203, 139}},
     syntax_module: %Style{fg: {:rgb, 136, 192, 208}},
     syntax_operator: %Style{fg: {:rgb, 136, 192, 208}},
-    syntax_default: %Style{fg: {:rgb, 216, 222, 233}}
+    syntax_default: %Style{fg: {:rgb, 216, 222, 233}},
+    code_block: %Style{fg: {:rgb, 216, 222, 233}, bg: {:rgb, 46, 52, 64}},
+    code_header: %Style{fg: {:rgb, 76, 86, 106}, bg: {:rgb, 46, 52, 64}}
   }
 
   def styles, do: @styles

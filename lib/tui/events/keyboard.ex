@@ -81,6 +81,14 @@ defmodule Beamcore.TUI.Events.Keyboard do
 
   def handle_key("tab", _mods, state), do: text_key("tab", [], state)
 
+  def handle_key("e", mods, state) do
+    if ctrl?(mods) do
+      {:noreply, State.toggle_all_collapsible(state)}
+    else
+      text_key("e", mods, state)
+    end
+  end
+
   def handle_key("p", mods, state) do
     if ctrl?(mods) do
       if state.show_commands do

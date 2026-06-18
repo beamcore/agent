@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Melange do
     syntax_number: %Style{fg: {:rgb, 230, 180, 90}},
     syntax_module: %Style{fg: {:rgb, 204, 153, 102}},
     syntax_operator: %Style{fg: {:rgb, 170, 140, 180}},
-    syntax_default: %Style{fg: {:rgb, 204, 197, 179}}
+    syntax_default: %Style{fg: {:rgb, 204, 197, 179}},
+    code_block: %Style{fg: {:rgb, 204, 197, 179}, bg: {:rgb, 48, 46, 42}},
+    code_header: %Style{fg: {:rgb, 128, 123, 110}, bg: {:rgb, 48, 46, 42}}
   }
 
   def styles, do: @styles

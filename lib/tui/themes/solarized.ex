@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Solarized do
     syntax_number: %Style{fg: {:rgb, 181, 137, 0}},
     syntax_module: %Style{fg: {:rgb, 38, 139, 210}},
     syntax_operator: %Style{fg: {:rgb, 38, 139, 210}},
-    syntax_default: %Style{fg: {:rgb, 131, 148, 150}}
+    syntax_default: %Style{fg: {:rgb, 131, 148, 150}},
+    code_block: %Style{fg: {:rgb, 131, 148, 150}, bg: {:rgb, 0, 43, 54}},
+    code_header: %Style{fg: {:rgb, 88, 110, 117}, bg: {:rgb, 0, 43, 54}}
   }
 
   def styles, do: @styles
