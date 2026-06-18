@@ -15,7 +15,6 @@ defmodule Beamcore.Agent.Chat.Session do
     :total_tokens,
     :last_prompt_tokens,
     :compaction_count,
-    :runtime_caps,
     :workspace_root,
     :roles,
     :screen_type,
@@ -67,8 +66,6 @@ defmodule Beamcore.Agent.Chat.Session do
           }
       end
 
-    runtime_caps = Beamcore.Agent.Chat.ToolRuntime.default()
-
     roles =
       if roles_opt = Keyword.get(opts, :roles) do
         roles_opt
@@ -95,7 +92,6 @@ defmodule Beamcore.Agent.Chat.Session do
       total_tokens: 0,
       last_prompt_tokens: 0,
       compaction_count: 0,
-      runtime_caps: runtime_caps,
       workspace_root: workspace_root,
       roles: roles,
       screen_type: screen_type,
