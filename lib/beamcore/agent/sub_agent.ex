@@ -4,7 +4,7 @@ defmodule Beamcore.Agent.SubAgent do
   alias Beamcore.Agent.Chat.API
 
   @default_timeout 60_000
-  @max_tool_depth 5
+  @max_tool_depth 15
 
   @doc "Run a sub-agent task synchronously."
   def run(task, opts \\ []) when is_binary(task) do
@@ -56,13 +56,21 @@ defmodule Beamcore.Agent.SubAgent do
            ) do
         {:ok, %{message: message}} ->
           handle_response(message, selection, messages, tools, temperature, depth)
+
         {:error, reason} ->
           {:error, reason}
       end
     end
   end
 
-  defp handle_response(%{"tool_calls" => [_ | _] = tool_calls}, selection, messages, tools, temperature, depth) do
+  defp handle_response(
+         %{"tool_calls" => [_ | _] = tool_calls},
+         selection,
+         messages,
+         tools,
+         temperature,
+         depth
+       ) do
     tool_results = execute_tool_calls(tool_calls)
     new_messages = messages ++ [message_from_calls(tool_calls)] ++ tool_results
     agent_loop(selection, new_messages, tools, temperature, depth + 1)
@@ -99,6 +107,7 @@ defmodule Beamcore.Agent.SubAgent do
   end
 
   defp get_tools(caps, true), do: Beamcore.Agent.Tools.Dispatcher.tool_specs(caps)
+
   defp get_tools(caps, tool_names) when is_list(tool_names) do
     all = Beamcore.Agent.Tools.Dispatcher.tool_specs(caps)
     Enum.filter(all, &(&1["function"]["name"] in tool_names))
