@@ -134,10 +134,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
   defp evaluate(opts) do
     configure_heap_limit(Keyword.fetch!(opts, :max_memory_bytes))
     workspace_root = Keyword.fetch!(opts, :workspace_root)
-    caps = Keyword.fetch!(opts, :runtime_caps)
-
     Process.put(:workspace_root, workspace_root)
-    Process.put(:beamcore_tool_runtime, caps)
 
     run = fn ->
       max_output = Keyword.fetch!(opts, :max_output_bytes)
