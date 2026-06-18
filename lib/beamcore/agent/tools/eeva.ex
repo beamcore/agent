@@ -10,7 +10,6 @@ defmodule Beamcore.Agent.Tools.Eeva do
   program it needs, using the language and runtime directly.
   """
 
-  alias Beamcore.Agent.Chat.ToolRuntime
   alias Beamcore.Agent.Tools.Eeva.{Sandbox, Supervisor, Worker}
   alias Beamcore.Agent.Tools.PathInput
 
@@ -53,10 +52,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
     }
   end
 
-  def execute(params),
-    do: execute(params, Process.get(:beamcore_tool_runtime) || ToolRuntime.default())
-
-  def execute(params, caps) when is_map(params) and is_map(caps) do
+  def execute(params) when is_map(params) do
     code = Map.get(params, "code") || Map.get(params, :code)
 
     try do
@@ -67,7 +63,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
         true ->
           code = normalize_code(code)
           emit_preview(preview_code(code))
-          prepare_and_execute(code, caps)
+          prepare_and_execute(code)
       end
     rescue
       error ->
@@ -84,7 +80,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   end
 
-  def execute(_params, _caps),
+  def execute(_params),
     do: encode_error("Parameters must be an object", "invalid_request")
 
   @doc false
@@ -136,33 +132,32 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   defp fence_line?(_), do: false
 
-  defp prepare_and_execute(code, caps) do
-    case Sandbox.prepare(code, caps,
+  defp prepare_and_execute(code) do
+    case Sandbox.prepare(code,
            max_code_bytes: limit(:max_code_bytes, @default_max_code_bytes),
            max_ast_nodes: limit(:max_ast_nodes, @default_max_ast_nodes)
          ) do
       {:ok, prepared} ->
-        execute_prepared(code, prepared, caps)
+        execute_prepared(code, prepared)
 
       {:error, reason} ->
         encode_error(reason, "execution_guard")
     end
   end
 
-  defp execute_prepared(code, prepared, caps) do
+  defp execute_prepared(code, prepared) do
     owner = self()
     workspace_root = PathInput.workspace_root()
 
-    result = run(prepared.quoted, caps, owner, workspace_root)
+    result = run(prepared.quoted, owner, workspace_root)
 
     format_result(result, code, prepared)
   end
 
-  defp run(quoted, caps, owner, workspace_root) do
+  defp run(quoted, owner, workspace_root) do
     opts = [
       quoted: quoted,
       owner: owner,
-      runtime_caps: caps,
       workspace_root: workspace_root,
       timeout_ms: limit(:timeout_ms, @default_timeout_ms),
       max_memory_bytes: limit(:max_memory_bytes, @default_max_memory_bytes),

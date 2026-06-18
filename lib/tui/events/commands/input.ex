@@ -50,7 +50,7 @@ defmodule Beamcore.TUI.Events.Commands.Input do
 
         state
         |> State.add_message(:user, value)
-        |> Commands.start_turn(value, nil)
+        |> Commands.start_turn(value)
         |> Map.put(:show_commands, false)
     end
   end

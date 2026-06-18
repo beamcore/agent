@@ -16,11 +16,6 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert output =~ "/help"
   end
 
-  test "new F1 sessions have runtime caps", %{session: session} do
-    assert session.runtime_caps.allow_network
-    assert session.runtime_caps.allow_memory_read
-    assert session.runtime_caps.allow_memory_write
-  end
 
   test "legacy safety mode command is not part of the simplified command surface", %{
     session: session

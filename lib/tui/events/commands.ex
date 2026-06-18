@@ -61,7 +61,7 @@ defmodule Beamcore.TUI.Events.Commands do
       message != "" ->
         state
         |> State.add_message(:user, message)
-        |> start_turn(message, nil)
+        |> start_turn(message)
 
       true ->
         state
@@ -69,7 +69,7 @@ defmodule Beamcore.TUI.Events.Commands do
     end
   end
 
-  def start_turn(state, content, caps) do
+  def start_turn(state, content) do
     parent = self()
     session = state.session
 
@@ -83,7 +83,7 @@ defmodule Beamcore.TUI.Events.Commands do
 
         try do
           updated =
-            Loop.send_message(session, content, nil, caps,
+            Loop.send_message(session, content, nil,
               silent: true,
               event_handler: fn event ->
                 send(parent, {:runtime_event, current_worker_pid, event})
@@ -101,13 +101,6 @@ defmodule Beamcore.TUI.Events.Commands do
       end)
 
     State.start_worker(state, pid)
-  end
-
-  defp apply_command_result({:run_pending, session, content, caps}, state, _command) do
-    state
-    |> State.set_session(session)
-    |> State.add_message(:system, "Executing legacy pending action once.")
-    |> start_turn(content, caps)
   end
 
   defp apply_command_result(session, state, "new" <> _ = command) do

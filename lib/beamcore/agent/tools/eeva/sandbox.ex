@@ -11,10 +11,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
 
   @type prepared :: %{quoted: Macro.t(), node_count: non_neg_integer()}
 
-  @spec prepare(binary(), map(), keyword()) :: {:ok, prepared()} | {:error, binary()}
-  def prepare(code, caps, opts \\ [])
+  @spec prepare(binary(), keyword()) :: {:ok, prepared()} | {:error, binary()}
+  def prepare(code, opts \\ [])
 
-  def prepare(code, caps, opts) when is_binary(code) and is_map(caps) do
+  def prepare(code, opts) when is_binary(code) and is_list(opts) do
     max_code_bytes = Keyword.get(opts, :max_code_bytes, 64_000)
     max_ast_nodes = Keyword.get(opts, :max_ast_nodes, 12_000)
 
@@ -33,7 +33,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
     end
   end
 
-  def prepare(_code, _caps, _opts), do: {:error, "Eeva code must be a string."}
+  def prepare(_code, _opts), do: {:error, "Eeva code must be a string."}
 
   defp parse(code), do: parse(code, 8)
 

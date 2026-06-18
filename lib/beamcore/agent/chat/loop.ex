@@ -6,15 +6,14 @@ defmodule Beamcore.Agent.Chat.Loop do
   alias Beamcore.Agent.Chat.{
     API,
     ModeSettings,
-    Session,
-    ToolRuntime
+    Session
   }
 
   alias Beamcore.Agent.Tools.Dispatcher
 
-  def send_message(session, content, pid, runtime_caps \\ nil, opts \\ []) do
+  def send_message(session, content, pid, opts \\ []) do
     with {:ok, session} <- ensure_client(session, opts) do
-      do_send_message(session, content, pid, runtime_caps, opts)
+      do_send_message(session, content, pid, opts)
     else
       {:error, session} -> session
     end
@@ -34,32 +33,28 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp ensure_client(session, _opts), do: {:ok, session}
 
-  defp do_send_message(session, content, pid, runtime_caps, opts) do
+  defp do_send_message(session, content, pid, opts) do
     # Make the event handler available to tools (e.g., eeva preview) via process dict.
     case Keyword.get(opts, :event_handler) do
       handler when is_function(handler, 1) -> Process.put(:event_handler, handler)
       _ -> :ok
     end
 
-    caps =
-      runtime_caps
-      |> Kernel.||(session.runtime_caps)
-      |> Kernel.||(ToolRuntime.default())
 
     emit(opts, {:status, :thinking})
 
     user_message = %{role: "user", content: content}
     Session.log(session, user_message)
 
-    tools = Dispatcher.tool_specs(caps)
+    tools = Dispatcher.tool_specs()
     messages = session.messages ++ [user_message]
-    messages = inject_runtime_message(messages, caps, tools)
+    messages = inject_runtime_message(messages, tools)
 
-    process_messages(session, messages, pid, 0, caps, opts)
+    process_messages(session, messages, pid, 0, opts)
   end
 
-  defp process_messages(session, messages, pid, depth, caps, opts) do
-    tools = Dispatcher.tool_specs(caps)
+  defp process_messages(session, messages, pid, depth, opts) do
+    tools = Dispatcher.tool_specs()
     settings = mode_settings(session)
 
     opts =
@@ -97,7 +92,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     handle_api_result(api_result, session, messages, %{
       pid: pid,
-      caps: caps,
       opts: opts,
       settings: settings,
       call_elapsed: call_elapsed,
@@ -108,7 +102,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp handle_api_result(api_result, session, messages, ctx) do
     %{
       pid: pid,
-      caps: caps,
       opts: opts,
       settings: settings,
       call_elapsed: call_elapsed,
@@ -149,7 +142,7 @@ defmodule Beamcore.Agent.Chat.Loop do
               emit(opts, {:status, :tool_running})
               emit(opts, {:tool_running, name, args})
 
-              content = Dispatcher.execute(name, args, caps)
+              content = Dispatcher.execute(name, args)
 
               emit(opts, {:tool_finished, name, args, content})
 
@@ -179,7 +172,6 @@ defmodule Beamcore.Agent.Chat.Loop do
             all_messages,
             pid,
             depth + 1,
-            caps,
             opts
           )
         else
@@ -382,10 +374,10 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp has_tool_calls?(_message), do: false
 
-  defp inject_runtime_message(messages, caps, tools) do
+  defp inject_runtime_message(messages, tools) do
     runtime_message = %{
       role: "system",
-      content: runtime_summary(caps, tools)
+      content: runtime_summary(tools)
     }
 
     case messages do
@@ -400,7 +392,7 @@ defmodule Beamcore.Agent.Chat.Loop do
     end
   end
 
-  defp runtime_summary(_caps, tools) do
+  defp runtime_summary(tools) do
     tool_names =
       tools
       |> Enum.map(fn tool ->
