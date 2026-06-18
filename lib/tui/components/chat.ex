@@ -10,6 +10,14 @@ defmodule Beamcore.TUI.Components.Chat do
   defdelegate visible_message_window(messages, wrap_width, viewport_height, distance_from_bottom),
     to: MessageWindow
 
+  defdelegate visible_message_window_indexed(
+                messages,
+                wrap_width,
+                viewport_height,
+                distance_from_bottom
+              ),
+              to: MessageWindow
+
   def widget(state, %Rect{} = area) do
     wrap_width = content_width(area)
     viewport_height = max(area.height - 2, 1)
@@ -41,37 +49,101 @@ defmodule Beamcore.TUI.Components.Chat do
     [{EmptyState.widget(text), max(5, Bubbles.line_count(text))}]
   end
 
-  defp message_items(%{messages: messages}, wrap_width) do
-    Enum.flat_map(messages, fn
-      %{role: :user, content: content} ->
-        Bubbles.bubble("You", content, Theme.style(:user), wrap_width, :plain)
+  defp message_items(%{indexed_messages: indexed} = state, wrap_width) do
+    collapsed = Map.get(state, :collapsed_blocks, %{})
 
-      %{role: :assistant, content: content} ->
-        Bubbles.bubble("Agent", content, Theme.style(:accent), wrap_width, :markdown)
+    indexed
+    |> Enum.flat_map(fn {%{role: role, content: content}, orig_idx} ->
+      msg_collapsed = Map.get(collapsed, orig_idx, MapSet.new())
 
-      %{role: :tool, content: content} ->
-        Bubbles.tool_bubble("Modify File", content, wrap_width)
+      case role do
+        :user ->
+          Bubbles.bubble(
+            "You",
+            content,
+            Theme.style(:user),
+            Theme.style(:user),
+            wrap_width,
+            :plain
+          )
 
-      %{role: :error, content: content} ->
-        Bubbles.bubble("Error", content, Theme.style(:error), wrap_width, :plain)
+        :assistant ->
+          Bubbles.bubble(
+            "Agent",
+            content,
+            Theme.style(:accent),
+            Theme.style(:base),
+            wrap_width,
+            :markdown,
+            collapsed_blocks: msg_collapsed
+          )
 
-      %{role: :local, content: content} ->
-        Bubbles.bubble("Helper", content, Theme.style(:status_hot), wrap_width, :plain)
+        :tool ->
+          Bubbles.tool_bubble("Modify File", content, wrap_width)
 
-      %{role: :eeva_preview, content: content} ->
-        Bubbles.eeva_preview_bubble(content, wrap_width)
+        :error ->
+          Bubbles.bubble(
+            "Error",
+            content,
+            Theme.style(:error),
+            Theme.style(:error),
+            wrap_width,
+            :plain
+          )
 
-      %{role: :memory, content: content} ->
-        Bubbles.bubble("Memory", content, Theme.style(:checkpoint), wrap_width, :plain)
+        :local ->
+          Bubbles.bubble(
+            "Helper",
+            content,
+            Theme.style(:status_hot),
+            Theme.style(:status_hot),
+            wrap_width,
+            :plain
+          )
 
-      %{role: :thinking, content: content} ->
-        Bubbles.bubble("Thinking", content, Theme.style(:thinking), wrap_width, :plain)
+        :eeva_preview ->
+          Bubbles.eeva_preview_bubble(content, wrap_width, msg_collapsed)
 
-      %{role: :checkpoint, content: content} ->
-        Bubbles.bubble("Checkpoint", content, Theme.style(:checkpoint), wrap_width, :plain)
+        :memory ->
+          Bubbles.bubble(
+            "Memory",
+            content,
+            Theme.style(:checkpoint),
+            Theme.style(:checkpoint),
+            wrap_width,
+            :plain
+          )
 
-      %{content: content} ->
-        Bubbles.bubble("System", content, Theme.style(:muted), wrap_width, :plain)
+        :thinking ->
+          Bubbles.bubble(
+            "Thinking",
+            content,
+            Theme.style(:thinking),
+            Theme.style(:thinking),
+            wrap_width,
+            :plain
+          )
+
+        :checkpoint ->
+          Bubbles.bubble(
+            "Checkpoint",
+            content,
+            Theme.style(:checkpoint),
+            Theme.style(:checkpoint),
+            wrap_width,
+            :plain
+          )
+
+        _ ->
+          Bubbles.bubble(
+            "System",
+            content,
+            Theme.style(:muted),
+            Theme.style(:muted),
+            wrap_width,
+            :plain
+          )
+      end
     end)
   end
 
@@ -79,16 +151,23 @@ defmodule Beamcore.TUI.Components.Chat do
     do: {state, 0}
 
   defp visible_message_state(state, wrap_width, viewport_height) do
-    {messages, bottom_spacer, effective_offset} =
-      MessageWindow.visible_message_window(
+    collapsed = Map.get(state, :collapsed_blocks, %{})
+
+    {indexed, bottom_spacer, effective_offset} =
+      MessageWindow.visible_message_window_indexed(
         state.messages,
         wrap_width,
         viewport_height,
-        state.scroll_offset
+        state.scroll_offset,
+        collapsed
       )
 
-    {%{state | messages: messages} |> Map.put(:bottom_spacer_height, bottom_spacer),
-     effective_offset}
+    modified =
+      state
+      |> Map.put(:indexed_messages, indexed)
+      |> Map.put(:bottom_spacer_height, bottom_spacer)
+
+    {modified, effective_offset}
   end
 
   defp append_bottom_spacer(items, height) when is_integer(height) and height > 0 do

@@ -4,7 +4,16 @@ defmodule Beamcore.TUI.State do
   """
 
   alias Beamcore.Agent.Chat.Session
-  alias Beamcore.TUI.State.{Activity, Animation, Factory, FileFinder, Scroll, WaitStatus}
+
+  alias Beamcore.TUI.State.{
+    Activity,
+    Animation,
+    Collapse,
+    Factory,
+    FileFinder,
+    Scroll,
+    WaitStatus
+  }
 
   defdelegate add_activity(state, name, args, status \\ :queued), to: Activity
   defdelegate update_activity(state, name, args, result), to: Activity
@@ -64,7 +73,8 @@ defmodule Beamcore.TUI.State do
             file_finder_cache: nil,
             notice: nil,
             screen_type: :agent,
-            show_theme_picker: false
+            show_theme_picker: false,
+            collapsed_blocks: %{}
 
   defdelegate new(terminal, textarea, opts \\ []), to: Factory
 
@@ -151,6 +161,9 @@ defmodule Beamcore.TUI.State do
 
   def mark_dirty(state), do: %{state | render_dirty?: true}
   def clear_dirty(state), do: %{state | render_dirty?: false}
+
+  defdelegate toggle_code_block(state, msg_idx, block_idx), to: Collapse
+  defdelegate toggle_all_collapsible(state), to: Collapse
 
   defp auto_scroll_on_new_message(state), do: Scroll.auto_scroll_on_new_message(state)
 

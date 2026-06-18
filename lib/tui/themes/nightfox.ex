@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Nightfox do
     syntax_number: %Style{fg: {:rgb, 230, 180, 99}},
     syntax_module: %Style{fg: {:rgb, 113, 189, 222}},
     syntax_operator: %Style{fg: {:rgb, 180, 142, 214}},
-    syntax_default: %Style{fg: {:rgb, 192, 199, 213}}
+    syntax_default: %Style{fg: {:rgb, 192, 199, 213}},
+    code_block: %Style{fg: {:rgb, 192, 199, 213}, bg: {:rgb, 36, 39, 48}},
+    code_header: %Style{fg: {:rgb, 101, 110, 131}, bg: {:rgb, 36, 39, 48}}
   }
 
   def styles, do: @styles

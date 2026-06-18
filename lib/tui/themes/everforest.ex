@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Everforest do
     syntax_number: %Style{fg: {:rgb, 230, 180, 90}},
     syntax_module: %Style{fg: {:rgb, 127, 187, 179}},
     syntax_operator: %Style{fg: {:rgb, 214, 153, 170}},
-    syntax_default: %Style{fg: {:rgb, 211, 198, 170}}
+    syntax_default: %Style{fg: {:rgb, 211, 198, 170}},
+    code_block: %Style{fg: {:rgb, 211, 198, 170}, bg: {:rgb, 54, 56, 50}},
+    code_header: %Style{fg: {:rgb, 133, 128, 116}, bg: {:rgb, 54, 56, 50}}
   }
 
   def styles, do: @styles

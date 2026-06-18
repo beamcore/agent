@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.RosePine do
     syntax_number: %Style{fg: {:rgb, 246, 193, 119}},
     syntax_module: %Style{fg: {:rgb, 235, 188, 186}},
     syntax_operator: %Style{fg: {:rgb, 196, 167, 231}},
-    syntax_default: %Style{fg: {:rgb, 224, 222, 244}}
+    syntax_default: %Style{fg: {:rgb, 224, 222, 244}},
+    code_block: %Style{fg: {:rgb, 224, 222, 244}, bg: {:rgb, 25, 23, 36}},
+    code_header: %Style{fg: {:rgb, 110, 106, 134}, bg: {:rgb, 25, 23, 36}}
   }
 
   def styles, do: @styles

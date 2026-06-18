@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Catppuccin do
     syntax_number: %Style{fg: {:rgb, 249, 226, 175}},
     syntax_module: %Style{fg: {:rgb, 137, 180, 250}},
     syntax_operator: %Style{fg: {:rgb, 137, 180, 250}},
-    syntax_default: %Style{fg: {:rgb, 205, 214, 244}}
+    syntax_default: %Style{fg: {:rgb, 205, 214, 244}},
+    code_block: %Style{fg: {:rgb, 205, 214, 244}, bg: {:rgb, 30, 30, 46}},
+    code_header: %Style{fg: {:rgb, 108, 112, 134}, bg: {:rgb, 30, 30, 46}}
   }
 
   def styles, do: @styles

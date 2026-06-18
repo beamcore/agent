@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.TokyoNight do
     syntax_number: %Style{fg: {:rgb, 224, 175, 104}},
     syntax_module: %Style{fg: {:rgb, 122, 162, 247}},
     syntax_operator: %Style{fg: {:rgb, 122, 162, 247}},
-    syntax_default: %Style{fg: {:rgb, 192, 202, 245}}
+    syntax_default: %Style{fg: {:rgb, 192, 202, 245}},
+    code_block: %Style{fg: {:rgb, 192, 202, 245}, bg: {:rgb, 26, 27, 46}},
+    code_header: %Style{fg: {:rgb, 86, 95, 137}, bg: {:rgb, 26, 27, 46}}
   }
 
   def styles, do: @styles

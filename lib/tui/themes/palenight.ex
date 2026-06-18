@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Palenight do
     syntax_number: %Style{fg: {:rgb, 255, 203, 107}},
     syntax_module: %Style{fg: {:rgb, 130, 170, 255}},
     syntax_operator: %Style{fg: {:rgb, 199, 146, 234}},
-    syntax_default: %Style{fg: {:rgb, 166, 172, 205}}
+    syntax_default: %Style{fg: {:rgb, 166, 172, 205}},
+    code_block: %Style{fg: {:rgb, 166, 172, 205}, bg: {:rgb, 35, 38, 52}},
+    code_header: %Style{fg: {:rgb, 88, 93, 120}, bg: {:rgb, 35, 38, 52}}
   }
 
   def styles, do: @styles

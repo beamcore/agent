@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Default do
     syntax_number: %Style{fg: :yellow},
     syntax_module: %Style{fg: :yellow},
     syntax_operator: %Style{fg: :gray},
-    syntax_default: %Style{}
+    syntax_default: %Style{},
+    code_block: %Style{fg: :white, bg: :black},
+    code_header: %Style{fg: :gray, bg: :black}
   }
 
   def styles, do: @styles

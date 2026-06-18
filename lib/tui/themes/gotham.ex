@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Gotham do
     syntax_number: %Style{fg: {:rgb, 214, 181, 90}},
     syntax_module: %Style{fg: {:rgb, 87, 214, 214}},
     syntax_operator: %Style{fg: {:rgb, 155, 130, 185}},
-    syntax_default: %Style{fg: {:rgb, 152, 187, 187}}
+    syntax_default: %Style{fg: {:rgb, 152, 187, 187}},
+    code_block: %Style{fg: {:rgb, 152, 187, 187}, bg: {:rgb, 22, 30, 33}},
+    code_header: %Style{fg: {:rgb, 80, 102, 104}, bg: {:rgb, 22, 30, 33}}
   }
 
   def styles, do: @styles

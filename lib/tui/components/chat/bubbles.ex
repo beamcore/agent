@@ -1,49 +1,43 @@
 defmodule Beamcore.TUI.Components.Chat.Bubbles do
   @moduledoc false
 
-  alias Beamcore.TUI.Components.Chat.{DiffRenderer, SyntaxHighlight}
-  alias Beamcore.TUI.{Theme, Wrap}
-  alias ExRatatui.Text.{Line, Span}
+  alias Beamcore.TUI.Components.Chat.Bubbles.CodeBlock
+  alias Beamcore.TUI.Components.Chat.DiffRenderer
+  alias Beamcore.TUI.Theme
   alias ExRatatui.Widgets.Paragraph
 
-  def bubble(label, content, style, wrap_width, kind) do
+  def bubble(label, content, _label_style, body_style, wrap_width, kind, opts \\ []) do
     body_width = max(wrap_width - 2, 10)
-
-    lines =
-      case kind do
-        :markdown -> Wrap.markdown_lines(to_string(content), body_width)
-        :plain -> Wrap.lines(to_string(content), body_width)
-      end
-
+    collapsed = Keyword.get(opts, :collapsed_blocks, MapSet.new())
     prefix = label_prefix(label)
-    card = card_text(prefix, lines, wrap_width)
 
-    [
-      {%Paragraph{text: card, style: style, wrap: false}, line_count(card)},
-      {%Paragraph{text: "", style: Theme.style(:subtle)}, 1}
-    ]
+    case kind do
+      :markdown -> markdown_bubble(prefix, content, body_style, body_width, collapsed)
+      :plain -> plain_bubble(prefix, content, body_style, body_width)
+    end
   end
 
   def tool_bubble(label, content, wrap_width),
     do: DiffRenderer.render(label, content, wrap_width)
 
-  def eeva_preview_bubble(code, wrap_width) do
-    first_line = %Line{
-      spans: [%Span{content: "\u26A1 EEVA", style: Theme.style(:accent)}]
-    }
+  def eeva_preview_bubble(code, wrap_width, collapsed \\ MapSet.new()),
+    do: CodeBlock.eeva_preview_bubble(code, wrap_width, collapsed)
 
-    max_len = max(wrap_width - 4, 10)
+  defp markdown_bubble(prefix, content, body_style, body_width, collapsed) do
+    CodeBlock.expanded_card(prefix, to_string(content), body_width, body_style, collapsed)
+  end
 
-    code_lines =
-      code
-      |> to_string()
-      |> String.split(~r/\r?\n/)
-      |> Enum.map(&SyntaxHighlight.highlight_line(&1, max_len))
+  defp plain_bubble(prefix, text, body_style, body_width) do
+    wrapped = Beamcore.TUI.Wrap.lines(text, body_width)
 
-    all_lines = [first_line | code_lines]
+    card =
+      case wrapped do
+        [] -> prefix <> " "
+        [first | rest] -> Enum.join(["#{prefix} #{first}" | Enum.map(rest, &"  #{&1}")], "\n")
+      end
 
     [
-      {%Paragraph{text: all_lines, style: Theme.style(:muted), wrap: false}, length(all_lines)},
+      {%Paragraph{text: card, style: body_style, wrap: false}, line_count(card)},
       {%Paragraph{text: "", style: Theme.style(:subtle)}, 1}
     ]
   end
@@ -59,22 +53,6 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
   defp label_prefix("Checkpoint"), do: "\u25C7"
   defp label_prefix(label), do: label |> to_string() |> String.slice(0, 1)
 
-  defp card_text(prefix, lines, wrap_width) do
-    body =
-      lines
-      |> Enum.flat_map(&split_preserving_width(&1, max(wrap_width - 2, 10)))
-      |> Enum.map(&"  #{&1}")
-
-    trimmed_body =
-      body
-      |> Enum.join("\n")
-      |> String.trim()
-
-    ["#{prefix} " <> trimmed_body]
-    |> Enum.join("\n")
-  end
-
-  defp split_preserving_width(line, width), do: Wrap.lines(to_string(line), width)
-
+  def line_count(%Paragraph{text: lines}) when is_list(lines), do: length(lines)
   def line_count(text), do: text |> to_string() |> String.split("\n") |> length()
 end

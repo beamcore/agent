@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.OneDark do
     syntax_number: %Style{fg: {:rgb, 209, 154, 102}},
     syntax_module: %Style{fg: {:rgb, 229, 192, 123}},
     syntax_operator: %Style{fg: {:rgb, 198, 120, 221}},
-    syntax_default: %Style{fg: {:rgb, 171, 178, 191}}
+    syntax_default: %Style{fg: {:rgb, 171, 178, 191}},
+    code_block: %Style{fg: {:rgb, 171, 178, 191}, bg: {:rgb, 40, 44, 52}},
+    code_header: %Style{fg: {:rgb, 92, 99, 112}, bg: {:rgb, 40, 44, 52}}
   }
 
   def styles, do: @styles

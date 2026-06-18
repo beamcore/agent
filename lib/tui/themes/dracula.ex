@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.Dracula do
     syntax_number: %Style{fg: {:rgb, 255, 184, 108}},
     syntax_module: %Style{fg: {:rgb, 139, 233, 253}},
     syntax_operator: %Style{fg: {:rgb, 255, 121, 198}},
-    syntax_default: %Style{fg: {:rgb, 248, 248, 242}}
+    syntax_default: %Style{fg: {:rgb, 248, 248, 242}},
+    code_block: %Style{fg: {:rgb, 248, 248, 242}, bg: {:rgb, 40, 42, 54}},
+    code_header: %Style{fg: {:rgb, 98, 114, 164}, bg: {:rgb, 40, 42, 54}}
   }
 
   def styles, do: @styles

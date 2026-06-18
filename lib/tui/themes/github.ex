@@ -31,7 +31,9 @@ defmodule Beamcore.TUI.Themes.GitHub do
     syntax_number: %Style{fg: {:rgb, 9, 105, 218}},
     syntax_module: %Style{fg: {:rgb, 210, 153, 34}},
     syntax_operator: %Style{fg: {:rgb, 209, 36, 47}},
-    syntax_default: %Style{fg: {:rgb, 36, 41, 47}}
+    syntax_default: %Style{fg: {:rgb, 36, 41, 47}},
+    code_block: %Style{fg: {:rgb, 36, 41, 47}, bg: {:rgb, 255, 255, 255}},
+    code_header: %Style{fg: {:rgb, 139, 148, 158}, bg: {:rgb, 255, 255, 255}}
   }
 
   def styles, do: @styles
