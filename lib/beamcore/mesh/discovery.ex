@@ -58,6 +58,7 @@ defmodule Beamcore.Mesh.Discovery do
         {:ok, node_name} -> handle_discovered_peer(node_name, state)
         _ -> state
       end
+
     {:noreply, new_state}
   end
 
@@ -75,22 +76,28 @@ defmodule Beamcore.Mesh.Discovery do
 
   defp open_udp_socket do
     case :gen_udp.open(@port, [
-      :binary,
-      {:active, true},
-      {:reuseaddr, true},
-      {:broadcast, true},
-      {:ip, {0, 0, 0, 0}}
-    ]) do
+           :binary,
+           {:active, true},
+           {:reuseaddr, true},
+           {:broadcast, true},
+           {:ip, {0, 0, 0, 0}}
+         ]) do
       {:ok, socket} ->
         Logger.info("[Discovery] UDP listening on port " <> Integer.to_string(@port))
         socket
 
       {:error, :eaddrinuse} ->
-        Logger.warning("[Discovery] UDP port #{@port} in use, falling back to EPMD-only discovery")
+        Logger.warning(
+          "[Discovery] UDP port #{@port} in use, falling back to EPMD-only discovery"
+        )
+
         nil
 
       {:error, reason} ->
-        Logger.warning("[Discovery] UDP open failed: #{inspect(reason)}, falling back to EPMD-only")
+        Logger.warning(
+          "[Discovery] UDP open failed: #{inspect(reason)}, falling back to EPMD-only"
+        )
+
         nil
     end
   end
@@ -125,6 +132,7 @@ defmodule Beamcore.Mesh.Discovery do
 
   defp hostname do
     node = Atom.to_string(Node.self())
+
     case String.split(node, "@", parts: 2) do
       [_, host] -> host
       _ -> "localhost"
@@ -152,6 +160,7 @@ defmodule Beamcore.Mesh.Discovery do
     case data do
       "BEAMCORE_MESH:1:" <> node_str ->
         trimmed = String.trim(node_str)
+
         if valid_node_name?(trimmed) do
           {:ok, String.to_existing_atom(trimmed)}
         else
@@ -168,5 +177,4 @@ defmodule Beamcore.Mesh.Discovery do
       String.length(name) > 9 and
       String.match?(name, ~r/^beamcore-[a-f0-9]+$/)
   end
-
 end

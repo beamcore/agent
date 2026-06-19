@@ -40,7 +40,6 @@ defmodule Beamcore.Agent.Chat.Loop do
       _ -> :ok
     end
 
-
     emit(opts, {:status, :thinking})
 
     user_message = %{role: "user", content: content}

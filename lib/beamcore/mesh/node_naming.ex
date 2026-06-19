@@ -26,7 +26,11 @@ defmodule Beamcore.Mesh.NodeNaming do
   @doc "Generates a unique short node name for this instance."
   def generate_name do
     hostname = elem(:inet.gethostname(), 1) |> to_string()
-    material = hostname <> "-" <> System.pid() <> "-" <> Integer.to_string(System.system_time(:millisecond))
+
+    material =
+      hostname <>
+        "-" <> System.pid() <> "-" <> Integer.to_string(System.system_time(:millisecond))
+
     hash = :crypto.hash(:sha256, material) |> binary_part(0, 2) |> Base.encode16(case: :lower)
     @name_prefix <> "-" <> hash
   end
