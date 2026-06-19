@@ -59,14 +59,10 @@ defmodule Beamcore.TUI.Theme do
   @spec list_themes() :: [atom()]
   def list_themes, do: Map.keys(@themes)
 
-  @config_dir Path.join(System.user_home!(), ".beamcore")
-  @theme_file Path.join(@config_dir, "theme")
-
   @spec set_theme(atom()) :: :ok | {:error, :unknown_theme}
   def set_theme(name) when is_map_key(@themes, name) do
     Application.put_env(:beamcore, :tui_theme, name)
-    File.mkdir_p!(@config_dir)
-    File.write!(@theme_file, Atom.to_string(name))
+    Beamcore.Config.put(:tui_theme, Atom.to_string(name))
     :ok
   end
 
@@ -100,12 +96,12 @@ defmodule Beamcore.TUI.Theme do
   end
 
   defp load_persisted_theme do
-    case File.read(@theme_file) do
-      {:ok, name} ->
+    case Beamcore.Config.get(:tui_theme) do
+      name when is_binary(name) ->
         atom = String.to_existing_atom(String.trim(name))
         if Map.has_key?(@themes, atom), do: atom, else: @default_theme
 
-      {:error, _} ->
+      _ ->
         @default_theme
     end
   rescue
