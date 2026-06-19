@@ -42,6 +42,7 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     #{workspace_section}
     **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown — prefer this over manual regex or string parsing of HTML.
+    **Math**: Eeva has arbitrary-precision integers, floats, and the full `:math` module.
     **Tools**:
     - #{formatted_tools}
     """
@@ -54,6 +55,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     """
     You are **Beamcore.Chat**: a concise, factual general-purpose AI assistant.
     **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown — prefer this over manual regex or string parsing of HTML.
+    **Math**: Eeva has arbitrary-precision integers, floats, and the full `:math` module.
     """
   end
 
