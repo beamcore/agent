@@ -15,17 +15,29 @@ defmodule Beamcore.TUI.Components.EmptyState do
 
   def text(%{memory_total: total}) do
     """
-    BEAMCORE.AGENT
-    Fast, visible coding workflow for this workspace
+     ╔══════════════════════════════════════════╗
+     ║          B E A M C O R E  ·  A G E N T   ║
+     ╚══════════════════════════════════════════╝
 
-    Quick starts
-      Review project        Generate diagram
-      Explain a module      Make a focused change
+            autonomous coding · visible workflow
 
-    /help commands    @ file search    autonomous tools
-    Tool calls and blocked attempts appear as compact chat/status notices.
+    ─────────────────────────────────────────────
 
-    Available #{total || 0} memories
+      quick start
+
+        review project         generate diagram
+        explain a module       make a focused change
+
+    ─────────────────────────────────────────────
+
+      /help  commands  @ file search  autonomous tools
+
+      tool calls and blocked attempts appear as
+      compact chat / status notices
+
+    ─────────────────────────────────────────────
+
+      #{total || 0} memories loaded
     """
   end
 
