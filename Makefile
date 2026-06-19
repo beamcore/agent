@@ -20,7 +20,7 @@ DRY_RUN ?= 0
 .PHONY: all help
 .PHONY: install install-dev uninstall
 .PHONY: deps compile release test format format-check dialyzer check check-full
-.PHONY: chat shell run-memory
+.PHONY: chat shell run-memory cluster
 .PHONY: dev-setup init config-status version clean update
 
 all: compile
@@ -180,13 +180,13 @@ clean:
 # Running
 # ==============================================================================
 
-## chat: Start the TUI chat (dev mode)
+## chat: Start the TUI chat (dev mode, auto-joins mesh)
 chat: compile
-	mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
+	elixir --sname "beamcore-$$$$" -S mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
 
-## run-memory: Run memory service standalone (cluster member)
+## run-memory: Run memory service standalone (mesh member)
 run-memory: compile
-	MEMORY_GLOBAL=true elixir --sname memory -S mix run --no-halt
+	elixir --sname "beamcore-memory" -S mix run --no-halt
 
 # ==============================================================================
 # Setup & Config
@@ -247,8 +247,8 @@ help:
 	@printf "    \033[36m%-16s\033[0m %s\n" "release" "Build a prod release"
 	@echo ""
 	@echo "  \033[1mRunning:\033[0m"
-	@printf "    \033[36m%-16s\033[0m %s\n" "chat" "Start TUI chat (dev mode)"
-	@printf "    \033[36m%-16s\033[0m %s\n" "run-memory" "Run memory service standalone"
+	@printf "    \033[36m%-16s\033[0m %s\n" "chat" "Start TUI chat (dev mode, auto-joins mesh)"
+	@printf "    \033[36m%-16s\033[0m %s\n" "run-memory" "Run standalone mesh member"
 	@echo ""
 	@echo "  \033[1mSetup:\033[0m"
 	@printf "    \033[36m%-16s\033[0m %s\n" "dev-setup" "One-shot dev environment setup"
