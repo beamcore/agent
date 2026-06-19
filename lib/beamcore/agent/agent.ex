@@ -22,6 +22,9 @@ defmodule Beamcore.Agent do
     Beamcore.AppLog.info("Application starting", app: :agent)
     remember_initial_workspace()
 
+    # Ensure we are a distributed Erlang node before starting supervised processes
+    Beamcore.Mesh.NodeNaming.ensure_distributed!()
+
     children = [
       Beamcore.Config,
       Beamcore.Memory,
@@ -30,6 +33,8 @@ defmodule Beamcore.Agent do
       Beamcore.Agent.Tools.Eeva.AtomBudget,
       Beamcore.Agent.Tools.Eeva.Supervisor,
       Beamcore.Provider.Health,
+      Beamcore.Mesh,
+      Beamcore.Mesh.Discovery,
       Beamcore.TUI.DynamicSupervisor
     ]
 

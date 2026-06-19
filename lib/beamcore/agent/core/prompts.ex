@@ -38,6 +38,8 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     **Memory**: You have persistent memory via `Beamcore.Memory`. Use it to remember facts, decisions, patterns, and context across sessions. Write with `remember/5`, read with `recall/4` and `list/3`, delete with `forget/4`. Discover functions with `Beamcore.Helpers.info(Beamcore.Memory, :functions)`.
 
+    **Mesh**: Distributed node. `Node.self()`, `Node.list()`, `:erl_epmd.names()` — find peers, connect.
+
     #{workspace_section}
     **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown — prefer this over manual regex or string parsing of HTML.
     **Tools**:
