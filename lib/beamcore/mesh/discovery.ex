@@ -151,19 +151,22 @@ defmodule Beamcore.Mesh.Discovery do
   defp parse_beacon(data) do
     case data do
       "BEAMCORE_MESH:1:" <> node_str ->
-        try do
-          {:ok, String.to_existing_atom(String.trim(node_str))}
-        rescue
-          _ ->
-            try do
-              {:ok, String.to_atom(String.trim(node_str))}
-            rescue
-              _ -> :error
-            end
+        trimmed = String.trim(node_str)
+        if valid_node_name?(trimmed) do
+          {:ok, String.to_existing_atom(trimmed)}
+        else
+          :error
         end
 
       _ ->
         :error
     end
   end
+
+  defp valid_node_name?(name) do
+    String.starts_with?(name, "beamcore-") and
+      String.length(name) > 9 and
+      String.match?(name, ~r/^beamcore-[a-f0-9]+$/)
+  end
+
 end
