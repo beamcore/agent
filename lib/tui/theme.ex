@@ -6,26 +6,36 @@ defmodule Beamcore.TUI.Theme do
   use their signature RGB palette. Switch at runtime with `set_theme/1`
   or via the `/theme` command.
 
-  20 themes available:
+  30 themes available:
     :default      — terminal defaults
+    :arctic       — ice blue/white
     :ayu          — clean modern
     :catppuccin   — pastel warm (mocha)
+    :cherry       — red/pink on dark
+    :cyberpunk    — neon pink/cyan
     :dracula      — purple/cyan
     :everforest   — green nature
+    :forest       — deep green
     :github       — light clean
     :gotham       — dark blue
     :gruvbox      — retro warm
     :kanagawa     — japanese ink
+    :lavender     — purple/violet
+    :matrix       — green on black
     :melange      — muted warm
     :molokai      — classic dark
     :monokai      — classic vivid
     :nightfox     — warm dark
     :nord         — arctic blue
+    :ocean        — deep blue/teal
     :one_dark     — atom dark
     :palenight    — purple dark
+    :retro_terminal — amber on dark
     :rose_pine    — soft pink
     :solarized    — balanced
+    :sunset       — warm orange/pink
     :tokyo_night  — cool purple
+    :volcanic     — red/orange on dark
     :zenburn      — low contrast
   """
 
@@ -33,24 +43,34 @@ defmodule Beamcore.TUI.Theme do
 
   @themes %{
     default: Beamcore.TUI.Themes.Default,
+    arctic: Beamcore.TUI.Themes.Arctic,
     ayu: Beamcore.TUI.Themes.Ayu,
     catppuccin: Beamcore.TUI.Themes.Catppuccin,
+    cherry: Beamcore.TUI.Themes.Cherry,
+    cyberpunk: Beamcore.TUI.Themes.Cyberpunk,
     dracula: Beamcore.TUI.Themes.Dracula,
     everforest: Beamcore.TUI.Themes.Everforest,
+    forest: Beamcore.TUI.Themes.Forest,
     github: Beamcore.TUI.Themes.GitHub,
     gotham: Beamcore.TUI.Themes.Gotham,
     gruvbox: Beamcore.TUI.Themes.Gruvbox,
     kanagawa: Beamcore.TUI.Themes.Kanagawa,
+    lavender: Beamcore.TUI.Themes.Lavender,
+    matrix: Beamcore.TUI.Themes.Matrix,
     melange: Beamcore.TUI.Themes.Melange,
     molokai: Beamcore.TUI.Themes.Molokai,
     monokai: Beamcore.TUI.Themes.Monokai,
     nightfox: Beamcore.TUI.Themes.Nightfox,
     nord: Beamcore.TUI.Themes.Nord,
+    ocean: Beamcore.TUI.Themes.Ocean,
     one_dark: Beamcore.TUI.Themes.OneDark,
     palenight: Beamcore.TUI.Themes.Palenight,
+    retro_terminal: Beamcore.TUI.Themes.RetroTerminal,
     rose_pine: Beamcore.TUI.Themes.RosePine,
     solarized: Beamcore.TUI.Themes.Solarized,
+    sunset: Beamcore.TUI.Themes.Sunset,
     tokyo_night: Beamcore.TUI.Themes.TokyoNight,
+    volcanic: Beamcore.TUI.Themes.Volcanic,
     zenburn: Beamcore.TUI.Themes.Zenburn
   }
 
