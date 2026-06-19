@@ -15,29 +15,18 @@ defmodule Beamcore.TUI.Components.EmptyState do
 
   def text(%{memory_total: total}) do
     """
-     ╔══════════════════════════════════════════╗
-     ║          B E A M C O R E  ·  A G E N T   ║
-     ╚══════════════════════════════════════════╝
 
-            autonomous coding · visible workflow
 
-    ─────────────────────────────────────────────
 
-      quick start
+          B E A M C O R E  ·  A G E N T
 
-        review project         generate diagram
-        explain a module       make a focused change
+      ──────────────────────────────────
 
-    ─────────────────────────────────────────────
+      /help · /commands · @file · tools
 
-      /help  commands  @ file search  autonomous tools
+      ──────────────────────────────────
 
-      tool calls and blocked attempts appear as
-      compact chat / status notices
-
-    ─────────────────────────────────────────────
-
-      #{total || 0} memories loaded
+        #{total || 0} memories
     """
   end
 
