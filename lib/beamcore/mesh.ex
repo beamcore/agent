@@ -29,7 +29,12 @@ defmodule Beamcore.Mesh do
 
   @doc "Returns cluster info: self + connected peers."
   def cluster_info do
-    %{node: Node.self(), alive?: Node.alive?(), peers: Node.list(), peer_count: length(Node.list())}
+    %{
+      node: Node.self(),
+      alive?: Node.alive?(),
+      peers: Node.list(),
+      peer_count: length(Node.list())
+    }
   end
 
   @doc "Attempt to connect to a specific node."
@@ -63,9 +68,11 @@ defmodule Beamcore.Mesh do
 
   def handle_info({:nodedown, node}, state) do
     Logger.info("[Mesh] Node disconnected: " <> inspect(node))
+
     if MapSet.member?(state.known_peers, node) do
       Process.send_after(self(), {:retry_connect, node}, @retry_interval_ms)
     end
+
     {:noreply, state}
   end
 
@@ -78,12 +85,17 @@ defmodule Beamcore.Mesh do
 
         _ ->
           count = Map.get(state.connect_failures, node, 0) + 1
+
           if count < @max_retries do
             delay = min(@retry_interval_ms * Integer.pow(2, min(count, 4)), 60_000)
             Process.send_after(self(), {:retry_connect, node}, delay)
             {:noreply, %{state | connect_failures: Map.put(state.connect_failures, node, count)}}
           else
-            Logger.warning("[Mesh] Giving up on " <> inspect(node) <> " after " <> Integer.to_string(count) <> " attempts")
+            Logger.warning(
+              "[Mesh] Giving up on " <>
+                inspect(node) <> " after " <> Integer.to_string(count) <> " attempts"
+            )
+
             {:noreply, %{state | connect_failures: Map.put(state.connect_failures, node, count)}}
           end
       end
@@ -117,8 +129,12 @@ defmodule Beamcore.Mesh do
 
   defp env_peers do
     case System.get_env("BEAMCORE_PEERS") do
-      nil -> []
-      "" -> []
+      nil ->
+        []
+
+      "" ->
+        []
+
       peers_str ->
         peers_str
         |> String.split(",", trim: true)

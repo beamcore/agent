@@ -16,7 +16,6 @@ defmodule Beamcore.Agent.Chat.CommandsTest do
     assert output =~ "/help"
   end
 
-
   test "legacy safety mode command is not part of the simplified command surface", %{
     session: session
   } do
