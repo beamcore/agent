@@ -2,26 +2,16 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Beamcore, please report it
-responsibly. **Do not open a public GitHub issue.**
+If you discover a security issue in Beamcore, **please open a public GitHub issue**.
 
-Instead, please email the maintainers at:
+We believe in transparency — security problems should be discussed in the open so the whole community can see, understand, and help fix them.
 
-```
-security@beamcore.dev
-```
-
-Include:
+When filing an issue, include:
 
 - A description of the vulnerability
 - Steps to reproduce
 - Potential impact
 - Suggested fix (if any)
-
-## Response
-
-We will acknowledge receipt within 48 hours and aim to provide a fix or
-mitigation plan within 7 days for confirmed vulnerabilities.
 
 ## Scope
 
