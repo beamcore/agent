@@ -57,7 +57,6 @@ defmodule Beamcore.Agent do
   """
   def version, do: @version
 
-
   @doc """
   Start the Beamcore.Agent application.
   """
