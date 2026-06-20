@@ -5,6 +5,8 @@ defmodule Beamcore.TUI.Components.Providers do
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
 
+  @box_inner 74
+
   defstruct screen_type: :providers,
             render_dirty?: true,
             configure_for: :agent,
@@ -39,74 +41,96 @@ defmodule Beamcore.TUI.Components.Providers do
   defp render_list_items(p, width) do
     if p.adding?,
       do: Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base)),
-      else: table_header(width) ++ render_provider_rows(p, width)
+      else: table_header() ++ render_rows(p, width)
   end
 
-  defp table_header(width) do
-    muted = Theme.style(:muted)
+  defp table_header do
     subtle = Theme.style(:subtle)
-    sep = String.duplicate("─", max(width - 6, 4))
+    muted = Theme.style(:muted)
 
     [
+      %Line{spans: [%Span{content: "   ╭─ provider #{dashes(62)}─╮", style: subtle}]},
       %Line{
         spans: [
-          %Span{content: "      #{String.pad_trailing("name", 16)}", style: muted},
-          %Span{content: String.pad_trailing("model", 20), style: muted},
-          %Span{content: String.pad_trailing("url", 24), style: muted},
-          %Span{content: "key", style: muted}
+          %Span{content: "   │  ", style: subtle},
+          %Span{content: pad("name", 16), style: muted},
+          %Span{content: pad("model", 20), style: muted},
+          %Span{content: pad("url", 24), style: muted},
+          %Span{content: "key", style: muted},
+          %Span{content: "   │", style: subtle}
         ]
       },
-      %Line{spans: [%Span{content: "  #{sep}", style: subtle}]}
+      %Line{spans: [%Span{content: "   ├#{dashes(@box_inner)}┤", style: subtle}]}
     ]
   end
 
-  defp render_provider_rows(p, _width) do
+  defp render_rows(p, width) do
     accent = Theme.style(:accent)
     muted = Theme.style(:muted)
     base = Theme.style(:base)
-    active = Store.active(p.configure_for)
+    subtle = Theme.style(:subtle)
+    r = rp(width)
+    bottom = %Line{spans: [%Span{content: "   ╰#{dashes(@box_inner)}╯#{r}", style: subtle}]}
 
     if p.providers == [] do
       [
-        %Line{spans: [%Span{content: ""}]},
-        %Line{spans: [%Span{content: "    no providers configured", style: muted}]}
+        %Line{
+          spans: [
+            %Span{content: "   │#{String.duplicate(" ", @box_inner - 1)}│#{r}", style: subtle}
+          ]
+        },
+        %Line{
+          spans: [
+            %Span{content: "   │  no providers configured", style: muted},
+            %Span{content: String.duplicate(" ", @box_inner - 30) <> "│#{r}", style: subtle}
+          ]
+        },
+        %Line{
+          spans: [
+            %Span{content: "   │#{String.duplicate(" ", @box_inner - 1)}│#{r}", style: subtle}
+          ]
+        },
+        bottom
       ]
     else
-      p.providers
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {{name, config}, idx} ->
-        selected? = idx == p.selected
-        is_active? = name == active
-        cursor = if selected?, do: "▸ ", else: "  "
-        active_mark = if is_active?, do: "● ", else: "  "
-        style = if selected?, do: accent, else: base
-        active_style = if is_active?, do: Theme.style(:done), else: muted
+      active = Store.active(p.configure_for)
 
-        model = Map.get(config, "default_model") || "—"
-        url = Map.get(config, "base_url") || "—"
-        has_key = if Map.get(config, "api_key"), do: "✓", else: "✗"
+      rows =
+        p.providers
+        |> Enum.with_index()
+        |> Enum.flat_map(fn {{name, config}, idx} ->
+          sel? = idx == p.selected
+          act? = name == active
+          cur = if sel?, do: "▸", else: " "
+          mark = if act?, do: "●", else: "○"
+          ns = if sel?, do: accent, else: base
+          ms = if act?, do: Theme.style(:done), else: muted
+          model = Map.get(config, "default_model") || "—"
+          url = Map.get(config, "base_url") || "—"
+          key = if Map.get(config, "api_key"), do: "✓", else: "✗"
+          ks = if key == "✓", do: Theme.style(:done), else: Theme.style(:error)
 
-        [
-          %Line{
-            spans: [
-              %Span{content: "#{cursor}", style: style},
-              %Span{content: "#{active_mark}", style: active_style},
-              %Span{content: "#{String.pad_trailing(truncate(name, 14), 16)}", style: style},
-              %Span{content: "#{String.pad_trailing(truncate(model, 18), 20)}", style: muted},
-              %Span{
-                content: "#{String.pad_trailing(truncate(url, 22), 24)}",
-                style: Theme.style(:subtle)
-              },
-              %Span{
-                content: has_key,
-                style: if(has_key == "✓", do: Theme.style(:done), else: Theme.style(:error))
-              }
-            ]
-          }
-        ]
-      end)
+          [
+            %Line{
+              spans: [
+                %Span{content: "   │ #{cur}", style: subtle},
+                %Span{content: mark, style: ms},
+                %Span{content: " #{pad(truncate(name, 14), 16)}", style: ns},
+                %Span{content: pad(truncate(model, 18), 20), style: muted},
+                %Span{content: pad(truncate(url, 22), 24), style: subtle},
+                %Span{content: key, style: ks},
+                %Span{content: "   │#{r}", style: subtle}
+              ]
+            }
+          ]
+        end)
+
+      rows ++ [bottom]
     end
   end
+
+  defp rp(width), do: String.duplicate(" ", max(width - @box_inner - 4, 0))
+  defp dashes(n), do: String.duplicate("─", n)
 
   def handle_key("up", _mods, p), do: %{p | selected: max(p.selected - 1, 0)}
 
@@ -161,5 +185,10 @@ defmodule Beamcore.TUI.Components.Providers do
   defp truncate(text, max_len) do
     text = to_string(text)
     if String.length(text) <= max_len, do: text, else: String.slice(text, 0, max_len - 1) <> "…"
+  end
+
+  defp pad(text, width) do
+    text = to_string(text)
+    if String.length(text) >= width, do: text, else: String.pad_trailing(text, width)
   end
 end
