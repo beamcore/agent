@@ -65,7 +65,7 @@ defmodule Beamcore.Agent.MixProject do
       {:number, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:req, "~> 0.6"},
-      {:ex_ratatui, "~> 0.10.0"},
+      {:ex_ratatui, "~> 0.11.0"},
       {:rustler, "~> 0.36", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
