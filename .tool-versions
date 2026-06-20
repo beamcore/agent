@@ -1,5 +1,5 @@
 # Beamcore Agent
 # See: https://github.com/asdf-vm/asdf
 # Also used by mise (https://mise.jdx.dev)
-elixir 1.17
-erlang 27
+elixir 1.19.5-otp-28
+erlang 29.0
