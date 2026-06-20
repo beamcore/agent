@@ -101,7 +101,9 @@ defmodule Beamcore.Provider.Router do
     do: :crypto.hash(:sha256, token) |> Base.encode16(case: :lower) |> binary_part(0, 12)
 
   defp scheduler_interval(%{capabilities: %{local: true}}), do: 0
-  defp scheduler_interval(_provider_info), do: Application.get_env(:beamcore, :rate_limit_ms, 1000)
+
+  defp scheduler_interval(_provider_info),
+    do: Application.get_env(:beamcore, :rate_limit_ms, 1000)
 
   defp apply_cooldown(key, %OpenaiEx.Error{kind: :rate_limit}, opts) do
     cooldown_key(15_000, key, opts)
