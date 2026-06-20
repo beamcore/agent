@@ -7,6 +7,39 @@ defmodule Beamcore.TUI.Components.StatusBar do
   alias ExRatatui.Widgets.Paragraph
   alias Number.SI
 
+  def widget(%{screen_type: :providers}, width) when is_integer(width) do
+    mascot = Mascot.frame(:idle, 0, true)
+    switcher_text = "F1 Agent  F2 Chat  F3 Providers"
+    right_text = "Manage API providers"
+    left_len = String.length(mascot) + 3 + String.length(switcher_text) + 3
+    right_len = String.length(right_text)
+    max_right_len = max(0, width - left_len - 2)
+
+    right_text =
+      if right_len > max_right_len,
+        do: String.slice(right_text, 0, max(0, max_right_len - 3)) <> "...",
+        else: right_text
+
+    right_len = String.length(right_text)
+    padding_len = max(0, width - left_len - right_len - 2)
+    padding = String.duplicate(" ", padding_len)
+
+    spans = [
+      %Span{content: mascot, style: Theme.style(:status_hot)},
+      %Span{content: " · ", style: Theme.style(:status)},
+      %Span{content: "F1 Agent", style: Theme.style(:status)},
+      %Span{content: "  ", style: Theme.style(:status)},
+      %Span{content: "F2 Chat", style: Theme.style(:status)},
+      %Span{content: "  ", style: Theme.style(:status)},
+      %Span{content: "F3 Providers", style: Theme.style(:status_hot)},
+      %Span{content: " · ", style: Theme.style(:status)},
+      %Span{content: padding, style: Theme.style(:status)},
+      %Span{content: right_text, style: Theme.style(:status)}
+    ]
+
+    %Paragraph{text: [%Line{spans: spans}], style: Theme.style(:status)}
+  end
+
   def widget(state, width) when is_integer(width) do
     usage = State.usage(state.session)
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
@@ -23,7 +56,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
         hint -> hint
       end
 
-    switcher_text = "F1 Agent  F2 Chat"
+    switcher_text = "F1 Agent  F2 Chat  F3 Providers"
     left_len = String.length(mascot) + 3 + String.length(switcher_text) + 3
     right_len = String.length(right_text)
 
@@ -53,6 +86,15 @@ defmodule Beamcore.TUI.Components.StatusBar do
       %Span{
         content: "F2 Chat",
         style: if(active == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))
+      },
+      %Span{content: "  ", style: Theme.style(:status)},
+      %Span{
+        content: "F3 Providers",
+        style:
+          if(active == :providers,
+            do: Theme.style(:status_hot),
+            else: Theme.style(:status)
+          )
       },
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{content: padding, style: Theme.style(:status)},
