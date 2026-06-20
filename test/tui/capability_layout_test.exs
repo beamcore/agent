@@ -27,8 +27,8 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
         "beamcore_missing_config_#{System.unique_integer([:positive])}.dets"
       )
 
-    previous = Application.get_env(:agent, :config_dets_path)
-    Application.put_env(:agent, :config_dets_path, path)
+    previous = Application.get_env(:beamcore, :config_dets_path)
+    Application.put_env(:beamcore, :config_dets_path, path)
 
     try do
       Beamcore.Config.set_active_provider("openai")
@@ -67,6 +67,6 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
              Layout.areas(%Rect{x: 0, y: 0, width: 40, height: 9})
   end
 
-  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
-  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
+  defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:beamcore, :config_dets_path, path)
 end

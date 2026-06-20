@@ -15,6 +15,7 @@ defmodule Beamcore.TUI.State do
     WaitStatus
   }
 
+  @doc false
   defdelegate add_activity(state, name, args, status \\ :queued), to: Activity
   defdelegate update_activity(state, name, args, result), to: Activity
   defdelegate compact_activity(name, args, status, result \\ nil), to: Activity

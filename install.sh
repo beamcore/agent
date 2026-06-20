@@ -187,8 +187,8 @@ install_release() {
   tar -xzf "$tmp_dir/$asset_name" -C "$staging"
 
   # Verify the extracted release looks valid
-  if [ ! -f "$staging/bin/agent" ]; then
-    die "Extracted archive does not contain expected release structure (missing bin/agent)"
+  if [ ! -f "$staging/bin/beamcore" ]; then
+    die "Extracted archive does not contain expected release structure (missing bin/beamcore)"
   fi
 
   # Atomic-ish replacement: backup old, move new, remove backup
@@ -221,7 +221,7 @@ create_launcher() {
 set -eu
 
 BEAMCORE_APP="${BEAMCORE_INSTALL_DIR:-$HOME/.beamcore/app}"
-AGENT_BIN="$BEAMCORE_APP/bin/agent"
+AGENT_BIN="$BEAMCORE_APP/bin/beamcore"
 
 if [ ! -x "$AGENT_BIN" ]; then
   printf '\033[31merror:\033[0m Beamcore is not installed at %s\n' "$BEAMCORE_APP" >&2
@@ -230,7 +230,7 @@ if [ ! -x "$AGENT_BIN" ]; then
 fi
 
 if [ "$#" -eq 0 ]; then
-  exec "$AGENT_BIN" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
+  exec "$AGENT_BIN" eval "Application.ensure_all_started(:beamcore); Beamcore.Agent.chat()"
 fi
 
 exec "$AGENT_BIN" "$@"

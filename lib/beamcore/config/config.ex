@@ -40,7 +40,7 @@ defmodule Beamcore.Config do
   # -- public API ----------------------------------------------------------
 
   defp path do
-    Application.get_env(:agent, :config_dets_path) || @default_path
+    Application.get_env(:beamcore, :config_dets_path) || @default_path
   end
 
   def get(key) when is_atom(key), do: call({:get, key}, nil)

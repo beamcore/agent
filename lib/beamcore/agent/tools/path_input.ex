@@ -48,7 +48,7 @@ defmodule Beamcore.Agent.Tools.PathInput do
   Returns the current project root used for relative tool paths.
   """
   def workspace_root do
-    configured = Process.get(:workspace_root) || Application.get_env(:agent, :workspace_root)
+    configured = Process.get(:workspace_root) || Application.get_env(:beamcore, :workspace_root)
 
     cond do
       is_binary(configured) and configured != "" ->
@@ -63,7 +63,7 @@ defmodule Beamcore.Agent.Tools.PathInput do
   end
 
   defp fallback_workspace_root do
-    initial = Application.get_env(:agent, :initial_workspace_root)
+    initial = Application.get_env(:beamcore, :initial_workspace_root)
 
     cond do
       is_binary(initial) and initial != "" -> canonical_path(initial)
@@ -73,15 +73,15 @@ defmodule Beamcore.Agent.Tools.PathInput do
 
   def configure_workspace_root(root) when is_binary(root) do
     root = canonical_path(root)
-    previous = Application.get_env(:agent, :workspace_root)
-    Application.put_env(:agent, :workspace_root, root)
+    previous = Application.get_env(:beamcore, :workspace_root)
+    Application.put_env(:beamcore, :workspace_root, root)
     previous
   end
 
-  def restore_workspace_root(nil), do: Application.delete_env(:agent, :workspace_root)
+  def restore_workspace_root(nil), do: Application.delete_env(:beamcore, :workspace_root)
 
   def restore_workspace_root(root) when is_binary(root),
-    do: Application.put_env(:agent, :workspace_root, canonical_path(root))
+    do: Application.put_env(:beamcore, :workspace_root, canonical_path(root))
 
   def canonical_path(path) when is_binary(path) do
     expanded =

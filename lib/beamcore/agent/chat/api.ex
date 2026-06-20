@@ -5,14 +5,14 @@ defmodule Beamcore.Agent.Chat.API do
   alias Beamcore.Retry.Config
 
   @completions_module Application.compile_env(
-                        :agent,
+                        :beamcore,
                         :completions_module,
                         OpenaiEx.Chat.Completions
                       )
 
   def default_model do
     get_active_provider_default_model() ||
-      Application.get_env(:agent, :chat_model)
+      Application.get_env(:beamcore, :chat_model)
   end
 
   defp get_active_provider_default_model do

@@ -10,8 +10,8 @@ defmodule Beamcore.Provider.RegistryTest do
         "beamcore_provider_registry_#{System.unique_integer([:positive])}.dets"
       )
 
-    previous_path = Application.get_env(:agent, :config_dets_path)
-    Application.put_env(:agent, :config_dets_path, path)
+    previous_path = Application.get_env(:beamcore, :config_dets_path)
+    Application.put_env(:beamcore, :config_dets_path, path)
 
     on_exit(fn ->
       restore_config_path(previous_path)
@@ -57,6 +57,6 @@ defmodule Beamcore.Provider.RegistryTest do
     assert {:error, %Error{kind: :invalid_config}} = Registry.validate_selection("ollama")
   end
 
-  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
-  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
+  defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:beamcore, :config_dets_path, path)
 end

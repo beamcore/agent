@@ -5,8 +5,8 @@ defmodule Beamcore.AppLogTest do
 
   setup do
     dir = Path.join(System.tmp_dir!(), "beamcore_app_log_#{System.unique_integer([:positive])}")
-    previous = Application.get_env(:agent, :app_log_dir)
-    Application.put_env(:agent, :app_log_dir, dir)
+    previous = Application.get_env(:beamcore, :app_log_dir)
+    Application.put_env(:beamcore, :app_log_dir, dir)
 
     on_exit(fn ->
       restore_log_dir(previous)
@@ -65,8 +65,8 @@ defmodule Beamcore.AppLogTest do
       Path.join(System.tmp_dir!(), "beamcore_app_log_file_#{System.unique_integer([:positive])}")
 
     File.write!(bad_path, "not a directory")
-    previous = Application.get_env(:agent, :app_log_dir)
-    Application.put_env(:agent, :app_log_dir, Path.join(bad_path, "logs"))
+    previous = Application.get_env(:beamcore, :app_log_dir)
+    Application.put_env(:beamcore, :app_log_dir, Path.join(bad_path, "logs"))
 
     try do
       assert :ok == AppLog.error("will be ignored")
@@ -80,6 +80,6 @@ defmodule Beamcore.AppLogTest do
     assert AppLog.user_message() == "Application error. See #{AppLog.log_path()} for details."
   end
 
-  defp restore_log_dir(nil), do: Application.delete_env(:agent, :app_log_dir)
-  defp restore_log_dir(path), do: Application.put_env(:agent, :app_log_dir, path)
+  defp restore_log_dir(nil), do: Application.delete_env(:beamcore, :app_log_dir)
+  defp restore_log_dir(path), do: Application.put_env(:beamcore, :app_log_dir, path)
 end

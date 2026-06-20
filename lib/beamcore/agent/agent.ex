@@ -15,7 +15,7 @@ defmodule Beamcore.Agent do
 
   use Application
 
-  @version Application.spec(:agent, :vsn) || "0.1.0"
+  @version Application.spec(:beamcore, :vsn) || "0.1.0"
 
   @doc """
   CLI entry point for the release executable.
@@ -61,7 +61,7 @@ defmodule Beamcore.Agent do
   Start the Beamcore.Agent application.
   """
   def start(_type, _args) do
-    Beamcore.AppLog.info("Application starting", app: :agent)
+    Beamcore.AppLog.info("Application starting", app: :beamcore)
     remember_initial_workspace()
 
     # Ensure we are a distributed Erlang node before starting supervised processes
@@ -85,19 +85,19 @@ defmodule Beamcore.Agent do
   end
 
   def prep_stop(state) do
-    Beamcore.AppLog.info("Application shutting down", app: :agent)
+    Beamcore.AppLog.info("Application shutting down", app: :beamcore)
     state
   end
 
   def stop(_state) do
-    Beamcore.AppLog.info("Application stopped", app: :agent)
+    Beamcore.AppLog.info("Application stopped", app: :beamcore)
     :ok
   end
 
   defp remember_initial_workspace do
-    if is_nil(Application.get_env(:agent, :initial_workspace_root)) do
+    if is_nil(Application.get_env(:beamcore, :initial_workspace_root)) do
       case File.cwd() do
-        {:ok, cwd} -> Application.put_env(:agent, :initial_workspace_root, Path.expand(cwd))
+        {:ok, cwd} -> Application.put_env(:beamcore, :initial_workspace_root, Path.expand(cwd))
         {:error, _reason} -> :ok
       end
     end

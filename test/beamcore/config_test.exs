@@ -10,8 +10,8 @@ defmodule Beamcore.ConfigTest do
         "beamcore_config_test_#{System.unique_integer([:positive])}.dets"
       )
 
-    previous = Application.get_env(:agent, :config_dets_path)
-    Application.put_env(:agent, :config_dets_path, path)
+    previous = Application.get_env(:beamcore, :config_dets_path)
+    Application.put_env(:beamcore, :config_dets_path, path)
 
     on_exit(fn ->
       restore_config_path(previous)
@@ -49,8 +49,8 @@ defmodule Beamcore.ConfigTest do
     refute Config.get(:api_key)
   end
 
-  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
-  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
+  defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:beamcore, :config_dets_path, path)
 end
 
 # OTP ownership regression coverage. Kept outside the main module to avoid
@@ -67,13 +67,13 @@ defmodule Beamcore.ConfigOwnershipTest do
         "beamcore_config_owner_#{System.unique_integer([:positive])}.dets"
       )
 
-    previous = Application.get_env(:agent, :config_dets_path)
-    Application.put_env(:agent, :config_dets_path, path)
+    previous = Application.get_env(:beamcore, :config_dets_path)
+    Application.put_env(:beamcore, :config_dets_path, path)
 
     on_exit(fn ->
       if previous,
-        do: Application.put_env(:agent, :config_dets_path, previous),
-        else: Application.delete_env(:agent, :config_dets_path)
+        do: Application.put_env(:beamcore, :config_dets_path, previous),
+        else: Application.delete_env(:beamcore, :config_dets_path)
 
       File.rm(path)
     end)

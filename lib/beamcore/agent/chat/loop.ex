@@ -320,7 +320,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp receive_timeout_ms(_settings) do
-    Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
+    Application.get_env(:beamcore, :provider_receive_timeout_ms, 30_000)
   end
 
   defp format_ms(ms) when is_integer(ms) and ms >= 1000, do: "#{Float.round(ms / 1000, 1)}s"

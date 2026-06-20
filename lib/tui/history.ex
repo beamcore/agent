@@ -8,7 +8,7 @@ defmodule Beamcore.TUI.History do
   @doc """
   Returns the path to the history file.
   """
-  def history_path, do: Application.get_env(:agent, :history_path, @history_file)
+  def history_path, do: Application.get_env(:beamcore, :history_path, @history_file)
 
   @doc """
   Loads the history entries from the history file.

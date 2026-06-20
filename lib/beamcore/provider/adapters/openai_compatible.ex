@@ -11,7 +11,7 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
   alias Beamcore.Provider.Error
 
   @completions_module Application.compile_env(
-                        :agent,
+                        :beamcore,
                         :completions_module,
                         OpenaiEx.Chat.Completions
                       )

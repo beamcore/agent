@@ -7,8 +7,8 @@ defmodule Beamcore.Provider.RouterTest do
     path =
       Path.join(System.tmp_dir!(), "beamcore_router_#{System.unique_integer([:positive])}.dets")
 
-    previous_path = Application.get_env(:agent, :config_dets_path)
-    Application.put_env(:agent, :config_dets_path, path)
+    previous_path = Application.get_env(:beamcore, :config_dets_path)
+    Application.put_env(:beamcore, :config_dets_path, path)
 
     Beamcore.Config.put_provider("openai", %{
       api_key: "test-openai-key",
@@ -99,6 +99,6 @@ defmodule Beamcore.Provider.RouterTest do
     refute source =~ ~s("deepseek")
   end
 
-  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
-  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
+  defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:beamcore, :config_dets_path, path)
 end
