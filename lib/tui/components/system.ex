@@ -20,19 +20,53 @@ defmodule Beamcore.TUI.Components.System do
   def render_text(system, width) do
     accent = Theme.style(:accent)
     subtle = Theme.style(:subtle)
-    sep = String.duplicate("─", max(width - 6, 4))
 
     stats_lines = Stats.render(width)
     provider_items = Providers.render_items(system.providers, width)
 
-    [%Line{spans: [%Span{content: ""}]}] ++
-      stats_lines ++
-      [
-        %Line{spans: [%Span{content: ""}]},
-        %Line{spans: [%Span{content: "  Providers", style: accent}]},
-        %Line{spans: [%Span{content: "  #{sep}", style: subtle}]}
-      ] ++
-      provider_items
+    top = [
+      %Line{spans: [%Span{content: ""}]},
+      %Line{
+        spans: [
+          %Span{content: " ◆ Beamcore Agent  ", style: accent},
+          %Span{content: String.duplicate("· ", div(width - 24, 2)), style: subtle}
+        ]
+      },
+      %Line{spans: [%Span{content: ""}]}
+    ]
+
+    divider_w = max(76, width - 4)
+
+    divider = [
+      %Line{spans: [%Span{content: ""}]},
+      %Line{
+        spans: [
+          %Span{content: " ╰─ ", style: subtle},
+          %Span{content: "Providers", style: accent},
+          %Span{content: " " <> String.duplicate("─", max(divider_w - 13, 4)), style: subtle}
+        ]
+      },
+      %Line{spans: [%Span{content: ""}]}
+    ]
+
+    bottom = [
+      %Line{spans: [%Span{content: ""}]},
+      %Line{
+        spans: [
+          %Span{content: " ── ", style: subtle},
+          %Span{content: "enter", style: accent},
+          %Span{content: " activate  ", style: Theme.style(:muted)},
+          %Span{content: "a", style: accent},
+          %Span{content: " add  ", style: Theme.style(:muted)},
+          %Span{content: "d", style: accent},
+          %Span{content: " delete  ", style: Theme.style(:muted)},
+          %Span{content: "F1", style: accent},
+          %Span{content: " back", style: Theme.style(:muted)}
+        ]
+      }
+    ]
+
+    top ++ stats_lines ++ divider ++ provider_items ++ bottom
   end
 
   def widget(system, area) do
