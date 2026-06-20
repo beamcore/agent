@@ -7,10 +7,10 @@ defmodule Beamcore.TUI.Components.StatusBar do
   alias ExRatatui.Widgets.Paragraph
   alias Number.SI
 
-  def widget(%{screen_type: :providers}, width) when is_integer(width) do
+  def widget(%{screen_type: :system}, width) when is_integer(width) do
     mascot = Mascot.frame(:idle, 0, true)
-    switcher_text = "F1 Agent  F2 Chat  F3 Providers"
-    right_text = "Manage API providers"
+    switcher_text = "F1 Agent  F2 Chat  F3 System"
+    right_text = "System overview"
     left_len = String.length(mascot) + 3 + String.length(switcher_text) + 3
     right_len = String.length(right_text)
     max_right_len = max(0, width - left_len - 2)
@@ -31,7 +31,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
       %Span{content: "  ", style: Theme.style(:status)},
       %Span{content: "F2 Chat", style: Theme.style(:status)},
       %Span{content: "  ", style: Theme.style(:status)},
-      %Span{content: "F3 Providers", style: Theme.style(:status_hot)},
+      %Span{content: "F3 System", style: Theme.style(:status_hot)},
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{content: padding, style: Theme.style(:status)},
       %Span{content: right_text, style: Theme.style(:status)}
@@ -56,7 +56,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
         hint -> hint
       end
 
-    switcher_text = "F1 Agent  F2 Chat  F3 Providers"
+    switcher_text = "F1 Agent  F2 Chat  F3 System"
     left_len = String.length(mascot) + 3 + String.length(switcher_text) + 3
     right_len = String.length(right_text)
 
@@ -89,9 +89,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
       },
       %Span{content: "  ", style: Theme.style(:status)},
       %Span{
-        content: "F3 Providers",
+        content: "F3 System",
         style:
-          if(active == :providers,
+          if(active == :system,
             do: Theme.style(:status_hot),
             else: Theme.style(:status)
           )

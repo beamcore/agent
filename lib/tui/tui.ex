@@ -65,7 +65,7 @@ defmodule Beamcore.TUI do
     f1_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
     f2_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :chat))
 
-    f3_state = Beamcore.TUI.Components.Providers.new(:agent)
+    f3_state = Beamcore.TUI.Components.System.new(:agent)
 
     state = %MultiScreenState{
       active_screen: :f1,
@@ -187,7 +187,7 @@ defmodule Beamcore.TUI do
     f3 =
       if state.f3_state && state.f3_state.configure_for == for,
         do: state.f3_state,
-        else: Beamcore.TUI.Components.Providers.new(for)
+        else: Beamcore.TUI.Components.System.new(for)
 
     %{state | active_screen: :f3, f3_state: f3}
   end
