@@ -30,7 +30,7 @@ defmodule Beamcore.Agent.MixProject do
       package: [
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/beamcore/agent"},
-        files: ["lib", "src", "mix.exs", "README.md", "LICENSE"],
+        files: ["lib", "mix.exs", "README.md", "LICENSE"],
         maintainers: ["Beamcore Team"],
         hexpm: [
           repo: "hexpm",

@@ -1,4 +1,7 @@
 # Beamcore
+![CI](https://github.com/beamcore/agent/actions/workflows/ci.yml/badge.svg)
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+
 
 Beamcore is a terminal coding agent built on the Erlang/OTP distribution
 protocol. Every instance is a distributed node. Eeva, the model-facing runtime,
