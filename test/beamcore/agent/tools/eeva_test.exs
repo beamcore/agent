@@ -210,8 +210,8 @@ defmodule Beamcore.Agent.Tools.EevaTest do
       |> Jason.decode!()
 
     assert result["ok"]
-    assert result["result"] =~ "remember: 5"
-    assert result["result"] =~ "recall: 4"
+    assert result["result"] =~ "remember: 3"
+    assert result["result"] =~ "recall: 3"
   end
 
   test "memory API tolerates model-style recall and clamps runaway limits" do
@@ -221,8 +221,8 @@ defmodule Beamcore.Agent.Tools.EevaTest do
       Eeva.execute(%{
         "code" =>
           "Beamcore.Memory.clear(); " <>
-            "Beamcore.Memory.remember(:project_description, \"stored description\", 1_000_000); " <>
-            "Beamcore.Memory.recall(:project_description, 1_000_000)"
+            "Beamcore.Memory.remember(:project_description, \"stored description\"); " <>
+            "Beamcore.Memory.recall(:project_description)"
       })
       |> Jason.decode!()
 

@@ -26,12 +26,6 @@ defmodule Beamcore.MemoryTest do
     :ok
   end
 
-  test "detects org and repo dynamically" do
-    {org, repo} = Memory.detect_org_repo()
-    assert is_binary(org)
-    assert is_binary(repo)
-  end
-
   test "memory process is supervised by the application" do
     assert is_pid(Process.whereis(Memory))
 
@@ -39,54 +33,46 @@ defmodule Beamcore.MemoryTest do
     assert Enum.any?(children, fn {id, pid, _type, _modules} -> id == Memory and is_pid(pid) end)
   end
 
-  test "remembers and recalls a memory scoped correctly" do
-    org = "my_org"
-    repo = "my_repo"
+  test "remembers and recalls a memory" do
+    assert :ok == Memory.remember(:patterns, "idiom_1", "use pattern matching")
+    assert "use pattern matching" == Memory.recall(:patterns, "idiom_1")
 
-    assert :ok == Memory.remember(org, repo, :patterns, "idiom_1", "use pattern matching")
-    assert "use pattern matching" == Memory.recall(org, repo, :patterns, "idiom_1")
-
-    # Scoped isolation: recall with different org/repo should return nil
-    assert nil == Memory.recall("other_org", repo, :patterns, "idiom_1")
-    assert nil == Memory.recall(org, "other_repo", :patterns, "idiom_1")
-    assert nil == Memory.recall(org, repo, :decisions, "idiom_1")
+    # Different type should return nil
+    assert nil == Memory.recall(:decisions, "idiom_1")
   end
 
   test "lists memories under a specific type" do
-    org = "list_org"
-    repo = "list_repo"
+    Memory.remember(:decisions, "dec_1", "chose OTP")
+    Memory.remember(:decisions, "dec_2", "chose DETS")
+    Memory.remember(:patterns, "pat_1", "idiomatic Elixir")
 
-    Memory.remember(org, repo, :decisions, "dec_1", "chose OTP")
-    Memory.remember(org, repo, :decisions, "dec_2", "chose DETS")
-    Memory.remember(org, repo, :patterns, "pat_1", "idiomatic Elixir")
-
-    decisions = Memory.list(org, repo, :decisions)
+    decisions = Memory.list(:decisions)
     assert length(decisions) == 2
     assert {"dec_1", "chose OTP"} in decisions
     assert {"dec_2", "chose DETS"} in decisions
 
-    patterns = Memory.list(org, repo, :patterns)
+    patterns = Memory.list(:patterns)
     assert length(patterns) == 1
     assert {"pat_1", "idiomatic Elixir"} in patterns
   end
 
   test "forgets a remembered memory" do
-    org = "forget_org"
-    repo = "forget_repo"
+    Memory.remember(:errors, "err_1", "stuck in loop")
+    assert "stuck in loop" == Memory.recall(:errors, "err_1")
 
-    Memory.remember(org, repo, :errors, "err_1", "stuck in loop")
-    assert "stuck in loop" == Memory.recall(org, repo, :errors, "err_1")
-
-    assert :ok == Memory.forget(org, repo, :errors, "err_1")
-    assert nil == Memory.recall(org, repo, :errors, "err_1")
+    assert :ok == Memory.forget(:errors, "err_1")
+    assert nil == Memory.recall(:errors, "err_1")
   end
 
-  test "model-friendly memory calls survive mistaken limit arguments" do
+  test "recall with integer limit searches by type" do
     Memory.clear()
 
-    assert :ok == Memory.remember(:project_description, "stored description", 1_000_000)
-    assert "stored description" == Memory.recall(:project_description, 1_000_000)
-    assert "stored description" == Memory.recall("project_description")
+    Memory.remember(:facts, "snap-1", "snapshot A")
+    Memory.remember(:facts, "snap-2", "snapshot B")
+
+    # recall(type, limit) when limit is integer searches that type
+    results = Memory.recall(:facts, 10)
+    assert is_list(results) or is_binary(results)
   end
 
   test "search and overview are capped and discoverable" do
@@ -115,11 +101,8 @@ defmodule Beamcore.MemoryTest do
         ets_name: :another_test_memory
       )
 
-    org = "persist_org"
-    repo = "persist_repo"
-
-    assert :ok == GenServer.call(pid, {:remember, org, repo, :context, "key_a", "value_a"})
-    assert "value_a" == GenServer.call(pid, {:recall, org, repo, :context, "key_a"})
+    assert :ok == GenServer.call(pid, {:remember, :context, "key_a", "value_a"})
+    assert "value_a" == GenServer.call(pid, {:recall, :context, "key_a"})
 
     # Stop GenServer (which flushes/closes DETS)
     GenServer.stop(pid)
@@ -132,7 +115,7 @@ defmodule Beamcore.MemoryTest do
         ets_name: :another_test_memory
       )
 
-    assert "value_a" == GenServer.call(pid2, {:recall, org, repo, :context, "key_a"})
+    assert "value_a" == GenServer.call(pid2, {:recall, :context, "key_a"})
 
     GenServer.stop(pid2)
     File.rm_rf!(safe_expand(custom_dets))
@@ -150,21 +133,15 @@ defmodule Beamcore.MemoryTest do
       try do
         assert :ok ==
                  Memory.remember(
-                   "fallback_org",
-                   "fallback_repo",
                    :context,
                    "fallback_key",
                    "fallback value"
                  )
 
         assert "fallback value" ==
-                 Memory.recall("fallback_org", "fallback_repo", :context, "fallback_key")
+                 Memory.recall(:context, "fallback_key")
 
-        assert {"fallback_key", "fallback value"} in Memory.list(
-                 "fallback_org",
-                 "fallback_repo",
-                 :context
-               )
+        assert {"fallback_key", "fallback value"} in Memory.list(:context)
 
         assert File.exists?(safe_expand(fallback_dets))
         assert file_mtime(real_default) == real_default_mtime

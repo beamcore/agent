@@ -27,26 +27,6 @@ defmodule Beamcore.Memory do
   @default_type :facts
   @default_limit 20
   @max_limit 50
-  @known_types MapSet.new([
-                 :facts,
-                 :fact,
-                 :decisions,
-                 :decision,
-                 :patterns,
-                 :pattern,
-                 :errors,
-                 :error,
-                 :context,
-                 :contexts,
-                 :notes,
-                 :note,
-                 :preferences,
-                 :preference,
-                 :tasks,
-                 :task,
-                 :project,
-                 :projects
-               ])
 
   # --- Client API ---
 
@@ -71,64 +51,34 @@ defmodule Beamcore.Memory do
   @doc """
   Saves a memory entry under the default `:facts` type.
 
-  This is the safest model-facing form when the model simply needs to remember
-  something by key.
+  This is the primary model-facing form.
+
+      Beamcore.Memory.remember("likes_cats", true)
   """
   def remember(key, value), do: remember(@default_type, key, value)
 
   @doc """
-  Saves a memory entry under the default `:facts` type.
+  Saves a memory entry under a specific type.
 
-  This is a convenience alias for `remember/2`. Models that naturally reach
-  for `put/2` can use it interchangeably with `remember/2`.
-  """
-  def put(key, value), do: remember(@default_type, key, value)
-
-  @doc """
-  Saves a memory entry.
-
-  Preferred forms:
-
-      remember(:facts, "key", "value")
-      remember("key", "value")
-
-  The 3-argument form is intentionally tolerant of a common model mistake:
-  `remember(:some_key, "value", 1_000_000)` is treated as
-  `remember(:facts, "some_key", "value")` because the third argument looks like
-  an accidental search/list limit rather than a useful memory value.
+      Beamcore.Memory.remember(:preferences, "likes_cats", true)
   """
   def remember(type, key, value) do
-    {type, key, value} = normalize_remember3(type, key, value)
-    {org, repo} = detect_org_repo()
-    remember(org, repo, type, key, value)
-  end
-
-  def remember(org, repo, type, key, value) do
     type = normalize_type(type)
     key = normalize_key(key)
 
     with :ok <- validate_memory_entry(type, key, value) do
-      remember_validated(org, repo, type, key, value)
+      remember_validated(type, key, value)
     end
   end
 
   @doc """
-  Saves a memory entry. Convenience alias for `remember/3`.
-
-      put(:facts, "key", "value")
-      put("key", "value")
-  """
-  def put(type, key, value), do: remember(type, key, value)
-
-  @doc """
-  Recalls a memory by key across all types in the current project scope.
+  Recalls a memory by key across all types.
 
   Returns the value for a single match, a compact list of matches for multiple
   matches, or `nil` when nothing matches.
   """
   def recall(key) do
-    {org, repo} = detect_org_repo()
-    smart_recall(org, repo, key, @default_limit)
+    smart_recall(key, @default_limit)
   end
 
   @doc """
@@ -136,17 +86,20 @@ defmodule Beamcore.Memory do
 
   `recall(type, key)` performs an exact lookup. If the second argument is a
   number, it is treated as an accidental limit and the first argument is used as
-  a broad search key. This prevents model loops like repeatedly calling
-  `recall(:project_description, 1_000_000)`.
+  a broad search key.
   """
   def recall(type, key_or_limit) when is_integer(key_or_limit) do
-    {org, repo} = detect_org_repo()
-    smart_recall(org, repo, type, key_or_limit)
+    smart_recall(type, key_or_limit)
   end
 
   def recall(type, key) do
-    {org, repo} = detect_org_repo()
-    recall(org, repo, type, key)
+    type = normalize_type(type)
+    key = normalize_key(key)
+
+    case server_ref() do
+      nil -> fallback_recall(type, key)
+      ref -> GenServer.call(ref, {:recall, type, key})
+    end
   end
 
   def recall(type, key, limit) when is_integer(limit) do
@@ -156,56 +109,34 @@ defmodule Beamcore.Memory do
     end
   end
 
-  def recall(org, repo, type, key) do
-    type = normalize_type(type)
-    key = normalize_key(key)
-
-    case server_ref() do
-      nil ->
-        fallback_recall(org, repo, type, key)
-
-      ref ->
-        GenServer.call(ref, {:recall, org, repo, type, key})
-    end
-  end
-
   @doc """
-  Deletes memory entries from the current project scope.
+  Deletes memory entries.
 
   `forget(key)` deletes all entries with that key across types.
   `forget(type, key)` deletes one typed entry.
   """
   def forget(key) do
-    {org, repo} = detect_org_repo()
     key = normalize_key(key)
 
-    all_current_entries(org, repo)
+    all_current_entries()
     |> Enum.filter(&(&1.key == key))
-    |> Enum.each(fn entry -> forget(org, repo, entry.type, entry.key) end)
+    |> Enum.each(fn entry -> forget(entry.type, entry.key) end)
 
     :ok
   end
 
   def forget(type, key) do
-    {org, repo} = detect_org_repo()
-    forget(org, repo, type, key)
-  end
-
-  def forget(org, repo, type, key) do
     type = normalize_type(type)
     key = normalize_key(key)
 
     case server_ref() do
-      nil ->
-        fallback_forget(org, repo, type, key)
-
-      ref ->
-        GenServer.call(ref, {:forget, org, repo, type, key})
+      nil -> fallback_forget(type, key)
+      ref -> GenServer.call(ref, {:forget, type, key})
     end
   end
 
   @doc """
-  Lists a compact overview of all memory types in the current project scope.
+  Lists a compact overview of all memory types.
   """
   def list do
     overview()
@@ -217,121 +148,65 @@ defmodule Beamcore.Memory do
   def list(type), do: list(type, @default_limit)
 
   def list(type, limit) when is_integer(limit) do
-    {org, repo} = detect_org_repo()
-    list(org, repo, type, clamp_limit(limit))
-  end
-
-  def list(org, repo, type), do: list(org, repo, type, :all)
-
-  def list(org, repo, type, limit) do
     type = normalize_type(type)
 
     case server_ref() do
-      nil ->
-        fallback_list(org, repo, type, limit)
-
-      ref ->
-        GenServer.call(ref, {:list, org, repo, type, limit})
+      nil -> fallback_list(type, limit)
+      ref -> GenServer.call(ref, {:list, type, clamp_limit(limit)})
     end
   end
 
   @doc """
-  Searches memory keys, types, and inspectable values in the current project.
-
-  The limit is always clamped to a small maximum, even if the model asks for an
-  absurdly large number.
+  Searches memory keys, types, and inspectable values.
   """
   def search(query), do: search(query, @default_limit)
 
   def search(query, limit) when is_integer(limit) do
-    {org, repo} = detect_org_repo()
-    search(org, repo, nil, query, clamp_limit(limit))
+    search(nil, query, clamp_limit(limit))
   end
 
   def search(type, query) do
-    {org, repo} = detect_org_repo()
-    search(org, repo, normalize_type(type), query, @default_limit)
+    search(normalize_type(type), query, @default_limit)
   end
 
   def search(type, query, limit) when is_integer(limit) do
-    {org, repo} = detect_org_repo()
-    search(org, repo, normalize_type(type), query, clamp_limit(limit))
-  end
-
-  @doc """
-  Returns the known memory types and counts for the current project scope.
-  """
-  def types do
-    {org, repo} = detect_org_repo()
+    type = normalize_type(type)
+    limit = clamp_limit(limit)
 
     case server_ref() do
-      nil -> fallback_types(org, repo)
-      ref -> GenServer.call(ref, {:types, org, repo})
+      nil -> fallback_search(type, query, limit)
+      ref -> GenServer.call(ref, {:search, type, query, limit})
     end
   end
 
   @doc """
-  Returns a compact memory overview for the current project scope.
+  Returns the known memory types and counts.
+  """
+  def types do
+    case server_ref() do
+      nil -> fallback_types()
+      ref -> GenServer.call(ref, :types)
+    end
+  end
+
+  @doc """
+  Returns a compact memory overview.
   """
   def overview do
-    {org, repo} = detect_org_repo()
-
     case server_ref() do
-      nil -> fallback_overview(org, repo)
-      ref -> GenServer.call(ref, {:overview, org, repo})
+      nil -> fallback_overview()
+      ref -> GenServer.call(ref, :overview)
     end
   end
 
   @doc """
   Clears all memory entries from ETS and DETS.
-
-  This remains model-facing so an explicit user request such as "forget
-  everything" can be honored.
   """
   def clear do
     case server_ref() do
-      nil ->
-        fallback_clear()
-
-      ref ->
-        GenServer.call(ref, :clear)
+      nil -> fallback_clear()
+      ref -> GenServer.call(ref, :clear)
     end
-  end
-
-  @doc """
-  Detects the organization and repository name dynamically.
-  """
-  def detect_org_repo do
-    root =
-      Process.get(:workspace_root) ||
-        Application.get_env(:beamcore, :workspace_root) ||
-        Beamcore.Agent.Tools.PathInput.workspace_root()
-
-    detect_org_repo(root)
-  end
-
-  def detect_org_repo(workspace_root) when is_binary(workspace_root) do
-    git_root = Path.expand(workspace_root)
-    detect_org_repo_from_git(git_root)
-  end
-
-  defp detect_org_repo_from_git(git_root) do
-    case System.cmd("git", ["-C", git_root, "config", "--get", "remote.origin.url"]) do
-      {url, 0} ->
-        url = String.trim(url)
-
-        case parse_git_url(url) do
-          {org, repo} -> {org, repo}
-          nil -> {"default_org", "default_repo"}
-        end
-
-      _ ->
-        {"default_org", "default_repo"}
-    end
-  rescue
-    _ -> {"default_org", "default_repo"}
-  catch
-    _, _ -> {"default_org", "default_repo"}
   end
 
   # --- GenServer Callbacks ---
@@ -390,9 +265,9 @@ defmodule Beamcore.Memory do
   end
 
   @impl true
-  def handle_call({:remember, org, repo, type, key, value}, _from, state) do
+  def handle_call({:remember, type, key, value}, _from, state) do
     state = ensure_runtime_tables(state)
-    entry_key = {type, org, repo, key}
+    entry_key = {type, key}
 
     current = lookup_value(state.ets_name, entry_key, :__beamcore_memory_missing__)
 
@@ -413,16 +288,16 @@ defmodule Beamcore.Memory do
   end
 
   @impl true
-  def handle_call({:recall, org, repo, type, key}, _from, state) do
+  def handle_call({:recall, type, key}, _from, state) do
     state = ensure_runtime_tables(state)
-    entry_key = {type, org, repo, key}
+    entry_key = {type, key}
     {:reply, lookup_value(state.ets_name, entry_key, nil), state}
   end
 
   @impl true
-  def handle_call({:forget, org, repo, type, key}, _from, state) do
+  def handle_call({:forget, type, key}, _from, state) do
     state = ensure_runtime_tables(state)
-    entry_key = {type, org, repo, key}
+    entry_key = {type, key}
 
     :ets.delete(state.ets_name, entry_key)
 
@@ -438,37 +313,37 @@ defmodule Beamcore.Memory do
   end
 
   @impl true
-  def handle_call({:list, org, repo, type, limit}, _from, state) do
+  def handle_call({:list, type, limit}, _from, state) do
     state = ensure_runtime_tables(state)
-    entries = entries_for(state.ets_name, org, repo, type: type)
+    entries = entries_for(state.ets_name, type: type)
     {:reply, entries_to_pairs(entries, limit), state}
   end
 
   @impl true
-  def handle_call({:entries, org, repo}, _from, state) do
+  def handle_call(:entries, _from, state) do
     state = ensure_runtime_tables(state)
-    {:reply, entries_for(state.ets_name, org, repo), state}
+    {:reply, entries_for(state.ets_name), state}
   end
 
   @impl true
-  def handle_call({:types, org, repo}, _from, state) do
+  def handle_call(:types, _from, state) do
     state = ensure_runtime_tables(state)
-    {:reply, types_from_entries(entries_for(state.ets_name, org, repo)), state}
+    {:reply, types_from_entries(entries_for(state.ets_name)), state}
   end
 
   @impl true
-  def handle_call({:overview, org, repo}, _from, state) do
+  def handle_call(:overview, _from, state) do
     state = ensure_runtime_tables(state)
-    {:reply, overview_from_entries(entries_for(state.ets_name, org, repo), org, repo), state}
+    {:reply, overview_from_entries(entries_for(state.ets_name)), state}
   end
 
   @impl true
-  def handle_call({:search, org, repo, type_filter, query, limit}, _from, state) do
+  def handle_call({:search, type_filter, query, limit}, _from, state) do
     state = ensure_runtime_tables(state)
 
     result =
       state.ets_name
-      |> entries_for(org, repo, type: type_filter)
+      |> entries_for(type: type_filter)
       |> search_entries(query, limit)
 
     {:reply, result, state}
@@ -492,27 +367,27 @@ defmodule Beamcore.Memory do
 
   # --- Search/overview helpers ---
 
-  defp search(org, repo, type_filter, query, limit) do
+  defp do_search(type_filter, query, limit) do
     limit = clamp_limit(limit)
 
     case server_ref() do
-      nil -> fallback_search(org, repo, type_filter, query, limit)
-      ref -> GenServer.call(ref, {:search, org, repo, type_filter, query, limit})
+      nil -> fallback_search(type_filter, query, limit)
+      ref -> GenServer.call(ref, {:search, type_filter, query, limit})
     end
   end
 
-  defp smart_recall(org, repo, query, requested_limit) do
+  defp smart_recall(query, requested_limit) do
     limit = clamp_limit(requested_limit)
     exact_key = normalize_key(query)
 
     matches =
-      all_current_entries(org, repo)
+      all_current_entries()
       |> Enum.filter(fn entry -> entry.key == exact_key end)
       |> Enum.take(limit)
 
     matches =
       if matches == [],
-        do: search(org, repo, nil, query, limit),
+        do: do_search(nil, query, limit),
         else: entries_to_model_maps(matches)
 
     case matches do
@@ -522,20 +397,17 @@ defmodule Beamcore.Memory do
     end
   end
 
-  defp all_current_entries(org, repo) do
+  defp all_current_entries do
     case server_ref() do
-      nil -> fallback_entries(org, repo)
-      ref -> GenServer.call(ref, {:entries, org, repo})
+      nil -> fallback_entries()
+      ref -> GenServer.call(ref, :entries)
     end
   end
 
-  defp remember_validated(org, repo, type, key, value) do
+  defp remember_validated(type, key, value) do
     case server_ref() do
-      nil ->
-        fallback_remember(org, repo, type, key, value)
-
-      ref ->
-        GenServer.call(ref, {:remember, org, repo, type, key, value})
+      nil -> fallback_remember(type, key, value)
+      ref -> GenServer.call(ref, {:remember, type, key, value})
     end
   end
 
@@ -585,16 +457,14 @@ defmodule Beamcore.Memory do
     |> Enum.sort_by(&to_string(&1.type))
   end
 
-  defp overview_from_entries(entries, org, repo) do
+  defp overview_from_entries(entries) do
     %{
-      org: org,
-      repo: repo,
       total: length(entries),
       types: types_from_entries(entries)
     }
   end
 
-  defp entries_for(ets_name, org, repo, opts \\ []) do
+  defp entries_for(ets_name, opts \\ []) do
     type_filter = Keyword.get(opts, :type)
 
     if :ets.info(ets_name) == :undefined do
@@ -603,7 +473,7 @@ defmodule Beamcore.Memory do
       ets_name
       |> :ets.tab2list()
       |> Enum.flat_map(fn
-        {{type, ^org, ^repo, key}, value} ->
+        {{type, key}, value} ->
           if is_nil(type_filter) or type == type_filter do
             [%{type: type, key: key, value: value}]
           else
@@ -664,9 +534,9 @@ defmodule Beamcore.Memory do
 
   # --- Fallback implementations for robust direct usage when GenServer isn't running ---
 
-  defp fallback_remember(org, repo, type, key, value) do
+  defp fallback_remember(type, key, value) do
     ensure_fallback_initialized()
-    entry_key = {type, org, repo, key}
+    entry_key = {type, key}
 
     current =
       if :ets.info(:beamcore_memory_store) != :undefined do
@@ -686,9 +556,9 @@ defmodule Beamcore.Memory do
     end
   end
 
-  defp fallback_recall(org, repo, type, key) do
+  defp fallback_recall(type, key) do
     ensure_fallback_initialized()
-    entry_key = {type, org, repo, key}
+    entry_key = {type, key}
 
     if :ets.info(:beamcore_memory_store) != :undefined do
       lookup_value(:beamcore_memory_store, entry_key, nil)
@@ -697,9 +567,9 @@ defmodule Beamcore.Memory do
     end
   end
 
-  defp fallback_forget(org, repo, type, key) do
+  defp fallback_forget(type, key) do
     ensure_fallback_initialized()
-    entry_key = {type, org, repo, key}
+    entry_key = {type, key}
 
     if :ets.info(:beamcore_memory_store) != :undefined do
       :ets.delete(:beamcore_memory_store, entry_key)
@@ -708,35 +578,35 @@ defmodule Beamcore.Memory do
     sync_fallback_dets(fn -> :dets.delete(:beamcore_memory_store, entry_key) end)
   end
 
-  defp fallback_list(org, repo, type, limit) do
+  defp fallback_list(type, limit) do
     ensure_fallback_initialized()
 
     :beamcore_memory_store
-    |> entries_for(org, repo, type: type)
+    |> entries_for(type: type)
     |> entries_to_pairs(limit)
   end
 
-  defp fallback_search(org, repo, type_filter, query, limit) do
+  defp fallback_search(type_filter, query, limit) do
     ensure_fallback_initialized()
 
     :beamcore_memory_store
-    |> entries_for(org, repo, type: type_filter)
+    |> entries_for(type: type_filter)
     |> search_entries(query, limit)
   end
 
-  defp fallback_types(org, repo) do
+  defp fallback_types do
     ensure_fallback_initialized()
-    :beamcore_memory_store |> entries_for(org, repo) |> types_from_entries()
+    :beamcore_memory_store |> entries_for() |> types_from_entries()
   end
 
-  defp fallback_overview(org, repo) do
+  defp fallback_overview do
     ensure_fallback_initialized()
-    :beamcore_memory_store |> entries_for(org, repo) |> overview_from_entries(org, repo)
+    :beamcore_memory_store |> entries_for() |> overview_from_entries()
   end
 
-  defp fallback_entries(org, repo) do
+  defp fallback_entries do
     ensure_fallback_initialized()
-    entries_for(:beamcore_memory_store, org, repo)
+    entries_for(:beamcore_memory_store)
   end
 
   defp fallback_clear do
@@ -788,16 +658,6 @@ defmodule Beamcore.Memory do
       _ -> default
     end
   end
-
-  defp normalize_remember3(type, key, value) do
-    if probable_accidental_limit?(value) and not known_type?(type) and storable_memory_value?(key) do
-      {@default_type, normalize_key(type), key}
-    else
-      {type, key, value}
-    end
-  end
-
-  defp known_type?(value), do: MapSet.member?(@known_types, normalize_type(value))
 
   defp normalize_type(value) when is_atom(value), do: canonical_type(value)
   defp normalize_type(value) when is_binary(value), do: canonical_type(String.trim(value))
@@ -867,13 +727,6 @@ defmodule Beamcore.Memory do
     end
   end
 
-  defp storable_memory_value?(value) do
-    match?(:ok, validate_memory_value(value))
-  end
-
-  defp probable_accidental_limit?(value) when is_integer(value), do: value >= @max_limit
-  defp probable_accidental_limit?(_value), do: false
-
   defp clamp_limit(limit) when is_integer(limit) do
     limit
     |> max(1)
@@ -898,14 +751,4 @@ defmodule Beamcore.Memory do
   end
 
   defp compact_value(value), do: value
-
-  defp parse_git_url(url) do
-    url = String.replace_suffix(url, ".git", "")
-    parts = String.split(url, [":", "/"])
-
-    case Enum.reverse(parts) do
-      [repo, org | _] -> {org, repo}
-      _ -> nil
-    end
-  end
 end
