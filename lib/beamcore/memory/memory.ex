@@ -304,7 +304,7 @@ defmodule Beamcore.Memory do
   def detect_org_repo do
     root =
       Process.get(:workspace_root) ||
-        Application.get_env(:agent, :workspace_root) ||
+        Application.get_env(:beamcore, :workspace_root) ||
         Beamcore.Agent.Tools.PathInput.workspace_root()
 
     detect_org_repo(root)
@@ -342,7 +342,7 @@ defmodule Beamcore.Memory do
 
     dets_path =
       opts[:dets_path] ||
-        Application.get_env(:agent, :memory_dets_path) ||
+        Application.get_env(:beamcore, :memory_dets_path) ||
         @default_dets_path
 
     expanded_path = Beamcore.Agent.Tools.PathInput.canonical_path(dets_path)
@@ -768,7 +768,7 @@ defmodule Beamcore.Memory do
     end
 
     dets_path =
-      Application.get_env(:agent, :memory_dets_path) ||
+      Application.get_env(:beamcore, :memory_dets_path) ||
         @default_dets_path
 
     expanded_path = Beamcore.Agent.Tools.PathInput.canonical_path(dets_path)

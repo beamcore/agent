@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.MixProject do
 
   def project do
     [
-      app: :agent,
+      app: :beamcore,
       version: @version,
       elixir: "~> 1.12",
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -17,13 +17,13 @@ defmodule Beamcore.Agent.MixProject do
 
       # For advanced users (release)
       releases: [
-        agent: [
+        beamcore: [
           include_executables_for: [:unix],
-          applications: [runtime_tools: :permanent, agent: :permanent],
+          applications: [runtime_tools: :permanent, beamcore: :permanent],
           config_providers: [Mix.Release.Config.Env],
           steps: [:assemble],
           executables: [
-            agent: [
+            beamcore: [
               main_module: Beamcore.Agent
             ]
           ]

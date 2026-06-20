@@ -11,7 +11,7 @@ INSTALL_DIR  ?= $(HOME)/.beamcore/app
 BIN_DIR      ?= $(HOME)/.local/bin
 LAUNCHER     ?= $(BIN_DIR)/beamcore
 CONFIG_DIR   ?= $(HOME)/.beamcore
-RELEASE_NAME ?= agent
+RELEASE_NAME ?= beamcore
 RELEASE_DIR   = _build/prod/rel/$(RELEASE_NAME)
 
 VERBOSE ?= 0
@@ -94,7 +94,7 @@ else
 		'#!/bin/sh' \
 		'set -eu' \
 		'BEAMCORE_APP="$${BEAMCORE_INSTALL_DIR:-$(INSTALL_DIR)}"' \
-		'AGENT_BIN="$$BEAMCORE_APP/bin/agent"' \
+		'AGENT_BIN="$$BEAMCORE_APP/bin/beamcore"' \
 		'' \
 		'if [ ! -x "$$AGENT_BIN" ]; then' \
 		'  printf "error: Beamcore not installed at %s\n" "$$BEAMCORE_APP" >&2' \
@@ -102,7 +102,7 @@ else
 		'fi' \
 		'' \
 		'if [ "$$#" -eq 0 ]; then' \
-		'  exec "$$AGENT_BIN" eval "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"' \
+		'  exec "$$AGENT_BIN" eval "Application.ensure_all_started(:beamcore); Beamcore.Agent.chat()"' \
 		'fi' \
 		'exec "$$AGENT_BIN" "$$@"' > "$(LAUNCHER)"; \
 	chmod +x "$(LAUNCHER)"; \
@@ -182,7 +182,7 @@ clean:
 
 ## chat: Start the TUI chat (dev mode, auto-joins mesh)
 chat: compile
-	elixir --sname "beamcore-$$$$" -S mix run -e "Application.ensure_all_started(:agent); Beamcore.Agent.chat()"
+	elixir --sname "beamcore-$$$$" -S mix run -e "Application.ensure_all_started(:beamcore); Beamcore.Agent.chat()"
 
 ## run-memory: Run memory service standalone (mesh member)
 run-memory: compile

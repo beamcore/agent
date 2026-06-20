@@ -10,8 +10,8 @@ defmodule Beamcore.Provider.RegistryClientTest do
         "beamcore_registry_client_config_#{System.unique_integer([:positive])}.dets"
       )
 
-    previous = Application.get_env(:agent, :config_dets_path)
-    Application.put_env(:agent, :config_dets_path, path)
+    previous = Application.get_env(:beamcore, :config_dets_path)
+    Application.put_env(:beamcore, :config_dets_path, path)
 
     on_exit(fn ->
       restore_config_path(previous)
@@ -36,6 +36,6 @@ defmodule Beamcore.Provider.RegistryClientTest do
     assert client.base_url == "https://api.openai.com/v1"
   end
 
-  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
-  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
+  defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:beamcore, :config_dets_path, path)
 end

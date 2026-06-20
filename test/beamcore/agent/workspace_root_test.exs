@@ -14,7 +14,7 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     File.mkdir_p!(root)
     root = PathInput.canonical_path(root)
 
-    previous_workspace = Application.get_env(:agent, :workspace_root)
+    previous_workspace = Application.get_env(:beamcore, :workspace_root)
 
     on_exit(fn ->
       PathInput.restore_workspace_root(previous_workspace)

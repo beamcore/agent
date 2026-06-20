@@ -18,7 +18,7 @@ defmodule Beamcore.AppLog do
 
   @spec log_dir() :: binary()
   def log_dir do
-    Application.get_env(:agent, :app_log_dir) ||
+    Application.get_env(:beamcore, :app_log_dir) ||
       Path.join([System.user_home!(), ".beamcore", "logs"])
   end
 

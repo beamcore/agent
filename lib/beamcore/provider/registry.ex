@@ -131,7 +131,7 @@ defmodule Beamcore.Provider.Registry do
         token = resolve_api_key(provider_info)
 
         if is_binary(token) do
-          receive_timeout = Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
+          receive_timeout = Application.get_env(:beamcore, :provider_receive_timeout_ms, 30_000)
 
           OpenaiEx.new(token)
           |> OpenaiEx.with_base_url(provider_info.base_url)
@@ -157,7 +157,7 @@ defmodule Beamcore.Provider.Registry do
         token = resolve_api_key(provider_info)
 
         if is_binary(token) do
-          receive_timeout = Application.get_env(:agent, :provider_receive_timeout_ms, 30_000)
+          receive_timeout = Application.get_env(:beamcore, :provider_receive_timeout_ms, 30_000)
 
           client =
             OpenaiEx.new(token)

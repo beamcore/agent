@@ -179,16 +179,16 @@ defmodule Beamcore.MemoryTest do
   end
 
   defp with_app_env(key, value, fun) when is_function(fun, 0) do
-    previous = Application.get_env(:agent, key)
-    Application.put_env(:agent, key, value)
+    previous = Application.get_env(:beamcore, key)
+    Application.put_env(:beamcore, key, value)
 
     try do
       fun.()
     after
       if is_nil(previous) do
-        Application.delete_env(:agent, key)
+        Application.delete_env(:beamcore, key)
       else
-        Application.put_env(:agent, key, previous)
+        Application.put_env(:beamcore, key, previous)
       end
     end
   end

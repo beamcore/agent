@@ -10,8 +10,8 @@ defmodule Beamcore.Provider.ModelMetadataTest do
         "beamcore_model_metadata_#{System.unique_integer([:positive])}.dets"
       )
 
-    previous_path = Application.get_env(:agent, :config_dets_path)
-    Application.put_env(:agent, :config_dets_path, path)
+    previous_path = Application.get_env(:beamcore, :config_dets_path)
+    Application.put_env(:beamcore, :config_dets_path, path)
 
     Health.invalidate(:all)
 
@@ -68,6 +68,6 @@ defmodule Beamcore.Provider.ModelMetadataTest do
     refute inspect(metadata) =~ "secret"
   end
 
-  defp restore_config_path(nil), do: Application.delete_env(:agent, :config_dets_path)
-  defp restore_config_path(path), do: Application.put_env(:agent, :config_dets_path, path)
+  defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)
+  defp restore_config_path(path), do: Application.put_env(:beamcore, :config_dets_path, path)
 end

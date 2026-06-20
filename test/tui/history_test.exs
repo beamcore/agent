@@ -10,12 +10,12 @@ defmodule Beamcore.TUI.HistoryTest do
     temp_path = Path.join(temp_dir, "history_test_#{unique_id}.json")
 
     # Set the history path config
-    Application.put_env(:agent, :history_path, temp_path)
+    Application.put_env(:beamcore, :history_path, temp_path)
 
     # Cleanup after test
     on_exit(fn ->
       File.rm(temp_path)
-      Application.delete_env(:agent, :history_path)
+      Application.delete_env(:beamcore, :history_path)
     end)
 
     %{path: temp_path}

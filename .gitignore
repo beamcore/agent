@@ -5,7 +5,7 @@
 /.fetch
 .env
 /escript
-/agent
+/beamcore
 .env.*
 !.env.example
 /.beamcore/
