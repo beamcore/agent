@@ -1,135 +1,232 @@
+# Beamcore
 
-Beamcore is a small terminal coding agent built on Elixir/OTP. It runs one
-straight chat loop, uses one provider routing path, and executes work through
-Eeva, the model-facing Elixir runtime.
+Beamcore is a terminal coding agent built on the Erlang/OTP distribution
+protocol. Every instance is a distributed node. Eeva, the model-facing runtime,
+runs arbitrary Elixir inside the same VM -- giving the agent direct access to
+the Beam module system, process tree, and inter-node RPC. The agent can
+configure itself, call its own functions recursively, spawn sub-agents, talk to
+other agents on the same machine or across the network, and (if it chooses)
+recompile its own modules at runtime.
 
-Beamcore acts directly in a trusted-local developer environment and reports
-failures clearly instead of asking for approval before normal work.
+## Architecture
 
-## What Remains
-
-- chat-first TUI with input, scrollback, compact status, paste handling, and
-  `@` file search;
-- provider-neutral chat requests through `Beamcore.Provider.Router`;
-- provider/model switching through `/api`;
-- Eeva as the only model-facing execution layer;
-- trusted-local path handling for relative, absolute, and symlinked paths;
-- internal `.beamcore` storage protection;
-- captured Eeva stdout/stderr so raw IO cannot corrupt the TUI;
-- supervised memory, ledger, provider scheduler, and task runtime;
-- alignment pause/resume support.
-
-## Commands
-
-| Command | Purpose |
-|---|---|
-| `/help` | Show available commands. |
-| `/api` | List configured providers. |
-| `/api use PROVIDER [MODEL]` | Switch the active provider/model. |
-| `/api model MODEL` | Switch the model for the active provider. |
-| `/env` | Show redacted process environment values. |
-| `/clear` | Clear the visible chat when supported by the current TUI path. |
-| `/stop` | Stop or pause active work when supported by the current runtime path. |
-
-Unknown or removed commands are rejected automatically with a compact message.
-
-## Provider Setup
-
-Beamcore stores user config under `~/.beamcore`. Environment variables can still
-override provider settings for the current process.
-
-Typical development flow:
-
-```sh
-mix deps.get
-mix test
-mix run -e 'Tui.run()'
+```
++---------------------------------------------------------------------+
+|                        BEAM VM                                      |
+|                                                                     |
+|  +--------------+    +--------------+    +--------------+            |
+|  | Agent A      |    | Agent B      |    | Agent C      |            |
+|  | (project-1)  |    | (project-2)  |    | (project-3)  |            |
+|  +------+-------+    +------+-------+    +------+-------+            |
+|         |                   |                   |                    |
+|         +--------- Erlang Distribution ---------+                    |
+|                    (BEAMCORE_MESH:1:...)                             |
+|                                                                     |
+|  +----------+  +----------+  +----------+  +----------+             |
+|  | Config   |  | Memory   |  | Eeva     |  | Provider |             |
+|  | (DETS)   |  | (ETS+DETS)| | Workers  |  | Router   |             |
+|  +----------+  +----------+  +----------+  +----------+             |
++---------------------------------------------------------------------+
 ```
 
-Useful Make targets:
+## Eeva: The Execution Layer
 
-```sh
-make chat
-make test
-make validate
-make install
-make install-dev
+Eeva is the only tool the model uses. It is not a wrapper around shell
+commands -- it compiles and executes Elixir AST inside a supervised worker with
+tuned limits.
+
+### What Eeva can do
+
+- **File I/O**: `File.read!/1`, `File.write!/2`, `File.ls!/1` -- direct access
+  to the filesystem under the workspace root.
+- **System commands**: `System.cmd/2` is intercepted and routed through
+  `Eeva.system_cmd/3` for tracking, but the agent can run git, mix, make, or
+  any installed binary.
+- **Memory**: `Beamcore.Memory.remember/3`, `recall/3`, `list/3`, `search/2`,
+  `forget/2` -- scoped persistent storage backed by ETS and DETS.
+- **Config**: `Beamcore.Config.put/2`, `get/1`, `put_provider/2`,
+  `set_active_provider/1` -- the agent can reconfigure itself mid-session.
+- **Sub-agents**: `Beamcore.Agent.SubAgent.run/2` -- spawn a bounded sub-agent
+  on the same or a different model. The sub-agent gets its own Eeva tool and
+  can iterate up to 150 tool calls deep.
+- **Cross-agent RPC**: `Node.list/0` returns connected peers. The agent can
+  call any function on any connected node:
+
+```elixir
+Node.list() |> Enum.map(fn node ->
+  :rpc.call(node, Beamcore.Memory, :list, [])
+end)
 ```
 
-## Eeva Runtime
+- **Hot code reload**: `Code.compile_string/1` compiles new module definitions
+  into the running VM. The agent can modify its own code at runtime. This is
+  powerful and dangerous -- a bad compile can break the running session.
 
-Eeva accepts ordinary Elixir code from the model and runs it under OTP
-supervision. It captures stdout/stderr and bounds large code/output/results so
-tool execution cannot corrupt the TUI or overwhelm the provider context.
+### What Eeva enforces
 
-Permitted operations run autonomously. If compilation, command execution,
-runtime guards, provider calls, or rate limits fail, Beamcore surfaces a compact
-status/chat notice so the agent can self-correct without silently repeating the
-same failed step.
+- AST node count limit (default: 24,000)
+- Code byte limit (default: 128 KB)
+- Execution timeout (default: 3 minutes)
+- Memory cap per worker (default: 256 MB)
+- Reduction limit (default: 40M reductions)
+- Atom budget tracking -- prevents atom table exhaustion
+- Output truncation (default: 256 KB stdout, 128 KB result)
 
-Recoverable tool/runtime errors keep the session active. The TUI shows the short
-error plus a subtle continuation hint, while serious crash details are written
-to the application log.
+The agent writes normal Elixir. The sandbox validates structure before
+execution. There is no special DSL or restricted API surface -- the model has
+full access to the language and runtime.
 
-## Memory And Alignment
+## Mesh Networking
 
-`Beamcore.Memory` is supervised and available through Eeva. It is intended for
-small durable project facts, not secrets or large transcripts.
+Every Beamcore instance starts as a distributed Erlang node. Discovery uses two
+parallel mechanisms:
 
-Alignment pause/resume remains part of the runtime so the user can interrupt an
-active turn and provide a correction before work continues.
+- **UDP broadcast** -- beacons on port 45876 for LAN-wide discovery.
+- **EPMD poll** -- queries the local Erlang Port Mapper Daemon for
+  beamcore-* nodes. Covers the common case of multiple agents on one host.
 
-## Token Metadata
+Zero configuration. Start two terminals:
 
-Model context metadata records the source and accuracy of context-window and
-usage numbers. Provider-reported usage is preferred when available; otherwise
-Beamcore labels estimates explicitly.
+```sh
+# Terminal 1 (project-1)
+cd ~/project-1 && make chat
 
-## Freedom And Operator Controls
+# Terminal 2 (project-2)
+cd ~/project-2 && make chat
+```
 
-Beamcore is autonomous by default. Useful local coding actions are not hidden
-behind approval loops or legacy allowlists. Operator controls are explicit:
+Both agents discover each other automatically. Once connected, they share the
+Erlang distribution protocol -- full bidirectional RPC with no serialization
+overhead.
 
-- `Beamcore.Config.put_setting(:max_tool_calls, 42)` caps model tool iterations.
-  Unset means Beamcore uses its high default for iterative coding.
-- Eeva runtime bounds (`:eeva_timeout_ms`, `:eeva_max_code_bytes`,
-  `:eeva_max_output_bytes`, etc.) are tuned via `Beamcore.Config.put_setting/2`.
-- `Beamcore.Agent.Tools.Eeva.remove(path, confirm: true)` is the explicit helper
-  for destructive removal. Without `confirm: true`, it refuses to remove files.
-- Relative paths resolve from the active project root; absolute and symlinked
-  paths are accepted for trusted local workflows.
+### Cross-agent operations
 
-Beamcore still avoids accidental runtime pollution: internal `.beamcore` state
-is hidden from casual project listings, large outputs are compacted, and secrets
-are redacted from status/config displays.
+The agent can reach any connected peer from Eeva:
+
+```elixir
+# List connected peers
+Node.list()
+
+# Fetch memory entries from another agents project
+remote_memory = :rpc.call(:"beamcore-e5f6g7h8@hostname", Beamcore.Memory, :list, [:facts])
+
+# Ask another agent to run a function
+result = :rpc.call(:"beamcore-e5f6g7h8@hostname", MyProject.Config, :get, [:version])
+
+# Connect to a remote node manually
+Node.connect(:"beamcore-remote@other-host")
+```
+
+### Example: cross-project context sharing
+
+You have two agents running -- one on backend-api, one on frontend-app. You
+ask the backend agent: what version is the frontend using?
+
+The agent writes Eeva code:
+
+```elixir
+peers = Node.list()
+case peers do
+  [] -> IO.puts("No peers connected")
+  [peer | _] ->
+    version = :rpc.call(peer, MyProject.MixProject, :project, []) |> Keyword.get(:version)
+    IO.puts("Frontend version: " <> to_string(version))
+end
+```
+
+Eeva compiles and executes it. The result comes back as tool output. The agent
+reports: The frontend is on version 2.4.1.
+
+## Self-Configuration
+
+The agent can configure itself through Beamcore.Config:
+
+```elixir
+# Add a provider
+Beamcore.Config.put_provider("openai", %{  
+  "api_key" => "encrypted:" <> encrypted_key,
+  "base_url" => "https://api.openai.com/v1",
+  "default_model" => "gpt-4o"
+})
+
+# Switch active provider
+Beamcore.Config.set_active_provider("openai")
+
+# Tune runtime limits
+Beamcore.Config.put(:max_tool_calls, 50)
+
+# Read current config
+Beamcore.Config.active_provider()
+Beamcore.Config.get_setting(:max_tool_calls)
+```
+
+The first time you run `/api add openai sk-...` in the TUI, the key is
+encrypted with AES-256-GCM using a machine-bound key and persisted to
+`~/.beamcore/config.dets`. Every subsequent session loads it automatically.
+
+## Hot Reload
+
+Because Eeva runs inside the same BEAM VM as the agent, the agent can
+recompile modules at runtime:
+
+```elixir
+Code.compile_string("defmodule MyProject.NewFunction do\\n  def hello, do: :world\\nend")
+```
+
+This is real hot code loading -- the new module definition replaces the old one
+in the running VM. The agent can evolve its own behavior mid-session.
+
+This is powerful and dangerous. A failed compile or a module that breaks
+contracts will crash the running session. Use it when you know what you are
+doing.
+
+## Provider System
+
+Beamcore routes through any OpenAI-compatible API. The registry ships with
+OpenAI and DeepSeek defaults. Any provider can be added at runtime:
+
+```sh
+/api add openai sk-...                              # OpenAI
+/api add deepseek sk-...                            # DeepSeek
+/api add groq gsk_... https://api.groq.com/openai   # Groq
+/api add custom sk-... https://my-api.com/v1        # Custom
+```
+
+Provider health is probed asynchronously. Model availability is cached with a
+10-second TTL. The agent can switch providers or models mid-session without
+restarting.
+
+## Memory
+
+Beamcore.Memory is a supervised key-value store scoped by
+`{org, repo, type, key}`. Types include: facts, decisions, patterns,
+errors, context, notes, preferences, tasks, projects.
+
+Backed by ETS for reads and DETS for persistence. The agent uses it to remember
+decisions, file relationships, test patterns, and project conventions across
+sessions.
 
 ## Application Logs
 
-Application diagnostics are written outside the TUI under:
+Diagnostics at `~/.beamcore/logs/YYYY-MM-DD.txt`. Includes startup/shutdown
+events, exceptions, render failures, tool dispatcher failures, and stacktraces.
+Secrets are redacted automatically.
+
+## Development
 
 ```sh
-~/.beamcore/logs/YYYY-MM-DD.txt
+make chat          # Start TUI (dev mode)
+make test          # Run test suite
+make check         # Format check + compile warnings + tests
+make check-full    # Full validation including Dialyzer
+make format        # Auto-format source code
+make release       # Build production release
 ```
 
-These logs are for the operator. They include startup/shutdown events,
-unexpected exceptions, TUI/render failures, tool dispatcher failures, and
-stacktraces that would be too noisy for the chat UI. API keys, tokens,
-authorization headers, passwords, cookies, and similar secrets are redacted.
+## Contributing
 
-Beamcore does not automatically feed application logs into the model prompt or
-memory. The agent may inspect them only when the user explicitly asks for local
-log debugging.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Install
+## License
 
-Development install:
-
-```sh
-make install-dev
-```
-
-Release build:
-
-```sh
-MIX_ENV=prod mix release --overwrite
-```
+MIT -- see [LICENSE](LICENSE).
