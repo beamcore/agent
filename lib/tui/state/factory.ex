@@ -40,11 +40,10 @@ defmodule Beamcore.TUI.State.Factory do
   end
 
   def compute_memory_total do
-    {org, repo} = Beamcore.Memory.detect_org_repo()
-
-    [:repo_map, :patterns, :decisions, :errors, :context]
-    |> Enum.map(fn type -> length(Beamcore.Memory.list(org, repo, type)) end)
-    |> Enum.sum()
+    case Beamcore.Memory.overview() do
+      %{total: total} when is_integer(total) -> total
+      _ -> 0
+    end
   end
 
   defp client(opts) do
