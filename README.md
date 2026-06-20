@@ -11,6 +11,68 @@ configure itself, call its own functions recursively, spawn sub-agents, talk to
 other agents on the same machine or across the network, and (if it chooses)
 recompile its own modules at runtime.
 
+## Installation
+
+### From source (requires Elixir 1.12+ and Erlang/OTP 25+)
+
+```sh
+git clone https://github.com/beamcore/agent.git
+cd agent
+make deps
+```
+
+### From release (no Elixir required)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/beamcore/agent/main/install.sh | sh
+```
+
+Or using the Makefile:
+
+```sh
+make install
+```
+
+## Usage
+
+Start the interactive TUI:
+
+```sh
+make chat
+```
+
+Or, if installed via release:
+
+```sh
+beamcore
+```
+
+### Configuration
+
+Beamcore reads provider API keys from the environment. You can also
+configure providers interactively with `/api add` inside the TUI.
+
+```sh
+# Set your API key (pick one)
+export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+export MISTRAL_API_KEY=...
+```
+
+See [`.env.example`](.env.example) for all supported providers.
+
+### Commands
+
+Once inside the TUI, you can use these slash commands:
+
+| Command | Description |
+|---------|-------------|
+| `/help` | Show available commands |
+| `/api add` | Add a new provider |
+| `/api list` | List configured providers |
+| `/clear` | Clear the chat history |
+| `/exit` | Quit the agent |
+
 ## Architecture
 
 ```
