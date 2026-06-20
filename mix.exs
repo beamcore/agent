@@ -31,7 +31,7 @@ defmodule Beamcore.Agent.MixProject do
       ],
       docs: [
         main: "readme",
-        extras: ["README.md", "CHANGELOG.md"],
+        extras: ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE"],
         source_ref: "v" <> @version,
         source_url: "https://github.com/beamcore/agent"
       ],
