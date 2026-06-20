@@ -115,6 +115,14 @@ defmodule Beamcore.TUI.Events.Runtime do
     total = Map.get(usage, :total_tokens) || Map.get(usage, "total_tokens")
     summary = "Provider usage #{total || "unknown"} tokens (#{source})"
 
+    input = Map.get(usage, :input_tokens) || Map.get(usage, "input_tokens")
+    output = Map.get(usage, :output_tokens) || Map.get(usage, "output_tokens")
+    provider = State.provider(state.session)
+
+    if provider && (is_integer(input) || is_integer(output)) do
+      Beamcore.TUI.Components.System.Store.record_usage(provider, input || 0, output || 0)
+    end
+
     State.add_activity(state, "provider_usage", Map.put(usage, :summary, summary), :completed)
   end
 
