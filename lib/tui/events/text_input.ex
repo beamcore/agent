@@ -12,19 +12,9 @@ defmodule Beamcore.TUI.Events.TextInput do
   end
 
   def insert_textarea_content(textarea, content) do
-    value = ExRatatui.textarea_get_value(textarea)
-    {row, col} = ExRatatui.textarea_cursor(textarea)
-    insert_at = pos_to_char_index(value, row, col)
-
-    new_value =
-      String.slice(value, 0, insert_at) <>
-        content <>
-        String.slice(value, insert_at..-1//1)
-
-    ExRatatui.textarea_set_value(textarea, new_value)
-
-    {target_row, target_col} = char_index_to_pos(new_value, insert_at + String.length(content))
-    move_textarea_cursor(textarea, target_row, target_col)
+    # Use the optimized atomic insert function from ex_ratatui
+    # This handles the insertion in one shot without manual cursor movement
+    ExRatatui.textarea_insert_str(textarea, content)
   end
 
   def handle_file_finder_key(_code, _mods, state) do
@@ -96,21 +86,6 @@ defmodule Beamcore.TUI.Events.TextInput do
     end
 
     :ok
-  end
-
-  defp pos_to_char_index(value, row, col) do
-    value
-    |> String.split("\n", trim: false)
-    |> Enum.take(row + 1)
-    |> case do
-      [] ->
-        0
-
-      lines ->
-        previous = lines |> Enum.take(row) |> Enum.map(&(String.length(&1) + 1)) |> Enum.sum()
-        current = lines |> List.last() |> String.slice(0, col) |> String.length()
-        previous + current
-    end
   end
 
   defp char_index_to_pos(string, index) do
