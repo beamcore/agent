@@ -48,7 +48,7 @@ defmodule Beamcore.Agent.Chat.Commands do
 
   defp handle_env(session, output) do
     providers = Beamcore.Config.list_providers()
-    active = Beamcore.Config.active_provider()
+    active = Beamcore.Config.active_provider(session.screen_type)
 
     provider_str =
       providers
@@ -80,7 +80,7 @@ defmodule Beamcore.Agent.Chat.Commands do
         active =
           case session.roles do
             %{primary: %{provider: provider}} -> provider
-            _ -> Beamcore.Config.active_provider()
+            _ -> Beamcore.Config.active_provider(session.screen_type)
           end
 
         output.("Configured API Providers (* denotes active in this session):")

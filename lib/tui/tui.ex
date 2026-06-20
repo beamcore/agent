@@ -66,6 +66,8 @@ defmodule Beamcore.TUI do
       send(parent, {:file_finder_cache, files})
     end)
 
+    init_screen_providers()
+
     f1_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
     f2_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :chat))
 
@@ -171,6 +173,19 @@ defmodule Beamcore.TUI do
 
   @impl true
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp init_screen_providers do
+    global = Beamcore.Config.active_provider()
+
+    if global do
+      for screen <- [:agent, :chat] do
+        case Beamcore.Config.get(:"active_provider_#{screen}") do
+          nil -> Beamcore.Config.set_active_provider(screen, global)
+          _ -> :ok
+        end
+      end
+    end
+  end
 
   @impl true
   def terminate(_reason, _state), do: :ok

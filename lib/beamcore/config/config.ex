@@ -118,10 +118,6 @@ defmodule Beamcore.Config do
   def set_active_provider(screen_type, name) when is_binary(name) do
     screen_type = screen_type || :agent
     put(:"active_provider_#{screen_type}", name)
-
-    if screen_type == :agent do
-      set_active_provider(name)
-    end
   end
 
   def active_model(screen_type) do
@@ -138,7 +134,7 @@ defmodule Beamcore.Config do
     put(:"active_model_#{screen_type}", model)
   end
 
-  defp default_provider_for_screen(_other), do: active_provider()
+  defp default_provider_for_screen(_screen_type), do: "openai"
 
   defp default_model_for_screen(_other), do: Beamcore.Agent.Chat.API.default_model()
 
