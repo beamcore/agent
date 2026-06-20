@@ -3,10 +3,24 @@ defmodule Beamcore.TUI.Render do
   Render composition for the primary TUI.
   """
 
-  alias Beamcore.TUI.Components.{Chat, Help, Input, StatusBar}
+  alias Beamcore.TUI.Components.{Chat, Help, Input, Providers, StatusBar}
   alias Beamcore.TUI.{Layout, Theme}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, List, Paragraph, Popup, SlashCommands}
+
+  def render(%{screen_type: :providers} = state, frame) do
+    area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
+    status_h = 1
+    content_h = max(area.height - status_h, 1)
+    content = %{area | height: content_h}
+    status = %{area | y: content_h, height: status_h}
+    lines = Providers.render_text(state, content.width - 4)
+
+    [
+      {%Paragraph{text: lines, style: Theme.style(:base), wrap: false}, content},
+      {StatusBar.widget(state, status.width), status}
+    ]
+  end
 
   def render(state, frame) do
     area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
@@ -81,9 +95,7 @@ defmodule Beamcore.TUI.Render do
       Theme.list_themes()
       |> Enum.sort()
       |> Enum.map(fn name ->
-        if name == current,
-          do: "#{name}  (current)",
-          else: "#{name}"
+        if name == current, do: "#{name}  (current)", else: "#{name}"
       end)
 
     list = %List{
@@ -120,13 +132,9 @@ defmodule Beamcore.TUI.Render do
   defp maybe_file_finder(widgets, _state, _area), do: widgets
 
   defp render_file_finder(state, area) do
-    results = state.file_finder_results
-    selected = state.file_finder_selected
-    query = state.file_finder_query
-
     list = %List{
-      items: results,
-      selected: selected,
+      items: state.file_finder_results,
+      selected: state.file_finder_selected,
       highlight_style: Theme.style(:accent),
       style: Theme.style(:panel)
     }
@@ -134,7 +142,7 @@ defmodule Beamcore.TUI.Render do
     popup = %Popup{
       content: list,
       block: %Block{
-        title: "Files: @#{query}",
+        title: "Files: @#{state.file_finder_query}",
         borders: [:all],
         border_type: :rounded
       },

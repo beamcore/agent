@@ -74,6 +74,7 @@ defmodule Beamcore.TUI.State do
             notice: nil,
             screen_type: :agent,
             show_theme_picker: false,
+            providers_data: nil,
             collapsed_blocks: %{}
 
   defdelegate new(terminal, textarea, opts \\ []), to: Factory

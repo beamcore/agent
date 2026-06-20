@@ -10,32 +10,20 @@ defmodule Beamcore.TUI.MessageRouter do
       delegate_event(event, state, screen)
     else
       new_state = %{state | active_screen: screen}
-      new_state = MultiScreenState.update_active(new_state, &State.mark_dirty/1)
+      new_state = MultiScreenState.update_active(new_state, &mark_dirty/1)
       {:noreply, new_state}
     end
   end
 
-  def delegate_event(event, state, screen) do
-    screen_state = screen_state(state, screen)
-
-    case Events.handle_event(event, screen_state) do
-      {:stop, new_screen_state} ->
-        {:stop, put_screen_state(state, screen, new_screen_state)}
-
-      {:noreply, new_screen_state} ->
-        new_state = put_screen_state(state, screen, new_screen_state)
-
-        if new_screen_state.status == :quit,
-          do: {:stop, new_state},
-          else: {:noreply, new_state}
-    end
-  end
+  defdelegate delegate_event(event, state, screen), to: __MODULE__.Delegate, as: :call
 
   def screen_state(state, :f1), do: state.f1_state
   def screen_state(state, :f2), do: state.f2_state
+  def screen_state(state, :f3), do: state.f3_state
 
-  def put_screen_state(state, :f1, f1_state), do: %{state | f1_state: f1_state}
-  def put_screen_state(state, :f2, f2_state), do: %{state | f2_state: f2_state}
+  def put_screen_state(state, :f1, s), do: %{state | f1_state: s}
+  def put_screen_state(state, :f2, s), do: %{state | f2_state: s}
+  def put_screen_state(state, :f3, s), do: %{state | f3_state: s}
 
   def animating?(%{status: status}), do: status in @animated_statuses
   def animating?(_state), do: false
@@ -93,7 +81,6 @@ defmodule Beamcore.TUI.MessageRouter do
 
   def route_agent_error(worker_pid, error, stacktrace, state) do
     Beamcore.AppLog.exception(:error, error, stacktrace, boundary: :agent_worker)
-    formatted_error = Exception.format(:error, error, stacktrace)
     user_error = Beamcore.AppLog.user_message()
 
     cond do
@@ -104,21 +91,19 @@ defmodule Beamcore.TUI.MessageRouter do
         {:noreply, %{state | f2_state: Events.fail_worker(state.f2_state, user_error)}}
 
       true ->
-        Beamcore.AppLog.warn("TUI received error from unknown worker", error: formatted_error)
+        formatted = Exception.format(:error, error, stacktrace)
+        Beamcore.AppLog.warn("TUI received error from unknown worker", error: formatted)
         {:noreply, state}
     end
   end
 
   def route_file_finder_cache(files, state) do
-    set_cache = fn screen_state ->
-      %{screen_state | file_finder_cache: screen_state.file_finder_cache || files}
-    end
+    set_cache = fn s -> %{s | file_finder_cache: s.file_finder_cache || files} end
 
     {:noreply,
-     %{
-       state
-       | f1_state: set_cache.(state.f1_state),
-         f2_state: set_cache.(state.f2_state)
-     }}
+     %{state | f1_state: set_cache.(state.f1_state), f2_state: set_cache.(state.f2_state)}}
   end
+
+  defp mark_dirty(%{render_dirty?: _} = s), do: State.mark_dirty(s)
+  defp mark_dirty(s), do: s
 end
