@@ -15,6 +15,49 @@ defmodule Beamcore.Agent do
 
   use Application
 
+  @version Application.spec(:agent, :vsn) || "0.1.0"
+
+  @doc """
+  CLI entry point for the release executable.
+
+  Handles --help, --version, and defaults to launching the TUI chat.
+  """
+  def main(args \\ [])
+
+  def main(["--help" | _]), do: print_help()
+  def main(["-h" | _]), do: print_help()
+  def main(["--version" | _]), do: print_version()
+  def main(["-v" | _]), do: print_version()
+  def main(_args), do: chat()
+
+  defp print_version do
+    IO.puts("beamcore v" <> version())
+  end
+
+  defp print_help do
+    IO.puts("beamcore v" <> version() <> " \u2014 an autonomous terminal coding agent")
+    IO.puts("")
+    IO.puts("Usage:")
+    IO.puts("  beamcore              Start the interactive TUI chat")
+    IO.puts("  beamcore --help       Show this help message")
+    IO.puts("  beamcore --version    Show version")
+    IO.puts("")
+    IO.puts("Configuration:")
+    IO.puts("  API keys can be set via environment variables or configured")
+    IO.puts("  interactively with /api add inside the TUI.")
+    IO.puts("")
+    IO.puts("  See .env.example for available environment variables.")
+    IO.puts("")
+    IO.puts("Documentation:")
+    IO.puts("  https://github.com/beamcore/agent")
+  end
+
+  @doc """
+  Returns the application version string.
+  """
+  def version, do: @version
+
+
   @doc """
   Start the Beamcore.Agent application.
   """
