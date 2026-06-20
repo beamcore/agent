@@ -141,6 +141,90 @@ The agent writes normal Elixir. The sandbox validates structure before
 execution. There is no special DSL or restricted API surface -- the model has
 full access to the language and runtime.
 
+
+## Why One Tool, Not Many
+
+Most coding agents expose a toolbox: `file_read`, `file_write`, `bash`, `grep`,
+`search_replace`, and so on. Each tool is a separate function call with rigid
+input/output contracts defined by the tool operator. The model selects a tool,
+fills in the parameters, and gets back whatever the tool decides to return.
+
+Beamcore takes a different approach. The model has **one tool**: execute Elixir.
+
+### The harness does less so the model can do more
+
+Classic agents front-load capability into the harness. Want to read a file? Call
+`file_read`. Want to search? Call `grep`. Want to do both and correlate the
+results? Call `file_read`, then `grep`, then `file_read` again -- three
+round-trips, three fixed output formats, three context slots consumed.
+
+With eeva, the model writes code that does exactly what it needs in a single
+execution:
+
+```elixir
+Path.wildcard("lib/**/*.ex")
+|> Enum.map(fn path -> {path, File.read!(path)} end)
+|> Enum.filter(fn {_, src} -> String.contains?(src, "GenServer") end)
+|> Enum.map(fn {path, src} ->
+  functions = Regex.scan(~r/def (\w+)/, src) |> Enum.map(fn [_, f] -> f end)
+  {Path.basename(path), functions}
+end)
+```
+
+One tool call. No round-trips. The model decides the output format, the
+filtering logic, and the transformation -- all in code it wrote, not in a prompt
+the tool operator anticipated.
+
+### Capability is bounded by the model, not the harness
+
+When a harness provides 15 specialized tools, the agent can do exactly those 15
+things. If the task requires something the tool operator didn't anticipate --
+parsing a TOML file, deduplicating across three directories, computing a
+checksum -- the agent is stuck or must decompose the task into awkward
+multi-step tool chains.
+
+With a general-purpose execution layer, the model's capability is bounded by
+its ability to write code. It can compose arbitrary operations, handle errors,
+branch on conditions, loop over collections, and call any library available in
+the runtime. The harness adds nothing except safe execution boundaries.
+
+This means that as models improve at writing code, Beamcore's capability scales
+automatically -- no new tools needed, no prompt engineering required.
+
+### Tokenomics: echo what matters, skip the rest
+
+Classic tool calls return their full output into the context window. A `bash`
+tool that runs `git log` returns 200 lines of history. A `grep` that matches
+47 files returns all 47 filenames. The model must parse raw output that was
+formatted for a human terminal, not for a language model.
+
+With Eeva, the model writes code that processes data *before* echoing it back.
+It can summarize, filter, transform, aggregate, and format the result exactly
+how it wants to consume it. Only relevant information enters the context window.
+
+This is a recursive advantage: the model writes code that echoes to itself only
+what it needs, in the format it requested. Not how a user typed it. Not how a
+tool operator designed the output schema. The model controls the entire pipeline
+from intent to result.
+
+Multi-step operations that would consume 10 tool calls and thousands of tokens
+in a classic agent collapse into a single eeva invocation that returns a few
+lines of structured output.
+
+### What this means in practice
+
+- **Fewer tool calls per task** -- complex operations that chain 5-10 tool
+  calls elsewhere happen in one eeva execution.
+- **Smaller context footprint** -- the model consumes only the output it
+  designed for itself, not raw tool dumps.
+- **Higher ceiling** -- the agent can do anything Elixir can do. There is no
+  "I don't have a tool for that" failure mode.
+- **Self-improving** -- as the model gets better at writing code, the agent
+  gets more capable. No harness changes required.
+
+The tradeoff is that the model must be able to write code. This is not a
+limitation for current frontier models -- it is their strongest capability.
+
 ## Mesh Networking
 
 Every Beamcore instance starts as a distributed Erlang node. Discovery uses two
