@@ -39,7 +39,10 @@ defmodule Beamcore.TUI.MessageRouter do
            f2_state: State.tick(state.f2_state, now)
        }}
     else
-      {:noreply, state, render?: false}
+      # F3 mesh fetches live data at render time, so keep re-rendering when active
+      if state.active_screen == :f3,
+        do: {:noreply, state},
+        else: {:noreply, state, render?: false}
     end
   end
 

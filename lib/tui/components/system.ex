@@ -1,7 +1,8 @@
 defmodule Beamcore.TUI.Components.System do
   @moduledoc false
 
-  alias Beamcore.TUI.Components.{Providers, System.Stats}
+  alias Beamcore.TUI.Components.Providers
+  alias Beamcore.TUI.Components.System.{Mesh, Stats}
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
@@ -21,6 +22,20 @@ defmodule Beamcore.TUI.Components.System do
     accent = Theme.style(:accent)
     subtle = Theme.style(:subtle)
 
+    mesh_lines = Mesh.render(width)
+    divider_w = max(76, width - 4)
+
+    mesh_header = [
+      %Line{spans: [%Span{content: ""}]},
+      %Line{
+        spans: [
+          %Span{content: " ◆ Mesh Topology  ", style: accent},
+          %Span{content: String.duplicate("· ", div(width - 24, 2)), style: subtle}
+        ]
+      },
+      %Line{spans: [%Span{content: ""}]}
+    ]
+
     stats_lines = Stats.render(width)
     provider_items = Providers.render_items(system.providers, width)
 
@@ -35,7 +50,6 @@ defmodule Beamcore.TUI.Components.System do
       %Line{spans: [%Span{content: ""}]}
     ]
 
-    divider_w = max(76, width - 4)
 
     divider = [
       %Line{spans: [%Span{content: ""}]},
@@ -66,7 +80,7 @@ defmodule Beamcore.TUI.Components.System do
       }
     ]
 
-    top ++ stats_lines ++ divider ++ provider_items ++ bottom
+    top ++ stats_lines ++ divider ++ provider_items ++ bottom ++ mesh_header ++ mesh_lines
   end
 
   def widget(system, area) do
