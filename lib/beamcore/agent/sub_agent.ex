@@ -76,7 +76,8 @@ defmodule Beamcore.Agent.SubAgent do
   end
 
   defp handle_response(%{"content" => content}, _sel, _msgs, _tools, _temp, _depth)
-       when is_binary(content), do: {:ok, content}
+       when is_binary(content),
+       do: {:ok, content}
 
   defp handle_response(_message, _sel, _msgs, _tools, _temp, _depth),
     do: {:error, :unexpected_response}
