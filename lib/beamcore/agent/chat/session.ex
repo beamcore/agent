@@ -170,6 +170,7 @@ defmodule Beamcore.Agent.Chat.Session do
 
   defdelegate compact_history(messages), to: Compaction
   defdelegate summarize_and_rollover(session, messages, pid), to: Compaction
+  defdelegate maybe_compact(session, messages, metadata, depth \\ 0), to: Compaction
 
   @doc """
   Prepares messages for an API call: structural cleanup.

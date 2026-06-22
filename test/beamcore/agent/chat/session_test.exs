@@ -427,9 +427,19 @@ defmodule Beamcore.Agent.Chat.SessionTest do
         Process.delete(:mock_completions_create)
       end)
 
+      messages =
+        session.messages ++
+          Enum.flat_map(1..10, fn i ->
+            [
+              %{role: "user", content: "user message #{i}"},
+              %{role: "assistant", content: "assistant response #{i}"}
+            ]
+          end)
+
       session = %{
         session
         | session_id: "fallback-session-id",
+          messages: messages,
           last_prompt_tokens: 155_000
       }
 
@@ -441,6 +451,291 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.total_tokens == 0
 
       assert length(new_session.messages) > 0
+    end
+  end
+
+  describe "maybe_compact/4" do
+    setup do
+      client = Beamcore.Provider.Registry.client()
+      session = Session.new(client)
+      %{client: client, session: session}
+    end
+
+    test "does nothing when context_window is nil", %{session: session} do
+      messages = session.messages ++ [%{role: "user", content: "hello"}]
+      metadata = %{context_window: nil}
+
+      {result_session, result_messages} = Session.maybe_compact(session, messages, metadata, 0)
+
+      assert result_session == session
+      assert result_messages == messages
+    end
+
+    test "does nothing when estimate is below threshold", %{session: session} do
+      messages =
+        session.messages ++
+          [%{role: "user", content: "short message"}, %{role: "assistant", content: "short reply"}]
+
+      metadata = %{context_window: 200_000}
+
+      {result_session, result_messages} = Session.maybe_compact(session, messages, metadata, 0)
+
+      assert result_session == session
+      assert result_messages == messages
+    end
+
+    test "skips compaction during tool loop (depth > 0)", %{session: session} do
+      messages =
+        session.messages ++
+          Enum.flat_map(1..50, fn _i ->
+            [
+              %{role: "user", content: String.duplicate("x", 5000)},
+              %{role: "assistant", content: String.duplicate("y", 5000)}
+            ]
+          end)
+
+      metadata = %{context_window: 10_000}
+
+      {result_session, result_messages} = Session.maybe_compact(session, messages, metadata, 3)
+
+      assert result_session == session
+      assert result_messages == messages
+    end
+
+    test "stops auto-compacting after anti-thrashing limit", %{session: session} do
+      session = %{session | compaction_count: 3}
+
+      messages =
+        session.messages ++
+          Enum.flat_map(1..50, fn _i ->
+            [
+              %{role: "user", content: String.duplicate("x", 5000)},
+              %{role: "assistant", content: String.duplicate("y", 5000)}
+            ]
+          end)
+
+      metadata = %{context_window: 10_000}
+
+      {result_session, result_messages} = Session.maybe_compact(session, messages, metadata, 0)
+
+      assert result_session == session
+      assert result_messages == messages
+    end
+  end
+
+  describe "summarize_and_rollover detailed" do
+    setup do
+      client = Beamcore.Provider.Registry.client()
+      session = Session.new(client)
+      %{client: client, session: session}
+    end
+
+    test "returns session unchanged when fewer messages than keep_recent", %{session: session} do
+      messages =
+        session.messages ++
+          [%{role: "user", content: "hello"}, %{role: "assistant", content: "hi"}]
+
+      result = Session.summarize_and_rollover(session, messages, nil)
+
+      assert result == session
+    end
+
+    test "preserves recent messages verbatim and summarizes older ones", %{session: session} do
+      Process.put(:mock_completions_create, fn _client, _params ->
+        summary_text = "## USER GOAL\nUser wanted to build a CLI tool.\n\n## COMPLETED WORK\n- Created main.ex\n- Added tests"
+
+        {:ok,
+         %{
+           "choices" => [
+             %{
+               "message" => %{
+                 "role" => "assistant",
+                 "content" => summary_text
+               }
+             }
+           ]
+         }}
+      end)
+
+      on_exit(fn ->
+        Process.delete(:mock_completions_create)
+      end)
+
+      messages =
+        session.messages ++
+          Enum.flat_map(1..10, fn i ->
+            [
+              %{role: "user", content: "task step #{i}"},
+              %{role: "assistant", content: "completed step #{i}"}
+            ]
+          end)
+
+      session = %{session | messages: messages}
+
+      new_session = Session.summarize_and_rollover(session, messages, nil)
+
+      assert new_session.compaction_count == 1
+      assert length(new_session.messages) > 0
+
+      system_msg = List.first(new_session.messages)
+      system_content = system_msg[:content] || system_msg["content"]
+
+      assert system_content =~ "USER GOAL"
+      assert system_content =~ "CLI tool"
+      assert system_content =~ "[Compacted]"
+
+      non_system = Enum.drop(new_session.messages, 1)
+      assert length(non_system) <= 6
+
+      last_msg = List.last(non_system)
+      assert last_msg[:role] == "assistant" or last_msg["role"] == "assistant"
+    end
+
+    test "multiple compactions increment counter and add marker", %{session: session} do
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:ok,
+         %{
+           "choices" => [
+             %{
+               "message" => %{
+                 "role" => "assistant",
+                 "content" => "## USER GOAL\nBuild something.\n\n## COMPLETED WORK\nDone."
+               }
+             }
+           ]
+         }}
+      end)
+
+      on_exit(fn ->
+        Process.delete(:mock_completions_create)
+      end)
+
+      make_messages = fn ->
+        Enum.flat_map(1..10, fn i ->
+          [
+            %{role: "user", content: "step #{i}"},
+            %{role: "assistant", content: "done #{i}"}
+          ]
+        end)
+      end
+
+      messages1 = session.messages ++ make_messages.()
+      session1 = %{session | messages: messages1}
+      session2 = Session.summarize_and_rollover(session1, messages1, nil)
+
+      assert session2.compaction_count == 1
+
+      messages2 = session2.messages ++ make_messages.()
+      session3 = Session.summarize_and_rollover(session2, messages2, nil)
+
+      assert session3.compaction_count == 2
+
+      system_msg = List.first(session3.messages)
+      system_content = system_msg[:content] || system_msg["content"]
+      assert system_content =~ "Compacted 2x"
+    end
+
+    test "summary validation: empty string gets default", %{session: session} do
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:ok,
+         %{
+           "choices" => [
+             %{
+               "message" => %{
+                 "role" => "assistant",
+                 "content" => ""
+               }
+             }
+           ]
+         }}
+      end)
+
+      on_exit(fn ->
+        Process.delete(:mock_completions_create)
+      end)
+
+      messages =
+        session.messages ++
+          Enum.flat_map(1..10, fn i ->
+            [%{role: "user", content: "msg #{i}"}, %{role: "assistant", content: "resp #{i}"}]
+          end)
+
+      session = %{session | messages: messages}
+      new_session = Session.summarize_and_rollover(session, messages, nil)
+
+      system_msg = List.first(new_session.messages)
+      system_content = system_msg[:content] || system_msg["content"]
+      assert system_content =~ "compacted"
+    end
+
+    test "summary validation: too long gets truncated", %{session: session} do
+      long_summary = String.duplicate("x", 10_000)
+
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:ok,
+         %{
+           "choices" => [
+             %{
+               "message" => %{
+                 "role" => "assistant",
+                 "content" => long_summary
+               }
+             }
+           ]
+         }}
+      end)
+
+      on_exit(fn ->
+        Process.delete(:mock_completions_create)
+      end)
+
+      messages =
+        session.messages ++
+          Enum.flat_map(1..10, fn i ->
+            [%{role: "user", content: "msg #{i}"}, %{role: "assistant", content: "resp #{i}"}]
+          end)
+
+      session = %{session | messages: messages}
+      new_session = Session.summarize_and_rollover(session, messages, nil)
+
+      system_msg = List.first(new_session.messages)
+      system_content = system_msg[:content] || system_msg["content"]
+      assert system_content =~ "[truncated]"
+    end
+
+    test "resets token counters after compaction", %{session: session} do
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:ok,
+         %{
+           "choices" => [
+             %{
+               "message" => %{
+                 "role" => "assistant",
+                 "content" => "## USER GOAL\nTest.\n\n## COMPLETED WORK\nDone."
+               }
+             }
+           ]
+         }}
+      end)
+
+      on_exit(fn ->
+        Process.delete(:mock_completions_create)
+      end)
+
+      messages =
+        session.messages ++
+          Enum.flat_map(1..10, fn i ->
+            [%{role: "user", content: "msg #{i}"}, %{role: "assistant", content: "resp #{i}"}]
+          end)
+
+      session = %{session | messages: messages, total_tokens: 50_000, last_prompt_tokens: 10_000}
+
+      new_session = Session.summarize_and_rollover(session, messages, nil)
+
+      assert new_session.total_tokens == 0
+      assert new_session.last_prompt_tokens == 0
+      assert new_session.total_prompt_tokens == 0
+      assert new_session.total_completion_tokens == 0
     end
   end
 end

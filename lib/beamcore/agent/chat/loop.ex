@@ -62,6 +62,11 @@ defmodule Beamcore.Agent.Chat.Loop do
         _ -> opts
       end
 
+    {:ok, _api_messages, _estimate, metadata} =
+      prepare_api_messages(session, messages)
+
+    {session, messages} = Session.maybe_compact(session, messages, metadata, depth)
+
     {:ok, api_messages, estimate, metadata} =
       prepare_api_messages(session, messages)
 
