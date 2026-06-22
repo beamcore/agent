@@ -474,7 +474,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
     test "does nothing when estimate is below threshold", %{session: session} do
       messages =
         session.messages ++
-          [%{role: "user", content: "short message"}, %{role: "assistant", content: "short reply"}]
+          [
+            %{role: "user", content: "short message"},
+            %{role: "assistant", content: "short reply"}
+          ]
 
       metadata = %{context_window: 200_000}
 
@@ -542,7 +545,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
     test "preserves recent messages verbatim and summarizes older ones", %{session: session} do
       Process.put(:mock_completions_create, fn _client, _params ->
-        summary_text = "## USER GOAL\nUser wanted to build a CLI tool.\n\n## COMPLETED WORK\n- Created main.ex\n- Added tests"
+        summary_text =
+          "## USER GOAL\nUser wanted to build a CLI tool.\n\n## COMPLETED WORK\n- Created main.ex\n- Added tests"
 
         {:ok,
          %{
