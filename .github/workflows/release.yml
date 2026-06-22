@@ -24,29 +24,18 @@ jobs:
           - os: linux
             arch: amd64
             runner: ubuntu-latest
-          - os: linux
-            arch: arm64
-            runner: ubuntu-24.04-arm
           - os: darwin
             arch: arm64
             runner: macos-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Install Erlang & Elixir (Linux amd64)
-        if: matrix.os == 'linux' && matrix.arch == 'amd64'
+      - name: Install Erlang & Elixir (Linux)
+        if: matrix.os == 'linux'
         uses: erlef/setup-beam@v1
         with:
           otp-version: ${{ env.OTP_VERSION }}
           elixir-version: ${{ env.ELIXIR_VERSION }}
-
-      - name: Install Erlang & Elixir (Linux arm64)
-        if: matrix.os == 'linux' && matrix.arch == 'arm64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y erlang elixir
-          mix local.hex --force
-          mix local.rebar --force
 
       - name: Install Erlang & Elixir (macOS)
         if: matrix.os == 'darwin'
