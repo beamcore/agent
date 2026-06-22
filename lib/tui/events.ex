@@ -46,18 +46,23 @@ defmodule Beamcore.TUI.Events do
   end
 
   def handle_event(event, state, _opts) when is_map(event) do
-    if paste_event?(event) do
-      content =
-        Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
+    cond do
+      paste_event?(event) and Map.has_key?(state, :textarea) ->
+        content =
+          Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
 
-      TextInput.insert_textarea_content(state.textarea, content)
+        TextInput.insert_textarea_content(state.textarea, content)
 
-      state = %{state | history_index: nil}
-      state = TextInput.handle_file_finder_key(nil, [], state)
+        state = %{state | history_index: nil}
+        state = TextInput.handle_file_finder_key(nil, [], state)
 
-      {:noreply, Commands.refresh_commands(state)}
-    else
-      {:noreply, state}
+        {:noreply, Commands.refresh_commands(state)}
+
+      paste_event?(event) and state.__struct__ == Beamcore.TUI.Components.System ->
+        Beamcore.TUI.Components.System.handle_event(event, state)
+
+      true ->
+        {:noreply, state}
     end
   end
 

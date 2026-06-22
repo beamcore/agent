@@ -81,6 +81,7 @@ defmodule Beamcore.Config do
     end
   end
 
+  def get_provider(nil), do: nil
   def get_provider(name) when is_binary(name), do: Map.get(list_providers(), name)
 
   def put_provider(name, config) when is_binary(name) and is_map(config) do

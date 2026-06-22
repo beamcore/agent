@@ -94,9 +94,23 @@ defmodule Beamcore.Agent.Chat.API do
   end
 
   defp format_response({:ok, response_map}, _opts) do
-    case response_map["choices"] do
-      [%{"message" => message} | _] -> {:ok, %{message: message, raw_response: response_map}}
-      _ -> {:ok, %{message: nil, raw_response: response_map}}
+    case response_map do
+      %{"choices" => [%{"message" => message} | _]} ->
+        {:ok, %{message: message, raw_response: response_map}}
+
+      %{"choices" => []} ->
+        Beamcore.AppLog.warn("API returned empty choices", response: response_map)
+        {:error, "API returned empty response. Full response: #{inspect(response_map, limit: 500)}"}
+
+      %{"error" => %{"message" => msg}} ->
+        {:error, msg}
+
+      %{"error" => msg} when is_binary(msg) ->
+        {:error, msg}
+
+      _ ->
+        Beamcore.AppLog.warn("Unexpected API response format", response: response_map)
+        {:error, "Unexpected API response: #{inspect(response_map, limit: 500)}"}
     end
   end
 
@@ -112,6 +126,9 @@ defmodule Beamcore.Agent.Chat.API do
   Extracts reasoning content from a completions message map.
   Supports both reasoning_content fields and <think>...</think> tags inside content.
   """
+  def extract_reasoning(nil), do: {"", nil}
+  def extract_reasoning(message) when not is_map(message), do: {"", nil}
+
   def extract_reasoning(message) do
     reasoning =
       Map.get(message, "reasoning_content") ||
