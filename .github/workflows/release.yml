@@ -30,10 +30,6 @@ jobs:
           - os: darwin
             arch: arm64
             runner: macos-latest
-          - os: darwin
-            arch: amd64
-            runner: macos-13
-
     steps:
       - uses: actions/checkout@v7
 
@@ -61,7 +57,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           ASSET_NAME="beamcore-${VERSION}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz"
-          tar -czf "$ASSET_NAME" -C _build/prod/rel/agent .
+          tar -czf "$ASSET_NAME" -C _build/prod/rel/beamcore .
           echo "ASSET_NAME=$ASSET_NAME" >> "$GITHUB_ENV"
 
       - name: Upload artifact
