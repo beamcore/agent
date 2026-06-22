@@ -38,13 +38,16 @@ defmodule Beamcore.Agent do
     IO.puts("beamcore v" <> version() <> " \u2014 an autonomous terminal coding agent")
     IO.puts("")
     IO.puts("Usage:")
-    IO.puts("  beamcore              Start the interactive TUI chat")
-    IO.puts("  beamcore --help       Show this help message")
-    IO.puts("  beamcore --version    Show version")
+    IO.puts("  beamcore                Start the interactive TUI chat")
+    IO.puts("  beamcore --telegram     Start Telegram bot mode (no TUI)")
+    IO.puts("  beamcore --help         Show this help message")
+    IO.puts("  beamcore --version      Show version")
     IO.puts("")
     IO.puts("Configuration:")
     IO.puts("  API keys can be set via environment variables or configured")
     IO.puts("  interactively with /api add inside the TUI.")
+    IO.puts("")
+    IO.puts("  TELEGRAM_BOT_TOKEN  Set to enable Telegram bot mode")
     IO.puts("")
     IO.puts("  See .env.example for available environment variables.")
     IO.puts("")
@@ -67,18 +70,18 @@ defmodule Beamcore.Agent do
     # Ensure we are a distributed Erlang node before starting supervised processes
     Beamcore.Mesh.NodeNaming.ensure_distributed!()
 
-    children = [
-      Beamcore.Config,
-      Beamcore.Memory,
-      Beamcore.Provider.Scheduler,
-      {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
-      Beamcore.Agent.Tools.Eeva.AtomBudget,
-      Beamcore.Agent.Tools.Eeva.Supervisor,
-      Beamcore.Provider.Health,
-      Beamcore.Mesh,
-      Beamcore.Mesh.Discovery,
-      Beamcore.TUI.DynamicSupervisor
-    ]
+    children =
+      [
+        Beamcore.Config,
+        Beamcore.Memory,
+        Beamcore.Provider.Scheduler,
+        {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
+        Beamcore.Agent.Tools.Eeva.AtomBudget,
+        Beamcore.Agent.Tools.Eeva.Supervisor,
+        Beamcore.Provider.Health,
+        Beamcore.Mesh,
+        Beamcore.Mesh.Discovery
+      ] ++ tui_children() ++ telegram_children()
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
     Supervisor.start_link(children, opts)
@@ -92,6 +95,26 @@ defmodule Beamcore.Agent do
   def stop(_state) do
     Beamcore.AppLog.info("Application stopped", app: :beamcore)
     :ok
+  end
+
+  defp tui_children do
+    if telegram_mode?(), do: [], else: [Beamcore.TUI.DynamicSupervisor]
+  end
+
+  defp telegram_children do
+    case System.get_env("TELEGRAM_BOT_TOKEN") do
+      nil -> []
+      "" -> []
+      token -> [{Beamcore.Telegram, token: token}]
+    end
+  end
+
+  defp telegram_mode? do
+    case System.get_env("TELEGRAM_BOT_TOKEN") do
+      nil -> false
+      "" -> false
+      _ -> true
+    end
   end
 
   defp remember_initial_workspace do
@@ -109,15 +132,25 @@ defmodule Beamcore.Agent do
   def chat(opts \\ [])
 
   def chat(opts) when is_list(opts) do
-    with_workspace(opts, fn opts ->
-      start_tui(opts)
-    end)
+    if telegram_mode?() do
+      IO.puts("BeamCore Telegram bot mode. Press Ctrl+C to stop.")
+      Process.sleep(:infinity)
+    else
+      with_workspace(opts, fn opts ->
+        start_tui(opts)
+      end)
+    end
   end
 
   def chat(_mode, opts) when is_list(opts) do
-    with_workspace(opts, fn opts ->
-      start_tui(opts)
-    end)
+    if telegram_mode?() do
+      IO.puts("BeamCore Telegram bot mode. Press Ctrl+C to stop.")
+      Process.sleep(:infinity)
+    else
+      with_workspace(opts, fn opts ->
+        start_tui(opts)
+      end)
+    end
   end
 
   defp start_tui(opts),
