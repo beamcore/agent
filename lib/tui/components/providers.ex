@@ -28,7 +28,9 @@ defmodule Beamcore.TUI.Components.Providers do
   def handle_event(event, p) do
     cond do
       paste_event?(event) ->
-        content = Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
+        content =
+          Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
+
         {:noreply, insert_text(p, content) |> mark_dirty()}
 
       match?(%ExRatatui.Event.Key{code: "backspace"}, event) ->
@@ -46,8 +48,11 @@ defmodule Beamcore.TUI.Components.Providers do
   defp paste_event?(event) when is_map(event) do
     struct_name = Map.get(event, :__struct__)
     name = if struct_name, do: Module.split(struct_name) |> List.last(), else: ""
-    String.contains?(name, "Paste") or Map.has_key?(event, :content) or Map.has_key?(event, "content")
+
+    String.contains?(name, "Paste") or Map.has_key?(event, :content) or
+      Map.has_key?(event, "content")
   end
+
   defp paste_event?(_), do: false
 
   defp render_list_items(p, width) do

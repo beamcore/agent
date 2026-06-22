@@ -100,7 +100,9 @@ defmodule Beamcore.Agent.Chat.API do
 
       %{"choices" => []} ->
         Beamcore.AppLog.warn("API returned empty choices", response: response_map)
-        {:error, "API returned empty response. Full response: #{inspect(response_map, limit: 500)}"}
+
+        {:error,
+         "API returned empty response. Full response: #{inspect(response_map, limit: 500)}"}
 
       %{"error" => %{"message" => msg}} ->
         {:error, msg}
