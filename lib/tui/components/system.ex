@@ -50,7 +50,6 @@ defmodule Beamcore.TUI.Components.System do
       %Line{spans: [%Span{content: ""}]}
     ]
 
-
     divider = [
       %Line{spans: [%Span{content: ""}]},
       %Line{
