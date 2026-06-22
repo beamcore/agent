@@ -132,6 +132,12 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     Map.put(form, field, new_val)
   end
 
+  def insert_text(form, text) do
+    field = field_atom(form.field)
+    clean = String.replace(text, "\n", " ")
+    Map.update!(form, field, &(&1 <> clean))
+  end
+
   defp field_atom(:name), do: :name
   defp field_atom(:key), do: :key
   defp field_atom(:url), do: :url

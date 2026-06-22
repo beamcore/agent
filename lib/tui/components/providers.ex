@@ -26,17 +26,29 @@ defmodule Beamcore.TUI.Components.Providers do
     do: render_list_items(p, width)
 
   def handle_event(event, p) do
-    case event do
-      %ExRatatui.Event.Key{code: "backspace"} ->
+    cond do
+      paste_event?(event) ->
+        content = Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
+        {:noreply, insert_text(p, content) |> mark_dirty()}
+
+      match?(%ExRatatui.Event.Key{code: "backspace"}, event) ->
         {:noreply, handle_backspace(p) |> mark_dirty()}
 
-      %ExRatatui.Event.Key{code: code, modifiers: mods} ->
+      match?(%ExRatatui.Event.Key{}, event) ->
+        %ExRatatui.Event.Key{code: code, modifiers: mods} = event
         {:noreply, handle_key(code, mods, p) |> mark_dirty()}
 
-      _ ->
+      true ->
         {:noreply, p}
     end
   end
+
+  defp paste_event?(event) when is_map(event) do
+    struct_name = Map.get(event, :__struct__)
+    name = if struct_name, do: Module.split(struct_name) |> List.last(), else: ""
+    String.contains?(name, "Paste") or Map.has_key?(event, :content) or Map.has_key?(event, "content")
+  end
+  defp paste_event?(_), do: false
 
   defp render_list_items(p, width) do
     if p.adding?,
@@ -181,6 +193,11 @@ defmodule Beamcore.TUI.Components.Providers do
     do: %{p | form: Form.handle_backspace(p.form)}
 
   def handle_backspace(p), do: p
+
+  def insert_text(%{adding?: true} = p, text),
+    do: %{p | form: Form.insert_text(p.form, text)}
+
+  def insert_text(p, _text), do: p
 
   defp truncate(text, max_len) do
     text = to_string(text)
