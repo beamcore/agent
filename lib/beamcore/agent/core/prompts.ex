@@ -63,27 +63,42 @@ defmodule Beamcore.Agent.Core.Prompts do
 
   @doc """
   Prompt sent to request a conversation summary for compaction.
+
+  Structured format ensures user intent is never lost across compactions.
   """
   def compaction_summary_request do
     """
-    Summarize our conversation so far in a compact format. Include:
-    1. Key decisions made and their rationale
-    2. Current state of the work (what's done, what's in progress)
-    3. Files modified or created
-    4. Any errors encountered and how they were resolved
-    5. What needs to be done next
-    Keep it concise but preserve all critical context needed to continue seamlessly.
+    Write a session handoff summary. Be specific: names, paths, values.
+
+    ## USER GOAL
+    What the user wants. Most important — never lose this.
+
+    ## DONE
+    Files changed, commands run, bugs fixed. Exact names/paths/errors.
+
+    ## NOW
+    What was happening right before compaction. Pending changes.
+
+    ## NEXT
+    What to do next. Specific files, tests, actions.
+
+    Rules: bullet points, preserve exact paths/names/errors, quote user instructions.
     """
   end
 
   @doc """
   Constructs the compacted rollover system message content.
   """
-  def compaction_rollover_system(system_content, summary) do
+  def compaction_rollover_system(system_content, summary, compaction_count \\ 1) do
+    marker =
+      if compaction_count > 1,
+        do: "[Session compacted #{compaction_count} times — full context below]",
+        else: "[Session compacted — full context below]"
+
     """
     #{system_content}
 
-    [Compacted session context — conversation continues seamlessly]
+    #{marker}
     #{summary}
     """
   end
