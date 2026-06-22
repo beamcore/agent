@@ -52,10 +52,8 @@ defmodule Beamcore.TUI.Components.System.Mesh do
       if is_self do
         {_, up} = :erlang.statistics(:wall_clock)
 
-        {:erlang.memory(:total),
-         :erlang.system_info(:process_count),
-         :erlang.system_info(:schedulers_online),
-         up}
+        {:erlang.memory(:total), :erlang.system_info(:process_count),
+         :erlang.system_info(:schedulers_online), up}
       else
         mem = safe_rpc(node, :erlang, :memory, [:total], 0)
         procs = safe_rpc(node, :erlang, :system_info, [:process_count], 0)
@@ -113,11 +111,13 @@ defmodule Beamcore.TUI.Components.System.Mesh do
     # Section header
     header = [
       %Line{spans: [%Span{content: ""}]},
-      %Line{spans: [
-        %Span{content: " ╰─ ", style: subtle},
-        %Span{content: "Mesh", style: accent},
-        %Span{content: " " <> String.duplicate("─", max(inner - 9, 4)), style: subtle}
-      ]},
+      %Line{
+        spans: [
+          %Span{content: " ╰─ ", style: subtle},
+          %Span{content: "Mesh", style: accent},
+          %Span{content: " " <> String.duplicate("─", max(inner - 9, 4)), style: subtle}
+        ]
+      },
       %Line{spans: [%Span{content: ""}]}
     ]
 
@@ -126,10 +126,14 @@ defmodule Beamcore.TUI.Components.System.Mesh do
 
     peer_lines =
       if snapshot.peers == [] do
-        [%Line{spans: [
-          %Span{content: "   ", style: base},
-          %Span{content: "no peers connected", style: muted}
-        ]}]
+        [
+          %Line{
+            spans: [
+              %Span{content: "   ", style: base},
+              %Span{content: "no peers connected", style: muted}
+            ]
+          }
+        ]
       else
         Enum.flat_map(snapshot.peers, fn info ->
           node_row(info, inner, accent, done, base, subtle, muted, false)
@@ -143,16 +147,18 @@ defmodule Beamcore.TUI.Components.System.Mesh do
 
     summary = [
       %Line{spans: [%Span{content: ""}]},
-      %Line{spans: [
-        %Span{content: "   peers ", style: muted},
-        %Span{content: "#{peer_count}", style: accent},
-        %Span{content: "  ·  epmd ", style: muted},
-        %Span{content: "#{epmd_count}", style: accent},
-        %Span{content: "  ·  total memory ", style: muted},
-        %Span{content: "#{mem_mb} MB", style: accent},
-        %Span{content: "  ·  total procs ", style: muted},
-        %Span{content: "#{snapshot.total_processes}", style: accent}
-      ]}
+      %Line{
+        spans: [
+          %Span{content: "   peers ", style: muted},
+          %Span{content: "#{peer_count}", style: accent},
+          %Span{content: "  ·  epmd ", style: muted},
+          %Span{content: "#{epmd_count}", style: accent},
+          %Span{content: "  ·  total memory ", style: muted},
+          %Span{content: "#{mem_mb} MB", style: accent},
+          %Span{content: "  ·  total procs ", style: muted},
+          %Span{content: "#{snapshot.total_processes}", style: accent}
+        ]
+      }
     ]
 
     header ++ self_lines ++ peer_lines ++ summary
@@ -176,27 +182,32 @@ defmodule Beamcore.TUI.Components.System.Mesh do
       end
 
     [
-      %Line{spans: [
-        %Span{content: "   ", style: base},
-        %Span{content: "#{dot} ", style: dot_style},
-        %Span{content: "#{info.short_name}", style: accent},
-        %Span{content: "@#{info.host}", style: muted},
-        %Span{content: "  [#{label}]", style: dot_style},
-        %Span{content: "  ·  ", style: subtle},
-        %Span{content: "#{mem_mb} MB", style: base},
-        %Span{content: "  ·  procs ", style: muted},
-        %Span{content: "#{info.process_count}", style: base},
-        %Span{content: "  ·  sched ", style: muted},
-        %Span{content: "#{info.schedulers}", style: base},
-        %Span{content: "  ·  up ", style: muted},
-        %Span{content: uptime, style: base}
-      ] ++ latency_span}
+      %Line{
+        spans:
+          [
+            %Span{content: "   ", style: base},
+            %Span{content: "#{dot} ", style: dot_style},
+            %Span{content: "#{info.short_name}", style: accent},
+            %Span{content: "@#{info.host}", style: muted},
+            %Span{content: "  [#{label}]", style: dot_style},
+            %Span{content: "  ·  ", style: subtle},
+            %Span{content: "#{mem_mb} MB", style: base},
+            %Span{content: "  ·  procs ", style: muted},
+            %Span{content: "#{info.process_count}", style: base},
+            %Span{content: "  ·  sched ", style: muted},
+            %Span{content: "#{info.schedulers}", style: base},
+            %Span{content: "  ·  up ", style: muted},
+            %Span{content: uptime, style: base}
+          ] ++ latency_span
+      }
     ]
   end
 
   defp format_uptime(ms) when ms < 1_000, do: "#{ms}ms"
   defp format_uptime(ms) when ms < 60_000, do: "#{div(ms, 1_000)}s"
-  defp format_uptime(ms) when ms < 3_600_000, do: "#{div(ms, 60_000)}m #{rem(div(ms, 1_000), 60)}s"
+
+  defp format_uptime(ms) when ms < 3_600_000,
+    do: "#{div(ms, 60_000)}m #{rem(div(ms, 1_000), 60)}s"
 
   defp format_uptime(ms) do
     h = div(ms, 3_600_000)
