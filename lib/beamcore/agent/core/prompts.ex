@@ -5,7 +5,7 @@ defmodule Beamcore.Agent.Core.Prompts do
   """
 
   @default_tools [
-    "eeva: Universal Elixir runtime. Write ordinary Elixir to inspect, edit, validate, and iterate using the local system."
+    "eeva: Universal Elixir runtime. Write complete Elixir programs that call ANY module directly (Beamcore.Memory, Beamcore.Agent.SubAgent, Beamcore.Helpers, File, System, etc.). No tool chaining -- one program does it all."
   ]
 
   @doc "Returns concise guidance for using the persistent BeamCore memory service from Eeva."
@@ -13,7 +13,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     """
     - Persistent memory is available through `Beamcore.Memory`.
     - Discover signatures with `Beamcore.Helpers.info(Beamcore.Memory, :functions)`.
-    - Read with `recall/4` and `list/3`; write with `remember/5` and `forget/4` when useful.
+    - Write with `remember/2` or `remember/3`; read with `recall/1` or `recall/2`; search with `search/1`; overview with `overview/0`.
     """
   end
 
@@ -36,12 +36,17 @@ defmodule Beamcore.Agent.Core.Prompts do
 
     **Workspace root**: `#{workspace_root}`.
 
-    **Memory**: You have persistent memory via `Beamcore.Memory`. Use it to remember facts, decisions, patterns, and context across sessions. Write with `remember/5`, read with `recall/4` and `list/3`, delete with `forget/4`. Discover functions with `Beamcore.Helpers.info(Beamcore.Memory, :functions)`.
+    **You have ONE tool: eeva** -- an Elixir runtime. Write complete Elixir programs that:
+    • Call ANY module directly: `Beamcore.Memory.remember/2`, `Beamcore.Agent.SubAgent.run/2`, `Beamcore.Helpers.info/2`, `File`, `System`, `Path`, etc.
+    • Spawn sub-agents: `Beamcore.Agent.SubAgent.run_async("task") |> Task.await()`
+    • Persist memory: `Beamcore.Memory.remember("key", data)` / `recall("key")` / `search("query")`
+    • Discover APIs: `Beamcore.Helpers.info(Module, :functions)`
+    • No tool chaining -- one program does it all.
 
-    **Mesh**: Distributed node. `Node.self()`, `Node.list()`, `:erl_epmd.names()` — find peers, connect.
+    **Mesh**: Distributed node. `Node.self()`, `Node.list()`, `:erl_epmd.names()` -- find peers, connect.
 
     #{workspace_section}
-    **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown — prefer this over manual regex or string parsing of HTML.
+    **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown -- prefer this over manual regex or string parsing of HTML.
     **Math**: Eeva has arbitrary-precision integers, floats, and the full `:math` module.
     **Tools**:
     - #{formatted_tools}
@@ -54,7 +59,7 @@ defmodule Beamcore.Agent.Core.Prompts do
   def chat_agent do
     """
     You are **Beamcore.Chat**: a concise, factual general-purpose AI assistant.
-    **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown — prefer this over manual regex or string parsing of HTML.
+    **Available libraries**: Req (HTTP) for HTTP calls; **use `Html2Markdown.convert/1`** to turn any HTML response into clean Markdown -- prefer this over manual regex or string parsing of HTML.
     **Math**: Eeva has arbitrary-precision integers, floats, and the full `:math` module.
     """
   end
@@ -71,7 +76,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     Write a session handoff summary. Be specific: names, paths, values.
 
     ## USER GOAL
-    What the user wants. Most important — never lose this.
+    What the user wants. Most important -- never lose this.
 
     ## DONE
     Files changed, commands run, bugs fixed. Exact names/paths/errors.
@@ -92,8 +97,8 @@ defmodule Beamcore.Agent.Core.Prompts do
   def compaction_rollover_system(system_content, summary, compaction_count \\ 1) do
     marker =
       if compaction_count > 1,
-        do: "[Session compacted #{compaction_count} times — full context below]",
-        else: "[Session compacted — full context below]"
+        do: "[Session compacted #{compaction_count} times -- full context below]",
+        else: "[Session compacted -- full context below]"
 
     """
     #{system_content}
@@ -124,7 +129,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     refs =
       Enum.map_join(files, "\n", fn {filename, content} ->
         lines = content |> String.split("\n") |> length()
-        "  - #{filename} (#{lines} lines) — read if needed"
+        "  - #{filename} (#{lines} lines) -- read if needed"
       end)
 
     "\n**Workspace instruction files**:\n#{refs}\n"
