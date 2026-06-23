@@ -39,15 +39,11 @@ defmodule Beamcore.Agent do
     IO.puts("")
     IO.puts("Usage:")
     IO.puts("  beamcore                Start the interactive TUI chat")
-    IO.puts("  beamcore --telegram     Start Telegram bot mode (no TUI)")
     IO.puts("  beamcore --help         Show this help message")
     IO.puts("  beamcore --version      Show version")
     IO.puts("")
     IO.puts("Configuration:")
-    IO.puts("  API keys can be set via environment variables or configured")
-    IO.puts("  interactively with /api add inside the TUI.")
-    IO.puts("")
-    IO.puts("  TELEGRAM_BOT_TOKEN  Set to enable Telegram bot mode")
+    IO.puts("  TELEGRAM_BOT_TOKEN  Set to enable messaging gateway mode")
     IO.puts("")
     IO.puts("  See .env.example for available environment variables.")
     IO.puts("")
@@ -81,7 +77,7 @@ defmodule Beamcore.Agent do
         Beamcore.Provider.Health,
         Beamcore.Mesh,
         Beamcore.Mesh.Discovery
-      ] ++ tui_children() ++ telegram_children()
+      ] ++ tui_children() ++ gateway_children()
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
     Supervisor.start_link(children, opts)
@@ -98,23 +94,25 @@ defmodule Beamcore.Agent do
   end
 
   defp tui_children do
-    if telegram_mode?(), do: [], else: [Beamcore.TUI.DynamicSupervisor]
+    if gateway_mode?(), do: [], else: [Beamcore.TUI.DynamicSupervisor]
   end
 
-  defp telegram_children do
-    case System.get_env("TELEGRAM_BOT_TOKEN") do
-      nil -> []
-      "" -> []
-      token -> [{Beamcore.Telegram, token: token}]
+  defp gateway_children do
+    telegram = System.get_env("TELEGRAM_BOT_TOKEN")
+    discord = System.get_env("DISCORD_BOT_TOKEN")
+
+    if (telegram != nil and telegram != "") or (discord != nil and discord != "") do
+      [{Beamcore.Gateway, telegram_token: telegram, discord_token: discord}]
+    else
+      []
     end
   end
 
-  defp telegram_mode? do
-    case System.get_env("TELEGRAM_BOT_TOKEN") do
-      nil -> false
-      "" -> false
-      _ -> true
-    end
+  defp gateway_mode? do
+    telegram = System.get_env("TELEGRAM_BOT_TOKEN")
+    discord = System.get_env("DISCORD_BOT_TOKEN")
+
+    (telegram != nil and telegram != "") or (discord != nil and discord != "")
   end
 
   defp remember_initial_workspace do
@@ -132,7 +130,7 @@ defmodule Beamcore.Agent do
   def chat(opts \\ [])
 
   def chat(opts) when is_list(opts) do
-    if telegram_mode?() do
+    if gateway_mode?() do
       IO.puts("BeamCore Telegram bot mode. Press Ctrl+C to stop.")
       Process.sleep(:infinity)
     else
@@ -143,7 +141,7 @@ defmodule Beamcore.Agent do
   end
 
   def chat(_mode, opts) when is_list(opts) do
-    if telegram_mode?() do
+    if gateway_mode?() do
       IO.puts("BeamCore Telegram bot mode. Press Ctrl+C to stop.")
       Process.sleep(:infinity)
     else
