@@ -69,6 +69,7 @@ defmodule Beamcore.Agent.MixProject do
       {:rustler, "~> 0.36", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:nadia, "~> 1.0.0"},
+      {:nostrum, "~> 0.10.4", runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false}
     ]
   end
