@@ -1,7 +1,7 @@
 # Beamcore
 ![CI](https://github.com/beamcore/agent/actions/workflows/ci.yml/badge.svg)
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
-[![Discord](https://img.shields.io/discord/1510340860141637642?logo=discord&logoColor=white&label=Discord)](https://discord.gg/VuyQ6hznp)
+[![Discord](https://img.shields.io/badge/Chat%20on%20Discord-5865F2?logo=discord&logoColor=white)](https://discord.gg/VuyQ6hznp)
 
 
 Beamcore is a terminal coding agent built on the Erlang/OTP distribution
