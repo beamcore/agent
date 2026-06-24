@@ -56,6 +56,11 @@ defmodule Beamcore.TUI.MessageRouter do
     {:noreply, %{state | f3_state: TuiSystem.finish_provider_save(state.f3_state, ref, result)}}
   end
 
+  def route_provider_action_done(ref, action, result, state) do
+    {:noreply,
+     %{state | f3_state: TuiSystem.finish_provider_action(state.f3_state, ref, action, result)}}
+  end
+
   def route_runtime_event(worker_pid, event, state) do
     cond do
       worker_pid == self() ->

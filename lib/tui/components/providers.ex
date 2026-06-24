@@ -12,13 +12,19 @@ defmodule Beamcore.TUI.Components.Providers do
             render_dirty?: true,
             configure_for: :agent,
             providers: [],
+            active_provider: nil,
             selected: 0,
             adding?: false,
             form: nil,
-            save_ref: nil
+            save_ref: nil,
+            action_ref: nil
 
   def new(configure_for \\ :agent) do
-    %__MODULE__{providers: Store.load(), configure_for: configure_for}
+    %__MODULE__{
+      providers: Store.load(),
+      active_provider: Store.active(configure_for),
+      configure_for: configure_for
+    }
   end
 
   def mark_dirty(p), do: %{p | render_dirty?: true}
@@ -121,14 +127,12 @@ defmodule Beamcore.TUI.Components.Providers do
         bottom
       ]
     else
-      active = Store.active(p.configure_for)
-
       rows =
         p.providers
         |> Enum.with_index()
         |> Enum.flat_map(fn {{name, config}, idx} ->
           sel? = idx == p.selected
-          act? = name == active
+          act? = name == p.active_provider
           cur = if sel?, do: "▸", else: " "
           mark = if act?, do: "●", else: "○"
           ns = if sel?, do: accent, else: base
@@ -172,9 +176,7 @@ defmodule Beamcore.TUI.Components.Providers do
   def handle_key("d", _mods, %{adding?: false} = p) do
     case Enum.at(p.providers, p.selected) do
       {name, _} ->
-        Store.delete(name)
-        providers = Store.load()
-        %{p | providers: providers, selected: min(p.selected, max(length(providers) - 1, 0))}
+        start_action(p, {:delete, name})
 
       nil ->
         p
@@ -184,14 +186,11 @@ defmodule Beamcore.TUI.Components.Providers do
   def handle_key("enter", _mods, %{adding?: false} = p) do
     case Enum.at(p.providers, p.selected) do
       {name, config} ->
-        Store.activate(name, config, p.configure_for)
-        send(self(), {:refresh_session, p.configure_for})
+        start_action(p, {:activate, name, config, p.configure_for})
 
       nil ->
-        :ok
+        p
     end
-
-    p
   end
 
   def handle_key(key, mods, %{adding?: true} = p) do
@@ -215,7 +214,14 @@ defmodule Beamcore.TUI.Components.Providers do
   def insert_text(p, _text), do: p
 
   def finish_save(%{save_ref: ref} = p, ref, :ok) do
-    %{p | providers: Store.load(), adding?: false, form: nil, save_ref: nil}
+    %{
+      p
+      | providers: Store.load(),
+        active_provider: Store.active(p.configure_for),
+        adding?: false,
+        form: nil,
+        save_ref: nil
+    }
   end
 
   def finish_save(%{save_ref: ref, form: form} = p, ref, {:error, reason}) do
@@ -223,6 +229,29 @@ defmodule Beamcore.TUI.Components.Providers do
   end
 
   def finish_save(p, _ref, _result), do: p
+
+  def finish_action(%{action_ref: ref} = p, ref, {:activate, screen_type}, :ok) do
+    send(self(), {:refresh_session, screen_type})
+    reload_provider_state(%{p | action_ref: nil})
+  end
+
+  def finish_action(%{action_ref: ref} = p, ref, :delete, :ok) do
+    p
+    |> Map.put(:action_ref, nil)
+    |> reload_provider_state()
+  end
+
+  def finish_action(%{action_ref: ref} = p, ref, _action, {:error, reason}) do
+    form = p.form || Form.new()
+
+    %{
+      p
+      | form: %{form | error: "provider action failed: #{format_reason(reason)}"},
+        action_ref: nil
+    }
+  end
+
+  def finish_action(p, _ref, _action, _result), do: p
 
   defp start_save(%{save_ref: ref} = p, _name, _config, form) when is_reference(ref),
     do: %{p | form: form}
@@ -258,6 +287,65 @@ defmodule Beamcore.TUI.Components.Providers do
     kind, reason ->
       Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :provider_save_start)
       %{p | form: %{form | error: "save failed: #{format_reason(reason)}"}}
+  end
+
+  defp start_action(%{action_ref: ref} = p, _action) when is_reference(ref), do: p
+
+  defp start_action(p, action) do
+    parent = self()
+    ref = make_ref()
+
+    {:ok, _pid} =
+      Task.start(fn ->
+        result =
+          try do
+            run_action(action)
+          rescue
+            error ->
+              Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :provider_action)
+              {:error, Exception.message(error)}
+          catch
+            kind, reason ->
+              Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :provider_action)
+              {:error, reason}
+          end
+
+        send(parent, {:provider_action_done, ref, action_result_tag(action), result})
+      end)
+
+    %{p | action_ref: ref}
+  rescue
+    error ->
+      Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :provider_action_start)
+      p
+  catch
+    kind, reason ->
+      Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :provider_action_start)
+      p
+  end
+
+  defp run_action({:delete, name}) do
+    Store.delete(name)
+    :ok
+  end
+
+  defp run_action({:activate, name, config, screen_type}) do
+    Store.activate(name, config, screen_type)
+    :ok
+  end
+
+  defp action_result_tag({:delete, _name}), do: :delete
+  defp action_result_tag({:activate, _name, _config, screen_type}), do: {:activate, screen_type}
+
+  defp reload_provider_state(p) do
+    providers = Store.load()
+
+    %{
+      p
+      | providers: providers,
+        active_provider: Store.active(p.configure_for),
+        selected: min(p.selected, max(length(providers) - 1, 0))
+    }
   end
 
   defp format_reason(reason) when is_atom(reason), do: Atom.to_string(reason)

@@ -11,10 +11,15 @@ defmodule Beamcore.TUI.Components.System.Stats do
   @bar_empty "░"
 
   def render(width) do
-    stats = Store.load()
+    render(snapshot(), width)
+  end
+
+  def render(stats, width) when is_map(stats) do
     content = build_content(stats, width)
     box_frame(content, width)
   end
+
+  def snapshot, do: Store.load()
 
   defp build_content(stats, width) do
     accent = Theme.style(:accent)

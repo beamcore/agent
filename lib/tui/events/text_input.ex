@@ -23,17 +23,19 @@ defmodule Beamcore.TUI.Events.TextInput do
 
     case FileFinder.parse(value, cursor_pos) do
       {:file_query, query, _start, _end} ->
-        cache = state.file_finder_cache || FileFinder.load_files()
-        results = FileFinder.search(query, cache)
+        case state.file_finder_cache do
+          nil ->
+            state
 
-        state =
-          if state.file_finder_active? do
-            State.update_file_finder_query(state, query, results)
-          else
-            State.activate_file_finder(state, query, results)
-          end
+          cache ->
+            results = FileFinder.search(query, cache)
 
-        state |> Map.put(:file_finder_cache, cache)
+            if state.file_finder_active? do
+              State.update_file_finder_query(state, query, results)
+            else
+              State.activate_file_finder(state, query, results)
+            end
+        end
 
       :no_file_query ->
         if state.file_finder_active? do
