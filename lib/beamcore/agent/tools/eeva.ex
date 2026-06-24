@@ -86,6 +86,25 @@ defmodule Beamcore.Agent.Tools.Eeva do
   @doc false
   def system_cmd(command, args, opts \\ [])
 
+  # Options that native System.cmd/3 actually accepts.
+  #
+  # This list exists because models frequently hallucinate options that
+  # System.cmd does not support (:timeout, :verbose, :capture, :shell, etc.).
+  # Native System.cmd raises ArgumentError on any unknown option key, so
+  # passing model-generated opts through unfiltered would crash on nearly
+  # every call.
+  #
+  # The Sandbox AST rewrite (instrument_system_cmd/1) rewrites every
+  # `System.cmd` call in model-authored code to this wrapper. We then
+  # Keyword.take/2 down to only the valid keys, silently dropping the rest.
+  # This is a compatibility shim — not a security boundary. The goal is
+  # robustness: the model shouldn't need to know System.cmd's exact option
+  # API to write working code.
+  #
+  # NOTE: :into and :lines are intentionally excluded. :into controls
+  # return shape and would interfere with our stdout capture. :lines
+  # is a line-length hint rarely needed for tool usage. :stderr_to_stdout
+  # is force-set to true so the Worker always captures both streams.
   @valid_cmd_opts [:cd, :env, :arg0, :parallelism]
 
   def system_cmd(command, args, opts) when is_list(args) and is_list(opts) do
