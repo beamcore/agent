@@ -86,16 +86,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       default_summary =
         "Previous session summary was empty or invalid. Continuing with a fresh session."
 
-      # This is the exact validation logic from summarize_and_rollover/3
-      summary = ""
-
-      validated_summary =
-        if summary && is_binary(summary) && String.length(summary) > 0 &&
-             String.length(summary) <= 10_000 do
-          summary
-        else
-          default_summary
-        end
+      validated_summary = validate_summary("", default_summary)
 
       assert validated_summary == default_summary
     end
@@ -106,13 +97,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       summary = nil
 
-      validated_summary =
-        if summary && is_binary(summary) && String.length(summary) > 0 &&
-             String.length(summary) <= 10_000 do
-          summary
-        else
-          default_summary
-        end
+      validated_summary = validate_summary(summary, default_summary)
 
       assert validated_summary == default_summary
     end
@@ -123,13 +108,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       summary = String.duplicate("a", 10_001)
 
-      validated_summary =
-        if summary && is_binary(summary) && String.length(summary) > 0 &&
-             String.length(summary) <= 10_000 do
-          summary
-        else
-          default_summary
-        end
+      validated_summary = validate_summary(summary, default_summary)
 
       assert validated_summary == default_summary
     end
@@ -138,12 +117,10 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       valid_summary = "This is a valid summary of the session."
 
       validated_summary =
-        if valid_summary && is_binary(valid_summary) && String.length(valid_summary) > 0 &&
-             String.length(valid_summary) <= 10_000 do
-          valid_summary
-        else
+        validate_summary(
+          valid_summary,
           "Previous session summary was empty or invalid. Continuing with a fresh session."
-        end
+        )
 
       assert validated_summary == valid_summary
     end
@@ -740,6 +717,14 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.last_prompt_tokens == 0
       assert new_session.total_prompt_tokens == 0
       assert new_session.total_completion_tokens == 0
+    end
+  end
+
+  defp validate_summary(summary, default_summary) do
+    if is_binary(summary) and String.length(summary) > 0 and String.length(summary) <= 10_000 do
+      summary
+    else
+      default_summary
     end
   end
 end

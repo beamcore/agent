@@ -71,7 +71,9 @@ defmodule Beamcore.Provider.Router do
   end
 
   defp provider_config(provider_info) do
-    %{
+    provider_info
+    |> merged_provider_config()
+    |> Map.merge(%{
       "base_url" => provider_info.base_url,
       "default_model" => provider_info.default_model,
       "api_key" => Registry.resolve_api_key(provider_info),
@@ -80,7 +82,35 @@ defmodule Beamcore.Provider.Router do
       provider_id: provider_info.id,
       auth: provider_info.auth,
       capabilities: provider_info.capabilities
-    }
+    })
+    |> decrypt_auth_secrets()
+  end
+
+  defp merged_provider_config(provider_info) do
+    default =
+      provider_info.default_config
+      |> Enum.map(fn {key, value} -> {to_string(key), value} end)
+      |> Map.new()
+
+    Map.merge(default, provider_info.config || %{})
+  end
+
+  defp decrypt_auth_secrets(config) do
+    config
+    |> decrypt_secret_fields(["client_secret", "bearer_token", "access_token"])
+    |> Map.update("auth", nil, fn
+      auth when is_map(auth) -> decrypt_secret_fields(auth, ["client_secret", "token"])
+      auth -> auth
+    end)
+  end
+
+  defp decrypt_secret_fields(config, fields) do
+    Enum.reduce(fields, config, fn key, acc ->
+      case Map.get(acc, key) do
+        value when is_binary(value) -> Map.put(acc, key, Beamcore.Config.decrypted_api_key(value))
+        _ -> acc
+      end
+    end)
   end
 
   defp receive_timeout(%{capabilities: %{local: true}}) do

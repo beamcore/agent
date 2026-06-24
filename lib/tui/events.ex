@@ -59,7 +59,7 @@ defmodule Beamcore.TUI.Events do
 
         TextInput.insert_textarea_content(state.textarea, content)
 
-        state = %{state | history_index: nil}
+        state = %{state | history_index: nil} |> State.mark_dirty()
         state = TextInput.handle_file_finder_key(nil, [], state)
 
         {:noreply, Commands.refresh_commands(state)}

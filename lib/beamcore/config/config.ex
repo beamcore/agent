@@ -167,32 +167,10 @@ defmodule Beamcore.Config do
   end
 
   defp dispatch({:put_provider, name, config}, state) do
-    api_key = Map.get(config, :api_key) || Map.get(config, "api_key")
-    base_url = Map.get(config, :base_url) || Map.get(config, "base_url")
-    default_model = Map.get(config, :default_model) || Map.get(config, "default_model")
-    context_window = Map.get(config, :context_window) || Map.get(config, "context_window")
-
-    max_output_tokens =
-      Map.get(config, :max_output_tokens) || Map.get(config, "max_output_tokens")
-
-    tokenizer = Map.get(config, :tokenizer) || Map.get(config, "tokenizer")
-
-    encrypted_key =
-      cond do
-        is_nil(api_key) -> nil
-        String.starts_with?(api_key, "encrypted:") -> api_key
-        true -> "encrypted:" <> Base.encode64(encrypt_secret(api_key))
-      end
-
     provider =
-      %{
-        "base_url" => base_url,
-        "api_key" => encrypted_key,
-        "default_model" => default_model,
-        "context_window" => context_window,
-        "max_output_tokens" => max_output_tokens,
-        "tokenizer" => tokenizer
-      }
+      config
+      |> normalize_provider_config()
+      |> encrypt_provider_secrets()
       |> Enum.reject(fn {_key, value} -> is_nil(value) end)
       |> Map.new()
 
@@ -212,6 +190,70 @@ defmodule Beamcore.Config do
     reply = persist([{:api_configs, Jason.encode!(providers)}])
     {:reply, reply, state}
   end
+
+  defp normalize_provider_config(config) do
+    allowed = [
+      "api_key",
+      "base_url",
+      "default_model",
+      "context_window",
+      "max_output_tokens",
+      "tokenizer",
+      "auth",
+      "bearer_token",
+      "access_token",
+      "token_url",
+      "client_id",
+      "client_secret",
+      "scope",
+      "scopes",
+      "client_auth",
+      "token_auth",
+      "api_key_header",
+      "api_key_prefix",
+      "token_headers",
+      "token_request_id_header"
+    ]
+
+    config
+    |> Enum.map(fn {key, value} -> {to_string(key), normalize_provider_value(value)} end)
+    |> Enum.filter(fn {key, _value} -> key in allowed end)
+    |> Map.new()
+  end
+
+  defp normalize_provider_value(value) when is_atom(value), do: Atom.to_string(value)
+
+  defp normalize_provider_value(value) when is_map(value) do
+    value
+    |> Enum.map(fn {key, val} -> {to_string(key), normalize_provider_value(val)} end)
+    |> Map.new()
+  end
+
+  defp normalize_provider_value(value) when is_list(value),
+    do: Enum.map(value, &normalize_provider_value/1)
+
+  defp normalize_provider_value(value), do: value
+
+  defp encrypt_provider_secrets(config) do
+    config
+    |> encrypt_secret_fields(["api_key", "client_secret", "bearer_token", "access_token"])
+    |> Map.update("auth", nil, fn
+      auth when is_map(auth) -> encrypt_secret_fields(auth, ["client_secret", "token"])
+      auth -> auth
+    end)
+  end
+
+  defp encrypt_secret_fields(config, fields) do
+    Enum.reduce(fields, config, fn key, acc ->
+      case Map.get(acc, key) do
+        value when is_binary(value) -> Map.put(acc, key, encrypt_provider_secret(value))
+        _ -> acc
+      end
+    end)
+  end
+
+  defp encrypt_provider_secret("encrypted:" <> _ = value), do: value
+  defp encrypt_provider_secret(value), do: "encrypted:" <> Base.encode64(encrypt_secret(value))
 
   # -- store ownership -----------------------------------------------------
 

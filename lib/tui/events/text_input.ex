@@ -5,7 +5,7 @@ defmodule Beamcore.TUI.Events.TextInput do
 
   def handle_text_key(code, mods, state) do
     ExRatatui.textarea_handle_key(state.textarea, code, mods)
-    state = %{state | history_index: nil}
+    state = %{state | history_index: nil} |> State.mark_dirty()
     state = handle_file_finder_key(code, mods, state)
 
     {:noreply, Beamcore.TUI.Events.Commands.refresh_commands(state)}
