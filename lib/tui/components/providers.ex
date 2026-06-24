@@ -2,6 +2,7 @@ defmodule Beamcore.TUI.Components.Providers do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Providers.{Form, Store}
+  alias Beamcore.TUI.Events.KeyEvents
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
 
@@ -36,9 +37,9 @@ defmodule Beamcore.TUI.Components.Providers do
         {:noreply, insert_text(p, content) |> mark_dirty()}
 
       match?(%ExRatatui.Event.Key{}, event) ->
-        %ExRatatui.Event.Key{code: code, modifiers: mods, kind: kind} = event
+        %ExRatatui.Event.Key{code: code, modifiers: mods} = event
 
-        if kind in [nil, "press", :press] do
+        if KeyEvents.actionable?(event) do
           if code == "backspace" do
             {:noreply, handle_backspace(p) |> mark_dirty()}
           else

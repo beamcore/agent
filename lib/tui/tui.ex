@@ -6,6 +6,7 @@ defmodule Beamcore.TUI do
   use ExRatatui.App
 
   alias Beamcore.TUI.{FileFinder, Layout, MessageRouter, MultiScreenState, Render, State}
+  alias Beamcore.TUI.Events.KeyEvents
   alias ExRatatui.Layout.Rect
 
   require Logger
@@ -119,7 +120,20 @@ defmodule Beamcore.TUI do
   end
 
   @impl true
+  def handle_event(%ExRatatui.Event.Key{} = event, state) do
+    if KeyEvents.actionable?(event) do
+      handle_actionable_event(event, state)
+    else
+      {:noreply, state, render?: false}
+    end
+  end
+
+  @impl true
   def handle_event(event, state) do
+    handle_actionable_event(event, state)
+  end
+
+  defp handle_actionable_event(event, state) do
     try do
       case event do
         %ExRatatui.Event.Key{code: "f1"} ->
