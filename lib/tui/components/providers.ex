@@ -37,8 +37,13 @@ defmodule Beamcore.TUI.Components.Providers do
         {:noreply, handle_backspace(p) |> mark_dirty()}
 
       match?(%ExRatatui.Event.Key{}, event) ->
-        %ExRatatui.Event.Key{code: code, modifiers: mods} = event
-        {:noreply, handle_key(code, mods, p) |> mark_dirty()}
+        %ExRatatui.Event.Key{code: code, modifiers: mods, kind: kind} = event
+
+        if kind in [nil, "press", :press] do
+          {:noreply, handle_key(code, mods, p) |> mark_dirty()}
+        else
+          {:noreply, p}
+        end
 
       true ->
         {:noreply, p}

@@ -14,8 +14,12 @@ defmodule Beamcore.TUI.Events do
   def handle_event(event, state, opts \\ [])
 
   def handle_event(%Event.Key{} = event, %{screen_type: :system} = state, _opts) do
-    {:noreply, updated} = Beamcore.TUI.Components.System.handle_event(event, state)
-    {:noreply, updated}
+    if key_press?(event) do
+      {:noreply, updated} = Beamcore.TUI.Components.System.handle_event(event, state)
+      {:noreply, updated}
+    else
+      {:noreply, state}
+    end
   end
 
   def handle_event(%Event.Key{} = event, state, opts) do
