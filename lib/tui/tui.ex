@@ -137,8 +137,6 @@ defmodule Beamcore.TUI do
           end
 
         %ExRatatui.Event.Resize{width: w, height: h} ->
-          IO.write("\e[2J\e[H")
-
           {:noreply,
            state |> set_viewports(w, h) |> MultiScreenState.update_active(&State.mark_dirty/1)}
 

@@ -108,13 +108,13 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
     end
   end
 
-  defp params(%{model: model, messages: messages, tools: tools} = request) do
+  def params(%{model: model, messages: messages, tools: tools} = request) do
     base = %{model: model, messages: messages, tools: tools || []}
     extras = Map.take(request, [:temperature, :top_p, :max_tokens])
     {:ok, Map.merge(base, extras)}
   end
 
-  defp params(_request) do
+  def params(_request) do
     {:error,
      Error.exception(
        kind: :bad_request,
