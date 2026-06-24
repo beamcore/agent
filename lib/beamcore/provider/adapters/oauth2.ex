@@ -79,19 +79,20 @@ defmodule Beamcore.Provider.Adapters.OAuth2 do
   end
 
   defp do_fetch_token(client_id, client_secret, config) do
-    scope = Map.get(config, "scope") || Map.get(config, :scope) || ""
+    scope = Map.get(config, "scope") || Map.get(config, :scope) || "GIGACHAT_API_PERS"
 
     body =
       URI.encode_query(%{
         "grant_type" => "client_credentials",
-        "client_id" => client_id,
-        "client_secret" => client_secret,
         "scope" => scope
       })
+
+    auth = Base.encode64("#{client_id}:#{client_secret}")
 
     headers = [
       {"Content-Type", "application/x-www-form-urlencoded"},
       {"Accept", "application/json"},
+      {"Authorization", "Basic #{auth}"},
       {"RqUID", Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)}
     ]
 
