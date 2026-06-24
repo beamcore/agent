@@ -3,7 +3,7 @@ defmodule Beamcore.TUI.Events do
   Event handling for the primary TUI.
   """
 
-  alias Beamcore.TUI.Events.{Commands, Keyboard, Runtime, TextInput}
+  alias Beamcore.TUI.Events.{Commands, KeyEvents, Keyboard, Runtime, TextInput}
   alias Beamcore.TUI.State
   alias ExRatatui.Event
 
@@ -14,7 +14,7 @@ defmodule Beamcore.TUI.Events do
   def handle_event(event, state, opts \\ [])
 
   def handle_event(%Event.Key{} = event, %{screen_type: :system} = state, _opts) do
-    if key_press?(event) do
+    if KeyEvents.actionable?(event) do
       {:noreply, updated} = Beamcore.TUI.Components.System.handle_event(event, state)
       {:noreply, updated}
     else
@@ -26,7 +26,7 @@ defmodule Beamcore.TUI.Events do
     code = event.code
     mods = event.modifiers
 
-    if key_press?(event) do
+    if KeyEvents.actionable?(event) do
       state = maybe_disarm_ctrl_c(code, mods, state)
 
       if code == "enter" and Keyword.get(opts, :paste, false) do
@@ -106,6 +106,4 @@ defmodule Beamcore.TUI.Events do
 
   defp ctrl?(nil), do: false
   defp ctrl?(mods), do: "ctrl" in mods
-
-  defp key_press?(%{kind: kind}), do: kind in [nil, "press", :press]
 end
