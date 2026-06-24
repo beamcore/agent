@@ -50,6 +50,26 @@ defmodule Beamcore.Provider.RegistryTest do
     assert provider.default_model == "model-a"
   end
 
+  test "custom OAuth2 providers still use the OpenAI-compatible adapter" do
+    assert :ok =
+             Beamcore.Config.put_provider("oauth-compatible", %{
+               auth: :oauth2,
+               token_url: "https://auth.example/token",
+               client_id: "client",
+               client_secret: "secret",
+               base_url: "https://oauth-compatible.example/v1",
+               default_model: "chat-model"
+             })
+
+    provider = Registry.get("oauth-compatible")
+
+    assert provider.id == :openai_compatible
+    assert provider.adapter == Beamcore.Provider.Adapters.OpenAICompatible
+    assert provider.auth == "oauth2"
+    assert provider.configured?
+    assert provider.base_url == "https://oauth-compatible.example/v1"
+  end
+
   test "selection validation returns typed missing config errors" do
     assert {:error, %Error{kind: :missing_config, provider: :openai}} =
              Registry.validate_selection("openai")

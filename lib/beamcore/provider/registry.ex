@@ -7,8 +7,8 @@ defmodule Beamcore.Provider.Registry do
   in supervised provider health probes.
   """
 
-  alias Beamcore.Provider.{Capabilities, Error, Model}
-  alias Beamcore.Provider.Adapters.{OpenAICompatible, OAuth2}
+  alias Beamcore.Provider.{Auth, Capabilities, Error, Model}
+  alias Beamcore.Provider.Adapters.OpenAICompatible
 
   @defaults %{
     "openai" => %{
@@ -73,7 +73,8 @@ defmodule Beamcore.Provider.Registry do
         active?: name == active,
         configured?: configured?(name, config, default),
         requires_api_key?: Map.get(default, :requires_api_key?, true),
-        auth: Map.get(default, :auth, :bearer),
+        auth:
+          Map.get(merged, "auth") || Map.get(merged, :auth) || Map.get(default, :auth, :bearer),
         base_url: Map.get(merged, "base_url") || Map.get(merged, :base_url),
         default_model: model,
         capabilities: capabilities(name, model),
@@ -128,16 +129,9 @@ defmodule Beamcore.Provider.Registry do
 
     case validate_selection(provider_name) do
       {:ok, provider_info} ->
-        token = resolve_api_key(provider_info)
-
-        if is_binary(token) do
-          receive_timeout = Application.get_env(:beamcore, :provider_receive_timeout_ms, 30_000)
-
-          OpenaiEx.new(token)
-          |> OpenaiEx.with_base_url(provider_info.base_url)
-          |> OpenaiEx.with_receive_timeout(receive_timeout)
-        else
-          raise_missing_config!(provider_name)
+        case build_client(provider_info) do
+          {:ok, client} -> client
+          {:error, error} -> raise RuntimeError, error.message
         end
 
       {:error, _reason} ->
@@ -154,19 +148,9 @@ defmodule Beamcore.Provider.Registry do
 
     case validate_selection(provider_name) do
       {:ok, provider_info} ->
-        token = resolve_api_key(provider_info)
-
-        if is_binary(token) do
-          receive_timeout = Application.get_env(:beamcore, :provider_receive_timeout_ms, 30_000)
-
-          client =
-            OpenaiEx.new(token)
-            |> OpenaiEx.with_base_url(provider_info.base_url)
-            |> OpenaiEx.with_receive_timeout(receive_timeout)
-
-          {:ok, client}
-        else
-          {:error, missing_config_message(provider_name)}
+        case build_client(provider_info) do
+          {:ok, client} -> {:ok, client}
+          {:error, error} -> {:error, error.message}
         end
 
       {:error, _reason} = error ->
@@ -177,6 +161,47 @@ defmodule Beamcore.Provider.Registry do
   defp raise_missing_config!(provider_name) do
     raise RuntimeError, missing_config_message(provider_name)
   end
+
+  defp build_client(provider_info) do
+    config = provider_client_config(provider_info)
+
+    with :ok <- OpenAICompatible.validate_config(config),
+         {:ok, %{headers: headers, token: token}} <- Auth.material(config) do
+      token = token || "unused"
+
+      {:ok,
+       OpenaiEx.new(token)
+       |> Map.put(:_http_headers, headers)
+       |> OpenaiEx.with_base_url(provider_info.base_url)
+       |> OpenaiEx.with_receive_timeout(receive_timeout(provider_info))}
+    end
+  end
+
+  defp provider_client_config(provider_info) do
+    default =
+      provider_info.default_config
+      |> Enum.map(fn {key, value} -> {to_string(key), value} end)
+      |> Map.new()
+
+    default
+    |> Map.merge(provider_info.config || %{})
+    |> Map.merge(%{
+      "base_url" => provider_info.base_url,
+      "default_model" => provider_info.default_model,
+      "api_key" => resolve_api_key(provider_info),
+      "name" => provider_info.name,
+      auth: provider_info.auth,
+      provider_id: provider_info.id
+    })
+    |> decrypt_auth_secrets()
+  end
+
+  defp receive_timeout(%{capabilities: %{local: true}}) do
+    Beamcore.Config.get_setting(:local_provider_receive_timeout_ms, 120_000)
+  end
+
+  defp receive_timeout(_provider_info),
+    do: Application.get_env(:beamcore, :provider_receive_timeout_ms, 30_000)
 
   def validate_selection(name) when is_binary(name) do
     case get(name) do
@@ -259,8 +284,8 @@ defmodule Beamcore.Provider.Registry do
     has_token_url = is_binary(Map.get(config, "token_url") || Map.get(config, :token_url))
 
     %{
-      id: if(has_token_url, do: :oauth2, else: :openai_compatible),
-      adapter: if(has_token_url, do: OAuth2, else: OpenAICompatible),
+      id: :openai_compatible,
+      adapter: OpenAICompatible,
       base_url: nil,
       auth: if(has_token_url, do: :oauth2, else: :bearer),
       default_model: nil,
@@ -297,16 +322,42 @@ defmodule Beamcore.Provider.Registry do
   end
 
   defp merge_config(default, config) when is_map(config) do
-    %{
+    Map.merge(config, %{
       "base_url" => Map.get(config, "base_url") || Map.get(default, :base_url),
       "default_model" => Map.get(config, "default_model") || Map.get(default, :default_model),
+      "auth" => Map.get(config, "auth") || Map.get(default, :auth),
       "api_key" => Map.get(config, "api_key")
-    }
+    })
   end
 
   defp configured?(_name, _config, %{requires_api_key?: false}), do: true
 
-  defp configured?(_name, config, _default) do
-    is_map(config) and is_binary(Map.get(config, "api_key"))
+  defp configured?(_name, config, default) do
+    is_map(config) and auth_configured?(merge_config(default, config))
+  end
+
+  defp auth_configured?(config) do
+    case Auth.validate_config(decrypt_auth_secrets(config)) do
+      :ok -> true
+      {:error, _error} -> false
+    end
+  end
+
+  defp decrypt_auth_secrets(config) do
+    config
+    |> decrypt_secret_fields(["api_key", "client_secret", "bearer_token", "access_token"])
+    |> Map.update("auth", nil, fn
+      auth when is_map(auth) -> decrypt_secret_fields(auth, ["client_secret", "token"])
+      auth -> auth
+    end)
+  end
+
+  defp decrypt_secret_fields(config, fields) do
+    Enum.reduce(fields, config, fn key, acc ->
+      case Map.get(acc, key) do
+        value when is_binary(value) -> Map.put(acc, key, Beamcore.Config.decrypted_api_key(value))
+        _ -> acc
+      end
+    end)
   end
 end

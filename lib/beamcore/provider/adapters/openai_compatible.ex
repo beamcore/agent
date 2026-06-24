@@ -8,7 +8,7 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
 
   @behaviour Beamcore.Provider
 
-  alias Beamcore.Provider.Error
+  alias Beamcore.Provider.{Auth, Error}
 
   @completions_module Application.compile_env(
                         :beamcore,
@@ -61,50 +61,29 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
 
   @impl true
   def validate_config(config) do
-    auth = Map.get(config, :auth) || Map.get(config, "auth") || :bearer
-    token = Map.get(config, "api_key") || Map.get(config, :api_key)
-
     cond do
-      auth in [:none, "none"] ->
-        :ok
-
-      not is_binary(token) ->
+      not is_binary(base_url(config)) ->
         {:error,
          Error.exception(
            provider: provider_id(config),
            kind: :missing_config,
-           message: "Provider #{provider_name(config)} requires an API key."
+           message: "Provider #{provider_name(config)} is missing base_url."
          )}
 
       true ->
-        :ok
+        Auth.validate_config(config)
     end
   end
 
   defp client(config) do
-    token = Map.get(config, "api_key") || Map.get(config, :api_key) || token_for_auth(config)
-    base_url = Map.get(config, "base_url") || Map.get(config, :base_url)
+    with {:ok, %{headers: headers, token: token}} <- Auth.material(config) do
+      token = token || "unused"
 
-    if is_binary(token) and is_binary(base_url) do
       {:ok,
        OpenaiEx.new(token)
-       |> OpenaiEx.with_base_url(base_url)
+       |> Map.put(:_http_headers, headers)
+       |> OpenaiEx.with_base_url(base_url(config))
        |> OpenaiEx.with_receive_timeout(Map.get(config, :receive_timeout, 30_000))}
-    else
-      {:error,
-       Error.exception(
-         provider: provider_id(config),
-         kind: :missing_config,
-         message: "Provider #{provider_name(config)} is missing API configuration."
-       )}
-    end
-  end
-
-  defp token_for_auth(config) do
-    case Map.get(config, :auth) || Map.get(config, "auth") do
-      :none -> "unused"
-      "none" -> "unused"
-      _ -> nil
     end
   end
 
@@ -125,6 +104,8 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
   defp normalize({:ok, response}), do: {:ok, response}
   defp normalize({:error, %OpenaiEx.Error{} = error}), do: {:error, error}
   defp normalize({:error, error}), do: {:error, error}
+
+  defp base_url(config), do: Map.get(config, "base_url") || Map.get(config, :base_url)
 
   defp provider_id(config), do: Map.get(config, :provider_id) || Map.get(config, "provider_id")
 

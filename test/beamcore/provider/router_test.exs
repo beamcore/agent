@@ -8,7 +8,9 @@ defmodule Beamcore.Provider.RouterTest do
       Path.join(System.tmp_dir!(), "beamcore_router_#{System.unique_integer([:positive])}.dets")
 
     previous_path = Application.get_env(:beamcore, :config_dets_path)
+    previous_auth_http_client = Application.get_env(:beamcore, :auth_http_client)
     Application.put_env(:beamcore, :config_dets_path, path)
+    Application.put_env(:beamcore, :auth_http_client, Beamcore.Provider.AuthHTTPMock)
 
     Beamcore.Config.put_provider("openai", %{
       api_key: "test-openai-key",
@@ -18,9 +20,15 @@ defmodule Beamcore.Provider.RouterTest do
 
     on_exit(fn ->
       restore_config_path(previous_path)
+      restore_auth_http_client(previous_auth_http_client)
       File.rm(path)
       Process.delete(:mock_completions_create)
+      Process.delete(:auth_test_pid)
+      Process.delete(:auth_http_responses)
+      Beamcore.Provider.Auth.clear_cache()
     end)
+
+    Process.put(:auth_test_pid, self())
 
     :ok
   end
@@ -66,6 +74,45 @@ defmodule Beamcore.Provider.RouterTest do
     assert_receive {:call, "https://compatible.example/v1", "secret", "model-a"}
   end
 
+  test "routes OpenAI-compatible provider with OAuth2 auth" do
+    assert :ok =
+             Beamcore.Config.put_provider("oauth-compatible", %{
+               auth: :oauth2,
+               token_url: "https://auth.example/token",
+               client_id: "client",
+               client_secret: "secret",
+               scope: "CHAT_API_SCOPE",
+               token_request_id_header: "RqUID",
+               base_url: "https://oauth-compatible.example/v1",
+               default_model: "chat-model"
+             })
+
+    Process.put(
+      :auth_http_responses,
+      {:ok, %{status: 200, body: %{"access_token" => "oauth-chat-token", "expires_in" => 3600}}}
+    )
+
+    parent = self()
+
+    Process.put(:mock_completions_create, fn client, params ->
+      send(parent, {:call, client.base_url, client.token, client._http_headers, params.model})
+      {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "ok"}}]}}
+    end)
+
+    assert {:ok, %{"choices" => [%{"message" => %{"content" => "ok"}}]}} =
+             Router.chat(
+               %{provider: "oauth-compatible", model: "chat-model"},
+               %{messages: [%{role: "user", content: "hi"}], tools: []}
+             )
+
+    assert_receive {:call, "https://oauth-compatible.example/v1", "oauth-chat-token", headers,
+                    "chat-model"}
+
+    assert {"Authorization", "Bearer oauth-chat-token"} in headers
+    assert_receive {:oauth_post, "https://auth.example/token", opts}
+    assert {"RqUID", _request_id} = List.keyfind(opts[:headers], "RqUID", 0)
+  end
+
   test "returns typed error for unsupported provider selection" do
     assert {:error, %Beamcore.Provider.Error{kind: :invalid_config}} =
              Router.chat(
@@ -101,4 +148,9 @@ defmodule Beamcore.Provider.RouterTest do
 
   defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)
   defp restore_config_path(path), do: Application.put_env(:beamcore, :config_dets_path, path)
+
+  defp restore_auth_http_client(nil), do: Application.delete_env(:beamcore, :auth_http_client)
+
+  defp restore_auth_http_client(module),
+    do: Application.put_env(:beamcore, :auth_http_client, module)
 end
