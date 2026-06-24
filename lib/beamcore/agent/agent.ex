@@ -74,10 +74,8 @@ defmodule Beamcore.Agent do
         {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
         Beamcore.Agent.Tools.Eeva.AtomBudget,
         Beamcore.Agent.Tools.Eeva.Supervisor,
-        Beamcore.Provider.Health,
-        Beamcore.Mesh,
-        Beamcore.Mesh.Discovery
-      ] ++ tui_children() ++ gateway_children()
+        Beamcore.Provider.Health
+      ] ++ mesh_children() ++ tui_children() ++ gateway_children()
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
     Supervisor.start_link(children, opts)
@@ -95,6 +93,10 @@ defmodule Beamcore.Agent do
 
   defp tui_children do
     if gateway_mode?(), do: [], else: [Beamcore.TUI.DynamicSupervisor]
+  end
+
+  defp mesh_children do
+    if Mix.env() == :test, do: [], else: [Beamcore.Mesh, Beamcore.Mesh.Discovery]
   end
 
   defp gateway_children do
