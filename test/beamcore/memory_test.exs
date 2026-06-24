@@ -15,12 +15,18 @@ defmodule Beamcore.MemoryTest do
   setup do
     # Clean up any existing test DETS files
     File.rm_rf!(safe_expand(@test_dets_path))
+    File.rm_rf!(safe_expand("tmp/fallback_test_memory.dets"))
 
     # Restart a test Memory instance with a clean file
-    Memory.clear()
+    try do
+      Memory.clear()
+    rescue
+      _ -> :ok
+    end
 
     on_exit(fn ->
       File.rm_rf!(safe_expand(@test_dets_path))
+      File.rm_rf!(safe_expand("tmp/fallback_test_memory.dets"))
     end)
 
     :ok

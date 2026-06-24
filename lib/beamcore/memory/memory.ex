@@ -237,8 +237,16 @@ defmodule Beamcore.Memory do
 
         {:error, reason} ->
           case reason do
-            {:already_open, pid} -> pid
-            _ -> raise "Could not open DETS memory store: #{inspect(reason)}"
+            {:already_open, pid} ->
+              pid
+
+            {:not_a_dets_file, _} ->
+              File.rm_rf!(expanded_path)
+              {:ok, table} = :dets.open_file(dets_name, file: to_charlist(expanded_path))
+              table
+
+            _ ->
+              raise "Could not open DETS memory store: #{inspect(reason)}"
           end
       end
 
