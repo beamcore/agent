@@ -5,6 +5,24 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   The model still writes ordinary Elixir. This module keeps parse-time work
   bounded so malformed or extremely large programs fail cleanly before they
   reach the supervised worker.
+
+  ## System.cmd instrumentation
+
+  The instrument_system_cmd/1 AST rewrite is not a security boundary.
+  It exists because language models frequently hallucinate options that
+  System.cmd/3 does not accept (:timeout, :verbose, :capture, etc.).
+  Native System.cmd raises ArgumentError on unknown options, so
+  uninstrumented model-generated code would crash very often without it.
+
+  The rewrite silently rewrites System.cmd/2,3 to
+  Beamcore.Agent.Tools.Eeva.system_cmd/2,3, which strips unknown options
+  before forwarding to the real System.cmd. This is a compatibility shim
+  that makes LLM-generated code robust, not a sandbox that restricts
+  capabilities.
+
+  Note: other OS-execution paths (:os.cmd, System.shell, etc.) are not
+  rewritten because models usually dont use it. Eeva is a
+  full-capability tool for trusted users.
   """
 
   alias Beamcore.Agent.Tools.Eeva.AtomBudget
