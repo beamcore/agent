@@ -35,14 +35,15 @@ defmodule Beamcore.TUI.Components.Providers do
 
         {:noreply, insert_text(p, content) |> mark_dirty()}
 
-      match?(%ExRatatui.Event.Key{code: "backspace"}, event) ->
-        {:noreply, handle_backspace(p) |> mark_dirty()}
-
       match?(%ExRatatui.Event.Key{}, event) ->
         %ExRatatui.Event.Key{code: code, modifiers: mods, kind: kind} = event
 
         if kind in [nil, "press", :press] do
-          {:noreply, handle_key(code, mods, p) |> mark_dirty()}
+          if code == "backspace" do
+            {:noreply, handle_backspace(p) |> mark_dirty()}
+          else
+            {:noreply, handle_key(code, mods, p) |> mark_dirty()}
+          end
         else
           {:noreply, p}
         end
