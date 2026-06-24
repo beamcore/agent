@@ -251,8 +251,14 @@ defmodule Beamcore.Memory do
       end
 
     case :dets.to_ets(dets_name, ets_name) do
-      {:error, reason} -> raise "Could not load DETS data into ETS: #{inspect(reason)}"
-      _ -> :ok
+      {:error, _reason} ->
+        :dets.close(dets_name)
+        File.rm_rf!(expanded_path)
+        {:ok, _} = :dets.open_file(dets_name, file: to_charlist(expanded_path))
+        :ok
+
+      _ ->
+        :ok
     end
 
     state = %{
