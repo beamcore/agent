@@ -25,6 +25,8 @@ defmodule Beamcore.TUI.Components.Providers do
   def render_items(p, width) when is_struct(p, __MODULE__),
     do: render_list_items(p, width)
 
+  def handle_event(%ExRatatui.Event.Mouse{}, p), do: {:noreply, p}
+
   def handle_event(event, p) do
     cond do
       paste_event?(event) ->
@@ -192,7 +194,6 @@ defmodule Beamcore.TUI.Components.Providers do
     case Form.handle_key(key, mods, p.form) do
       {:cancel, _} -> %{p | adding?: false, form: nil}
       {:saved, _} -> %{p | providers: Store.load(), adding?: false, form: nil}
-      {:error, form} -> %{p | form: form}
       form -> %{p | form: form}
     end
   end

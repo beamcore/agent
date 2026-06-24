@@ -8,7 +8,7 @@ defmodule Beamcore.Provider.Registry do
   """
 
   alias Beamcore.Provider.{Capabilities, Error, Model}
-  alias Beamcore.Provider.Adapters.OpenAICompatible
+  alias Beamcore.Provider.Adapters.{OpenAICompatible, OAuth2}
 
   @defaults %{
     "openai" => %{
@@ -60,7 +60,7 @@ defmodule Beamcore.Provider.Registry do
     |> Enum.sort()
     |> Enum.map(fn name ->
       config = Map.get(custom, name)
-      default = Map.get(@defaults, name, custom_default(name))
+      default = Map.get(@defaults, name, custom_default(name, config))
       merged = merge_config(default, config)
       model = Map.get(merged, "default_model") || Map.get(merged, :default_model)
 
@@ -255,7 +255,21 @@ defmodule Beamcore.Provider.Registry do
     }
   end
 
-  defp custom_default(_name) do
+  defp custom_default(_name, config) when is_map(config) do
+    has_token_url = is_binary(Map.get(config, "token_url") || Map.get(config, :token_url))
+
+    %{
+      id: if(has_token_url, do: :oauth2, else: :openai_compatible),
+      adapter: if(has_token_url, do: OAuth2, else: OpenAICompatible),
+      base_url: nil,
+      auth: if(has_token_url, do: :oauth2, else: :bearer),
+      default_model: nil,
+      requires_api_key?: true,
+      local?: false
+    }
+  end
+
+  defp custom_default(_name, _config) do
     %{
       id: :openai_compatible,
       adapter: OpenAICompatible,

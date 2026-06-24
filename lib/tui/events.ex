@@ -41,6 +41,8 @@ defmodule Beamcore.TUI.Events do
 
   def handle_event(%Event.Resize{}, state, _opts), do: {:noreply, State.mark_dirty(state)}
 
+  def handle_event(%Event.Mouse{}, %{screen_type: :system} = state, _opts), do: {:noreply, state}
+
   def handle_event(%Event.Mouse{} = event, state, _opts) do
     case event.kind do
       "scroll_up" -> {:noreply, State.scroll_up(state, 3)}
