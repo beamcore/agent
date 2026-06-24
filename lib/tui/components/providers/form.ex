@@ -4,6 +4,14 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   alias ExRatatui.Text.{Line, Span}
 
   @field_width 54
+  @default_visible_rows 12
+  @fields [
+    %{id: :name, label: "name", required?: true},
+    %{id: :key, label: "api key", required?: true},
+    %{id: :url, label: "base url"},
+    %{id: :model, label: "model"},
+    %{id: :token_url, label: "token url", required_when: :oauth2}
+  ]
 
   defstruct field: :name,
             name: "",
@@ -12,30 +20,47 @@ defmodule Beamcore.TUI.Components.Providers.Form do
             model: "",
             token_url: "",
             mode: :openai,
-            error: nil
+            error: nil,
+            fields: nil,
+            scroll_offset: 0,
+            visible_rows: @default_visible_rows
 
-  def new, do: %__MODULE__{}
+  def new(opts \\ []) do
+    fields = Keyword.get(opts, :fields)
 
-  def render(form, muted, accent, input_style) do
+    %__MODULE__{fields: fields}
+    |> ensure_focus_valid()
+    |> ensure_focus_visible()
+  end
+
+  def render(form, muted, accent, input_style, visible_rows \\ nil) do
+    form =
+      form
+      |> set_visible_rows(visible_rows)
+      |> ensure_focus_valid()
+      |> ensure_focus_visible()
+
     mode_label = if form.mode == :oauth2, do: "OAuth2", else: "OpenAI"
     mode_style = if form.mode == :oauth2, do: accent, else: muted
 
-    fields = [:name, :key, :url, :model, :token_url]
-
     rows =
-      Enum.flat_map(fields, fn f ->
+      form
+      |> visible_fields()
+      |> Enum.flat_map(fn field ->
+        f = field.id
         value = field_value(form, f)
         active? = form.field == f
         cursor = if active?, do: "█", else: ""
         label_s = if active?, do: accent, else: muted
-        req = if required?(f, form.mode), do: " *", else: ""
+        input_s = if active?, do: accent, else: input_style
+        req = if required?(field, form.mode), do: " *", else: ""
         display = truncate_display(value <> cursor, @field_width)
         padded = String.pad_trailing(display, @field_width)
 
         [
           %Line{
             spans: [
-              %Span{content: "  #{field_label(f)}#{req}", style: label_s}
+              %Span{content: "  #{field.label}#{req}", style: label_s}
             ]
           },
           %Line{
@@ -45,7 +70,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
           },
           %Line{
             spans: [
-              %Span{content: "  │ #{padded} │", style: input_style}
+              %Span{content: "  │ #{padded} │", style: input_s}
             ]
           },
           %Line{
@@ -63,58 +88,76 @@ defmodule Beamcore.TUI.Components.Providers.Form do
         []
       end
 
-    [
-      %Line{spans: [%Span{content: ""}]},
-      %Line{
-        spans: [
-          %Span{content: "  Add Provider  ", style: accent},
-          %Span{content: "[#{mode_label}]", style: mode_style},
-          %Span{content: "  (fill token url = OAuth2)", style: muted}
-        ]
-      },
-      %Line{spans: [%Span{content: "  #{String.duplicate("─", 40)}", style: muted}]}
-    ] ++
-      rows ++
-      error_line ++
+    lines =
       [
         %Line{spans: [%Span{content: ""}]},
         %Line{
           spans: [
-            %Span{content: "  tab", style: accent},
-            %Span{content: " next  ", style: muted},
-            %Span{content: "enter", style: accent},
-            %Span{content: " save  ", style: muted},
-            %Span{content: "esc", style: accent},
-            %Span{content: " cancel", style: muted}
+            %Span{content: "  Add Provider  ", style: accent},
+            %Span{content: "[#{mode_label}]", style: mode_style},
+            %Span{content: "  (fill token url = OAuth2)", style: muted}
           ]
-        }
-      ]
+        },
+        %Line{spans: [%Span{content: "  #{String.duplicate("─", 40)}", style: muted}]}
+      ] ++
+        rows ++
+        error_line ++
+        [
+          %Line{spans: [%Span{content: ""}]},
+          %Line{
+            spans: [
+              %Span{content: "  tab", style: accent},
+              %Span{content: " next  ", style: muted},
+              %Span{content: "enter", style: accent},
+              %Span{content: " save  ", style: muted},
+              %Span{content: "esc", style: accent},
+              %Span{content: " cancel", style: muted}
+            ]
+          }
+        ]
+
+    if is_integer(visible_rows) do
+      scroll_lines(lines, form.scroll_offset, form.visible_rows)
+    else
+      lines
+    end
   end
 
-  def handle_key("tab", _mods, form), do: next_field(form)
-
-  def handle_key("down", _mods, form), do: next_field(form)
-
-  def handle_key("up", _mods, form) do
-    form = auto_detect_mode(form)
-    fields = [:name, :key, :url, :model, :token_url]
-    idx = Enum.find_index(fields, &(&1 == form.field)) || 0
-    prev = Enum.at(fields, rem(idx - 1 + length(fields), length(fields)))
-    %{form | field: prev, error: nil}
+  def visible_fields(form) do
+    form
+    |> fields()
+    |> Enum.reject(&field_hidden?/1)
   end
+
+  def focusable_fields(form) do
+    form
+    |> visible_fields()
+    |> Enum.reject(&field_disabled?/1)
+    |> Enum.filter(&field_editable?/1)
+  end
+
+  def handle_key("tab", mods, form) do
+    if shift?(mods), do: previous_field(form, wrap?: true), else: next_field(form, wrap?: true)
+  end
+
+  def handle_key("back_tab", _mods, form), do: previous_field(form, wrap?: true)
+
+  def handle_key("down", _mods, form), do: next_field(form, wrap?: false)
+
+  def handle_key("up", _mods, form), do: previous_field(form, wrap?: false)
 
   def handle_key("enter", _mods, form) do
     form = auto_detect_mode(form)
 
     cond do
       form.name == "" ->
-        %{form | field: :name, error: "name required"}
+        focus_field(%{form | error: "name required"}, :name)
 
       form.key == "" ->
-        %{form | field: :key, error: "key required"}
+        focus_field(%{form | error: "key required"}, :key)
 
       form.mode == :oauth2 and form.token_url == "" ->
-        %{form | field: :token_url, error: "token url required for OAuth2"}
+        focus_field(%{form | error: "token url required for OAuth2"}, :token_url)
 
       true ->
         config =
@@ -127,20 +170,23 @@ defmodule Beamcore.TUI.Components.Providers.Form do
           |> Enum.reject(fn {_, v} -> is_nil(v) end)
           |> Map.new()
 
-        Beamcore.Config.put_provider(form.name, config)
-        {:saved, form}
+        {:save, form.name, config, form}
     end
   end
 
   def handle_key("esc", _mods, form), do: {:cancel, form}
 
+  def handle_key("delete", _mods, form), do: handle_backspace(form)
+
   def handle_key(key, _mods, form) do
     char = if String.length(key) == 1, do: key, else: ""
+    form = ensure_focus_valid(form)
     field = field_atom(form.field)
     %{Map.update!(form, field, &(&1 <> char)) | error: nil}
   end
 
   def handle_backspace(form) do
+    form = ensure_focus_valid(form)
     field = field_atom(form.field)
     current = Map.get(form, field)
     new_val = if String.length(current) > 0, do: String.slice(current, 0..-2//1), else: current
@@ -148,6 +194,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   end
 
   def insert_text(form, text) do
+    form = ensure_focus_valid(form)
     field = field_atom(form.field)
     clean = String.replace(text, "\n", " ")
     %{Map.update!(form, field, &(&1 <> clean)) | error: nil}
@@ -155,11 +202,11 @@ defmodule Beamcore.TUI.Components.Providers.Form do
 
   # -- Private -----------------------------------------------------------------
 
-  defp next_field(form) do
+  defp next_field(form, opts) do
     form = auto_detect_mode(form)
-    fields = [:name, :key, :url, :model, :token_url]
-    idx = Enum.find_index(fields, &(&1 == form.field)) || 0
-    next = Enum.at(fields, rem(idx + 1, length(fields)))
+    ids = focusable_field_ids(form)
+    idx = Enum.find_index(ids, &(&1 == form.field)) || 0
+    next = next_id(ids, idx, Keyword.fetch!(opts, :wrap?))
 
     form =
       if form.field == :name and next == :key do
@@ -169,19 +216,29 @@ defmodule Beamcore.TUI.Components.Providers.Form do
         form
       end
 
-    %{form | field: next, error: nil}
+    focus_field(%{form | error: nil}, next)
   end
 
-  defp field_label(:name), do: "name"
-  defp field_label(:key), do: "api key"
-  defp field_label(:url), do: "base url"
-  defp field_label(:model), do: "model"
-  defp field_label(:token_url), do: "token url"
+  defp previous_field(form, opts) do
+    form = auto_detect_mode(form)
+    ids = focusable_field_ids(form)
+    idx = Enum.find_index(ids, &(&1 == form.field)) || 0
+    previous = previous_id(ids, idx, Keyword.fetch!(opts, :wrap?))
 
-  defp required?(:name, _), do: true
-  defp required?(:key, _), do: true
-  defp required?(:token_url, :oauth2), do: true
-  defp required?(_, _), do: false
+    focus_field(%{form | error: nil}, previous)
+  end
+
+  defp next_id([], _idx, _wrap?), do: nil
+  defp next_id(ids, idx, true), do: Enum.at(ids, rem(idx + 1, length(ids)))
+  defp next_id(ids, idx, false), do: Enum.at(ids, min(idx + 1, length(ids) - 1))
+
+  defp previous_id([], _idx, _wrap?), do: nil
+  defp previous_id(ids, idx, true), do: Enum.at(ids, rem(idx - 1 + length(ids), length(ids)))
+  defp previous_id(ids, idx, false), do: Enum.at(ids, max(idx - 1, 0))
+
+  defp required?(%{required?: true}, _mode), do: true
+  defp required?(%{required_when: mode}, mode), do: true
+  defp required?(_field, _mode), do: false
 
   defp field_value(form, :name), do: form.name
   defp field_value(form, :key), do: mask(form.key)
@@ -194,6 +251,106 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp field_atom(:url), do: :url
   defp field_atom(:model), do: :model
   defp field_atom(:token_url), do: :token_url
+
+  defp fields(%{fields: nil}), do: @fields
+  defp fields(%{fields: fields}) when is_list(fields), do: Enum.map(fields, &normalize_field/1)
+
+  defp normalize_field(field) when is_atom(field), do: %{id: field, label: to_string(field)}
+
+  defp normalize_field(field) when is_map(field) do
+    id = Map.get(field, :id) || Map.fetch!(field, "id")
+
+    field =
+      field
+      |> Enum.map(fn {key, value} -> {normalize_field_key(key), value} end)
+      |> Map.new()
+
+    Map.put_new(field, :label, to_string(id))
+  end
+
+  defp normalize_field_key("id"), do: :id
+  defp normalize_field_key("label"), do: :label
+  defp normalize_field_key("required?"), do: :required?
+  defp normalize_field_key("required_when"), do: :required_when
+  defp normalize_field_key("hidden?"), do: :hidden?
+  defp normalize_field_key("disabled?"), do: :disabled?
+  defp normalize_field_key("editable?"), do: :editable?
+  defp normalize_field_key(key), do: key
+
+  defp field_hidden?(field), do: Map.get(field, :hidden?, false)
+  defp field_disabled?(field), do: Map.get(field, :disabled?, false)
+  defp field_editable?(field), do: Map.get(field, :editable?, true)
+
+  defp focusable_field_ids(form), do: form |> focusable_fields() |> Enum.map(& &1.id)
+
+  defp focus_field(form, nil), do: form
+
+  defp focus_field(form, field) do
+    %{form | field: field}
+    |> ensure_focus_visible()
+  end
+
+  defp ensure_focus_valid(form) do
+    ids = focusable_field_ids(form)
+
+    if form.field in ids do
+      form
+    else
+      focus_field(form, List.first(ids))
+    end
+  end
+
+  defp set_visible_rows(form, rows) when is_integer(rows) and rows > 0,
+    do: %{form | visible_rows: rows}
+
+  defp set_visible_rows(form, _rows), do: form
+
+  defp ensure_focus_visible(%{field: nil} = form), do: form
+
+  defp ensure_focus_visible(form) do
+    case field_line_range(form, form.field) do
+      nil ->
+        form
+
+      {first, last} ->
+        max_offset = max(total_line_count(form) - form.visible_rows, 0)
+
+        offset =
+          cond do
+            first < form.scroll_offset -> first
+            last >= form.scroll_offset + form.visible_rows -> last - form.visible_rows + 1
+            true -> form.scroll_offset
+          end
+          |> max(0)
+          |> min(max_offset)
+
+        %{form | scroll_offset: offset}
+    end
+  end
+
+  defp field_line_range(form, field_id) do
+    form
+    |> visible_fields()
+    |> Enum.find_index(&(&1.id == field_id))
+    |> case do
+      nil -> nil
+      idx -> {3 + idx * 4, 3 + idx * 4 + 3}
+    end
+  end
+
+  defp total_line_count(form) do
+    field_count = length(visible_fields(form))
+    error_count = if form.error, do: 1, else: 0
+    3 + field_count * 4 + error_count + 2
+  end
+
+  defp scroll_lines(lines, offset, visible_rows) do
+    if length(lines) > visible_rows do
+      Enum.slice(lines, offset, visible_rows)
+    else
+      lines
+    end
+  end
 
   defp auto_detect_mode(form) do
     if form.token_url != "", do: %{form | mode: :oauth2}, else: %{form | mode: :openai}
@@ -219,4 +376,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp truncate_display(text, max_len) do
     if String.length(text) <= max_len, do: text, else: String.slice(text, 0, max_len - 1) <> "…"
   end
+
+  defp shift?(nil), do: false
+  defp shift?(mods), do: "shift" in mods
 end

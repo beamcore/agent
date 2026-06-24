@@ -14,7 +14,8 @@ defmodule Beamcore.TUI.Components.Providers do
             providers: [],
             selected: 0,
             adding?: false,
-            form: nil
+            form: nil,
+            save_ref: nil
 
   def new(configure_for \\ :agent) do
     %__MODULE__{providers: Store.load(), configure_for: configure_for}
@@ -23,8 +24,8 @@ defmodule Beamcore.TUI.Components.Providers do
   def mark_dirty(p), do: %{p | render_dirty?: true}
   def clear_dirty(p), do: %{p | render_dirty?: false}
 
-  def render_items(p, width) when is_struct(p, __MODULE__),
-    do: render_list_items(p, width)
+  def render_items(p, width, height \\ nil) when is_struct(p, __MODULE__),
+    do: render_list_items(p, width, height)
 
   def handle_event(%ExRatatui.Event.Mouse{}, p), do: {:noreply, p}
 
@@ -64,9 +65,10 @@ defmodule Beamcore.TUI.Components.Providers do
 
   defp paste_event?(_), do: false
 
-  defp render_list_items(p, width) do
+  defp render_list_items(p, width, height) do
     if p.adding?,
-      do: Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base)),
+      do:
+        Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base), height),
       else: table_header() ++ render_rows(p, width)
   end
 
@@ -195,7 +197,7 @@ defmodule Beamcore.TUI.Components.Providers do
   def handle_key(key, mods, %{adding?: true} = p) do
     case Form.handle_key(key, mods, p.form) do
       {:cancel, _} -> %{p | adding?: false, form: nil}
-      {:saved, _} -> %{p | providers: Store.load(), adding?: false, form: nil}
+      {:save, name, config, form} -> start_save(p, name, config, form)
       form -> %{p | form: form}
     end
   end
@@ -211,6 +213,55 @@ defmodule Beamcore.TUI.Components.Providers do
     do: %{p | form: Form.insert_text(p.form, text)}
 
   def insert_text(p, _text), do: p
+
+  def finish_save(%{save_ref: ref} = p, ref, :ok) do
+    %{p | providers: Store.load(), adding?: false, form: nil, save_ref: nil}
+  end
+
+  def finish_save(%{save_ref: ref, form: form} = p, ref, {:error, reason}) do
+    %{p | form: %{form | error: "save failed: #{format_reason(reason)}"}, save_ref: nil}
+  end
+
+  def finish_save(p, _ref, _result), do: p
+
+  defp start_save(%{save_ref: ref} = p, _name, _config, form) when is_reference(ref),
+    do: %{p | form: form}
+
+  defp start_save(p, name, config, form) do
+    parent = self()
+    ref = make_ref()
+
+    {:ok, _pid} =
+      Task.start(fn ->
+        result =
+          try do
+            Beamcore.Config.put_provider(name, config)
+          rescue
+            error ->
+              Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :provider_save)
+              {:error, Exception.message(error)}
+          catch
+            kind, reason ->
+              Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :provider_save)
+              {:error, reason}
+          end
+
+        send(parent, {:provider_saved, ref, result})
+      end)
+
+    %{p | form: %{form | error: "saving..."}, save_ref: ref}
+  rescue
+    error ->
+      Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :provider_save_start)
+      %{p | form: %{form | error: "save failed: #{Exception.message(error)}"}}
+  catch
+    kind, reason ->
+      Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :provider_save_start)
+      %{p | form: %{form | error: "save failed: #{format_reason(reason)}"}}
+  end
+
+  defp format_reason(reason) when is_atom(reason), do: Atom.to_string(reason)
+  defp format_reason(reason), do: inspect(reason)
 
   defp truncate(text, max_len) do
     text = to_string(text)

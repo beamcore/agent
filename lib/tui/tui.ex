@@ -152,7 +152,7 @@ defmodule Beamcore.TUI do
 
         %ExRatatui.Event.Resize{width: w, height: h} ->
           {:noreply,
-           state |> set_viewports(w, h) |> MultiScreenState.update_active(&State.mark_dirty/1)}
+           state |> set_viewports(w, h) |> MultiScreenState.update_active(&mark_active_dirty/1)}
 
         _ ->
           MessageRouter.delegate_event(event, state, state.active_screen)
@@ -193,6 +193,12 @@ defmodule Beamcore.TUI do
   defp route_info({:file_finder_cache, files}, state),
     do: MessageRouter.route_file_finder_cache(files, state)
 
+  defp route_info({:system_mesh_snapshot, ref, snapshot}, state),
+    do: MessageRouter.route_system_mesh_snapshot(ref, snapshot, state)
+
+  defp route_info({:provider_saved, ref, result}, state),
+    do: MessageRouter.route_provider_saved(ref, result, state)
+
   defp route_info(_msg, state), do: {:noreply, state}
 
   defp switch_to_f3(state) do
@@ -205,6 +211,9 @@ defmodule Beamcore.TUI do
 
     %{state | active_screen: :f3, f3_state: f3}
   end
+
+  defp mark_active_dirty(%{render_dirty?: _} = screen), do: State.mark_dirty(screen)
+  defp mark_active_dirty(screen), do: screen
 
   defp init_screen_providers do
     case Beamcore.Config.active_provider() do

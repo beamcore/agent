@@ -14,7 +14,7 @@ defmodule Beamcore.TUI.Render do
     content_h = max(area.height - status_h, 1)
     content = %{area | height: content_h}
     status = %{area | y: content_h, height: status_h}
-    lines = System.render_text(state, content.width - 4)
+    lines = System.render_text(state, content.width - 4, content.height)
 
     [
       {%Paragraph{text: lines, style: Theme.style(:base), wrap: false}, content},
