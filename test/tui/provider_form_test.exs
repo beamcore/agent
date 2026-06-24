@@ -190,7 +190,7 @@ defmodule Beamcore.TUI.ProviderFormTest do
       f3_state: system
     }
 
-    {:noreply, resized} =
+    {:noreply, resized, [render?: false]} =
       Beamcore.TUI.handle_event(%ExRatatui.Event.Resize{width: 80, height: 16}, state)
 
     lines = TuiSystem.render_text(resized.f3_state, 76, 15) |> rendered_text()

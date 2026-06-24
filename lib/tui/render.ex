@@ -9,12 +9,12 @@ defmodule Beamcore.TUI.Render do
   alias ExRatatui.Widgets.{Block, List, Paragraph, Popup, SlashCommands}
 
   def render(%{screen_type: :system} = state, frame) do
-    area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
+    area = %Rect{x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1)}
     status_h = 1
     content_h = max(area.height - status_h, 1)
     content = %{area | height: content_h}
     status = %{area | y: content_h, height: status_h}
-    lines = System.render_text(state, content.width - 4, content.height)
+    lines = System.render_text(state, max(content.width - 4, 1), content.height)
 
     [
       {%Paragraph{text: lines, style: Theme.style(:base), wrap: false}, content},
@@ -23,7 +23,7 @@ defmodule Beamcore.TUI.Render do
   end
 
   def render(state, frame) do
-    area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
+    area = %Rect{x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1)}
     areas = Layout.areas(area, state.screen_type)
 
     widgets =

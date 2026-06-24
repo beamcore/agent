@@ -11,6 +11,7 @@ defmodule Beamcore.TUI.Components.System do
             configure_for: :agent,
             providers: nil,
             mesh_snapshot: nil,
+            stats_snapshot: nil,
             mesh_refresh_ref: nil,
             mesh_updated_at_ms: nil
 
@@ -18,13 +19,16 @@ defmodule Beamcore.TUI.Components.System do
     %__MODULE__{
       configure_for: configure_for,
       providers: Providers.new(configure_for),
-      mesh_snapshot: Mesh.local_snapshot()
+      mesh_snapshot: Mesh.local_snapshot(),
+      stats_snapshot: Stats.snapshot()
     }
   end
 
   def render_text(system, width, height \\ nil) do
+    width = max(width, 1)
     accent = Theme.style(:accent)
     subtle = Theme.style(:subtle)
+    flourish = String.duplicate("· ", max(div(width - 24, 2), 0))
 
     mesh_lines = Mesh.render(system.mesh_snapshot || Mesh.local_snapshot(), width)
     divider_w = max(76, width - 4)
@@ -34,7 +38,7 @@ defmodule Beamcore.TUI.Components.System do
       %Line{
         spans: [
           %Span{content: " ◆ Mesh Topology  ", style: accent},
-          %Span{content: String.duplicate("· ", div(width - 24, 2)), style: subtle}
+          %Span{content: flourish, style: subtle}
         ]
       },
       %Line{spans: [%Span{content: ""}]}
@@ -45,7 +49,7 @@ defmodule Beamcore.TUI.Components.System do
       %Line{
         spans: [
           %Span{content: " ◆ Beamcore Agent  ", style: accent},
-          %Span{content: String.duplicate("· ", div(width - 24, 2)), style: subtle}
+          %Span{content: flourish, style: subtle}
         ]
       },
       %Line{spans: [%Span{content: ""}]}
@@ -80,7 +84,7 @@ defmodule Beamcore.TUI.Components.System do
       }
     ]
 
-    stats_lines = Stats.render(width)
+    stats_lines = Stats.render(system.stats_snapshot || %{}, width)
 
     provider_reserved =
       if is_integer(height) do
@@ -122,18 +126,18 @@ defmodule Beamcore.TUI.Components.System do
       Task.start(fn ->
         snapshot =
           try do
-            Mesh.collect_snapshot()
+            {Mesh.collect_snapshot(), Stats.snapshot()}
           rescue
             error ->
               Beamcore.AppLog.exception(:error, error, __STACKTRACE__,
                 boundary: :tui_mesh_refresh
               )
 
-              Mesh.local_snapshot()
+              {Mesh.local_snapshot(), %{}}
           catch
             kind, reason ->
               Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :tui_mesh_refresh)
-              Mesh.local_snapshot()
+              {Mesh.local_snapshot(), %{}}
           end
 
         send(parent, {:system_mesh_snapshot, ref, snapshot})
@@ -160,9 +164,24 @@ defmodule Beamcore.TUI.Components.System do
     }
   end
 
+  def finish_mesh_refresh(%{mesh_refresh_ref: ref} = system, ref, {mesh_snapshot, stats_snapshot})
+      when is_map(mesh_snapshot) and is_map(stats_snapshot) do
+    %{
+      system
+      | mesh_snapshot: mesh_snapshot,
+        stats_snapshot: stats_snapshot,
+        mesh_refresh_ref: nil,
+        mesh_updated_at_ms: System.monotonic_time(:millisecond)
+    }
+  end
+
   def finish_mesh_refresh(system, _ref, _snapshot), do: system
 
   def finish_provider_save(system, ref, result) do
     %{system | providers: Providers.finish_save(system.providers, ref, result)}
+  end
+
+  def finish_provider_action(system, ref, action, result) do
+    %{system | providers: Providers.finish_action(system.providers, ref, action, result)}
   end
 end

@@ -9,17 +9,27 @@ defmodule Beamcore.TUI do
   alias Beamcore.TUI.Events.KeyEvents
   alias ExRatatui.Layout.Rect
 
-  require Logger
-
   @dialyzer {:nowarn_function, [start: 0, start: 1]}
+
+  def runtime_child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :worker,
+      restart: :temporary
+    }
+  end
+
   def start(opts \\ []) do
-    old_level = Logger.level()
-    Logger.configure(level: :none)
-    opts = Keyword.put_new(opts, :mouse_capture, true)
+    old_logger_level = silence_logger()
+    opts = Keyword.put_new(opts, :poll_interval, 1)
 
     try do
       if Process.whereis(Beamcore.TUI.DynamicSupervisor) do
-        case DynamicSupervisor.start_child(Beamcore.TUI.DynamicSupervisor, {__MODULE__, opts}) do
+        case DynamicSupervisor.start_child(
+               Beamcore.TUI.DynamicSupervisor,
+               runtime_child_spec(opts)
+             ) do
           {:ok, pid} -> wait_for_termination(pid)
           {:error, {:already_started, _pid}} -> {:error, :already_running}
         end
@@ -38,7 +48,7 @@ defmodule Beamcore.TUI do
         Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :tui_start)
         :erlang.raise(kind, reason, __STACKTRACE__)
     after
-      Logger.configure(level: old_level)
+      restore_logger(old_logger_level)
     end
   end
 
@@ -47,12 +57,36 @@ defmodule Beamcore.TUI do
 
     receive do
       {:DOWN, ^ref, :process, ^pid, reason} ->
-        if reason not in [:normal, :shutdown] do
+        if normal_exit?(reason) do
+          :ok
+        else
           Beamcore.AppLog.error("TUI process stopped unexpectedly", reason: inspect(reason))
+          {:error, reason}
         end
-
-        :ok
     end
+  end
+
+  defp normal_exit?(reason), do: reason in [:normal, :shutdown]
+
+  defp silence_logger do
+    level = :logger.get_primary_config() |> Map.get(:level)
+    :logger.set_primary_config(:level, :none)
+    level
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
+  end
+
+  defp restore_logger(nil), do: :ok
+
+  defp restore_logger(level) do
+    :logger.set_primary_config(:level, level)
+    :ok
+  rescue
+    _ -> :ok
+  catch
+    _, _ -> :ok
   end
 
   @impl true
@@ -151,8 +185,7 @@ defmodule Beamcore.TUI do
           end
 
         %ExRatatui.Event.Resize{width: w, height: h} ->
-          {:noreply,
-           state |> set_viewports(w, h) |> MultiScreenState.update_active(&mark_active_dirty/1)}
+          {:noreply, schedule_resize_redraw(state, w, h), render?: false}
 
         _ ->
           MessageRouter.delegate_event(event, state, state.active_screen)
@@ -160,11 +193,11 @@ defmodule Beamcore.TUI do
     rescue
       e ->
         Beamcore.AppLog.exception(:error, e, __STACKTRACE__, boundary: :tui_event)
-        reraise e, __STACKTRACE__
+        {:noreply, set_active_notice(state, "TUI event error. See #{Beamcore.AppLog.log_path()}")}
     catch
       k, r ->
         Beamcore.AppLog.exception(k, r, __STACKTRACE__, boundary: :tui_event)
-        :erlang.raise(k, r, __STACKTRACE__)
+        {:noreply, set_active_notice(state, "TUI event error. See #{Beamcore.AppLog.log_path()}")}
     end
   end
 
@@ -199,6 +232,14 @@ defmodule Beamcore.TUI do
   defp route_info({:provider_saved, ref, result}, state),
     do: MessageRouter.route_provider_saved(ref, result, state)
 
+  defp route_info({:provider_action_done, ref, action, result}, state),
+    do: MessageRouter.route_provider_action_done(ref, action, result, state)
+
+  defp route_info({:resize_redraw, ref}, %{resize_redraw_ref: ref} = state),
+    do: {:noreply, %{state | resize_redraw_ref: nil}}
+
+  defp route_info({:resize_redraw, _ref}, state), do: {:noreply, state, render?: false}
+
   defp route_info(_msg, state), do: {:noreply, state}
 
   defp switch_to_f3(state) do
@@ -214,6 +255,25 @@ defmodule Beamcore.TUI do
 
   defp mark_active_dirty(%{render_dirty?: _} = screen), do: State.mark_dirty(screen)
   defp mark_active_dirty(screen), do: screen
+
+  defp schedule_resize_redraw(state, width, height) do
+    if is_reference(state.resize_redraw_ref), do: Process.cancel_timer(state.resize_redraw_ref)
+
+    ref = make_ref()
+    Process.send_after(self(), {:resize_redraw, ref}, 16)
+
+    state
+    |> set_viewports(max(width, 1), max(height, 1))
+    |> MultiScreenState.update_active(&mark_active_dirty/1)
+    |> Map.put(:resize_redraw_ref, ref)
+  end
+
+  defp set_active_notice(state, text) do
+    MultiScreenState.update_active(state, fn
+      %{render_dirty?: _} = screen -> State.set_notice(screen, text)
+      screen -> screen
+    end)
+  end
 
   defp init_screen_providers do
     case Beamcore.Config.active_provider() do

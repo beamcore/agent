@@ -2,7 +2,9 @@ defmodule Beamcore.TUI.FileFinderTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.Agent.Tools.PathInput
+  alias Beamcore.TUI.Events.TextInput
   alias Beamcore.TUI.FileFinder
+  alias Beamcore.TUI.State
 
   describe "parse/2" do
     test "returns :no_file_query when @ is absent" do
@@ -86,6 +88,27 @@ defmodule Beamcore.TUI.FileFinderTest do
         File.rm_rf(root)
         File.rm_rf(outside)
       end
+    end
+  end
+
+  describe "TUI key path" do
+    test "does not synchronously load files when cache is not ready" do
+      state = %State{
+        textarea: ExRatatui.textarea_new(),
+        file_finder_cache: nil,
+        file_finder_active?: false
+      }
+
+      ExRatatui.textarea_set_value(state.textarea, "@lib")
+
+      {elapsed_us, updated} =
+        :timer.tc(fn ->
+          TextInput.handle_file_finder_key("b", [], state)
+        end)
+
+      assert elapsed_us < 50_000
+      refute updated.file_finder_active?
+      assert updated.file_finder_cache == nil
     end
   end
 end
