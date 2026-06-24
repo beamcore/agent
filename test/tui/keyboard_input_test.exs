@@ -103,6 +103,29 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     assert value(updated) == "\n"
   end
 
+  test "resize marks state dirty and does not enter text path" do
+    initial = %{state() | render_dirty?: false}
+
+    {:noreply, updated} =
+      Events.handle_event(%ExRatatui.Event.Resize{width: 100, height: 30}, initial)
+
+    assert value(updated) == ""
+    assert updated.render_dirty?
+  end
+
+  test "Ctrl+C is recognized and does not insert text" do
+    initial = %{state() | render_dirty?: false}
+
+    {:noreply, updated} =
+      Events.handle_event(
+        %ExRatatui.Event.Key{code: "c", modifiers: ["ctrl"], kind: "press"},
+        initial
+      )
+
+    assert value(updated) == ""
+    assert updated.ctrl_c_pending == :exit
+  end
+
   test "escape closes modal panels without altering input" do
     initial = %{state() | show_help: true, show_commands: true, show_theme_picker: true}
 

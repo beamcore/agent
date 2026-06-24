@@ -9,20 +9,24 @@ defmodule Beamcore.TUI.Components.System do
 
   defstruct screen_type: :system,
             configure_for: :agent,
-            providers: nil
+            providers: nil,
+            mesh_snapshot: nil,
+            mesh_refresh_ref: nil,
+            mesh_updated_at_ms: nil
 
   def new(configure_for \\ :agent) do
     %__MODULE__{
       configure_for: configure_for,
-      providers: Providers.new(configure_for)
+      providers: Providers.new(configure_for),
+      mesh_snapshot: Mesh.local_snapshot()
     }
   end
 
-  def render_text(system, width) do
+  def render_text(system, width, height \\ nil) do
     accent = Theme.style(:accent)
     subtle = Theme.style(:subtle)
 
-    mesh_lines = Mesh.render(width)
+    mesh_lines = Mesh.render(system.mesh_snapshot || Mesh.local_snapshot(), width)
     divider_w = max(76, width - 4)
 
     mesh_header = [
@@ -35,9 +39,6 @@ defmodule Beamcore.TUI.Components.System do
       },
       %Line{spans: [%Span{content: ""}]}
     ]
-
-    stats_lines = Stats.render(width)
-    provider_items = Providers.render_items(system.providers, width)
 
     top = [
       %Line{spans: [%Span{content: ""}]},
@@ -79,6 +80,17 @@ defmodule Beamcore.TUI.Components.System do
       }
     ]
 
+    stats_lines = Stats.render(width)
+
+    provider_reserved =
+      if is_integer(height) do
+        top_count = length(top) + length(stats_lines) + length(divider) + length(bottom)
+        mesh_count = length(mesh_header) + length(mesh_lines)
+        max(height - top_count - mesh_count, 5)
+      end
+
+    provider_items = Providers.render_items(system.providers, width, provider_reserved)
+
     top ++ stats_lines ++ divider ++ provider_items ++ bottom ++ mesh_header ++ mesh_lines
   end
 
@@ -98,5 +110,59 @@ defmodule Beamcore.TUI.Components.System do
     case Providers.handle_event(event, system.providers) do
       {:noreply, updated} -> {:noreply, %{system | providers: updated}}
     end
+  end
+
+  def maybe_refresh_mesh(%{mesh_refresh_ref: ref} = system) when is_reference(ref), do: system
+
+  def maybe_refresh_mesh(system) do
+    parent = self()
+    ref = make_ref()
+
+    {:ok, _pid} =
+      Task.start(fn ->
+        snapshot =
+          try do
+            Mesh.collect_snapshot()
+          rescue
+            error ->
+              Beamcore.AppLog.exception(:error, error, __STACKTRACE__,
+                boundary: :tui_mesh_refresh
+              )
+
+              Mesh.local_snapshot()
+          catch
+            kind, reason ->
+              Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :tui_mesh_refresh)
+              Mesh.local_snapshot()
+          end
+
+        send(parent, {:system_mesh_snapshot, ref, snapshot})
+      end)
+
+    %{system | mesh_refresh_ref: ref}
+  rescue
+    error ->
+      Beamcore.AppLog.exception(:error, error, __STACKTRACE__, boundary: :tui_mesh_refresh_start)
+      system
+  catch
+    kind, reason ->
+      Beamcore.AppLog.exception(kind, reason, __STACKTRACE__, boundary: :tui_mesh_refresh_start)
+      system
+  end
+
+  def finish_mesh_refresh(%{mesh_refresh_ref: ref} = system, ref, snapshot)
+      when is_map(snapshot) do
+    %{
+      system
+      | mesh_snapshot: snapshot,
+        mesh_refresh_ref: nil,
+        mesh_updated_at_ms: System.monotonic_time(:millisecond)
+    }
+  end
+
+  def finish_mesh_refresh(system, _ref, _snapshot), do: system
+
+  def finish_provider_save(system, ref, result) do
+    %{system | providers: Providers.finish_save(system.providers, ref, result)}
   end
 end

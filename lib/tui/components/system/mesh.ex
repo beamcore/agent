@@ -1,18 +1,33 @@
 defmodule Beamcore.TUI.Components.System.Mesh do
   @moduledoc """
   Real-time mesh topology visualization.
-  Polls Node.self(), Node.list(), and :erl_epmd.names() on each render
-  for a live view of the Erlang distribution mesh.
+  Builds mesh topology snapshots for the F3 screen.
   """
 
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
 
+  @rpc_timeout_ms 100
+
   # ── Public API ──
 
-  def render(width) do
-    snapshot = collect_snapshot()
+  def render(snapshot, width) do
     build_lines(snapshot, width)
+  end
+
+  def local_snapshot do
+    self_node = Node.self()
+    self_info = node_info(self_node, true)
+
+    %{
+      self_node: self_node,
+      peers: [],
+      total_nodes: 1,
+      epmd_names: %{},
+      self_info: self_info,
+      total_memory: self_info.memory,
+      total_processes: self_info.process_count
+    }
   end
 
   def collect_snapshot do
@@ -60,7 +75,7 @@ defmodule Beamcore.TUI.Components.System.Mesh do
         scheds = safe_rpc(node, :erlang, :system_info, [:schedulers_online], 0)
 
         up =
-          case :rpc.call(node, :erlang, :statistics, [:wall_clock]) do
+          case :rpc.call(node, :erlang, :statistics, [:wall_clock], @rpc_timeout_ms) do
             {_, ms} -> ms
             _ -> 0
           end
@@ -84,7 +99,7 @@ defmodule Beamcore.TUI.Components.System.Mesh do
   end
 
   defp safe_rpc(node, mod, fun, args, default) do
-    case :rpc.call(node, mod, fun, args) do
+    case :rpc.call(node, mod, fun, args, @rpc_timeout_ms) do
       {:badrpc, _} -> default
       val -> val
     end
@@ -92,7 +107,7 @@ defmodule Beamcore.TUI.Components.System.Mesh do
 
   defp measure_latency(node) do
     t0 = System.monotonic_time(:microsecond)
-    :rpc.call(node, :erlang, :node, [])
+    :rpc.call(node, :erlang, :node, [], @rpc_timeout_ms)
     t1 = System.monotonic_time(:microsecond)
     t1 - t0
   end

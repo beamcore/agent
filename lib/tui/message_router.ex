@@ -2,6 +2,7 @@ defmodule Beamcore.TUI.MessageRouter do
   @moduledoc false
 
   alias Beamcore.TUI.{Events, MultiScreenState, State}
+  alias Beamcore.TUI.Components.System, as: TuiSystem
 
   @animated_statuses [:thinking, :tool_running, :local_search, :rate_limited]
 
@@ -39,11 +40,20 @@ defmodule Beamcore.TUI.MessageRouter do
            f2_state: State.tick(state.f2_state, now)
        }}
     else
-      # F3 mesh fetches live data at render time, so keep re-rendering when active
-      if state.active_screen == :f3,
-        do: {:noreply, state},
-        else: {:noreply, state, render?: false}
+      if state.active_screen == :f3 do
+        {:noreply, %{state | f3_state: TuiSystem.maybe_refresh_mesh(state.f3_state)}}
+      else
+        {:noreply, state, render?: false}
+      end
     end
+  end
+
+  def route_system_mesh_snapshot(ref, snapshot, state) do
+    {:noreply, %{state | f3_state: TuiSystem.finish_mesh_refresh(state.f3_state, ref, snapshot)}}
+  end
+
+  def route_provider_saved(ref, result, state) do
+    {:noreply, %{state | f3_state: TuiSystem.finish_provider_save(state.f3_state, ref, result)}}
   end
 
   def route_runtime_event(worker_pid, event, state) do
