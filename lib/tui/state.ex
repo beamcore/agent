@@ -65,6 +65,8 @@ defmodule Beamcore.TUI.State do
             unicode?: true,
             provider: nil,
             model: nil,
+            input_value: "",
+            input_cursor: 0,
             history: [],
             history_index: nil,
             history_draft: "",

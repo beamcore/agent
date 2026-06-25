@@ -25,21 +25,19 @@ defmodule Beamcore.TUI.Components.Input do
     }
   end
 
-  defp input_text(%{textarea: textarea}) when not is_nil(textarea) do
-    value = ExRatatui.textarea_get_value(textarea)
+  defp input_text(state) do
+    value = Beamcore.TUI.Events.TextInput.value(state)
 
     if value == "" do
       [Line.new([Span.new(@placeholder, style: Theme.style(:muted))])]
     else
-      render_lines(value, ExRatatui.textarea_cursor(textarea))
+      render_lines(value, Beamcore.TUI.Events.TextInput.cursor(state))
     end
   rescue
     _error -> [Line.new([Span.new(@placeholder, style: Theme.style(:muted))])]
   catch
     _, _ -> [Line.new([Span.new(@placeholder, style: Theme.style(:muted))])]
   end
-
-  defp input_text(_state), do: [Line.new([Span.new(@placeholder, style: Theme.style(:muted))])]
 
   defp render_lines(value, {cursor_row, cursor_col}) do
     value

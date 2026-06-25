@@ -1,6 +1,7 @@
 defmodule Beamcore.TUI.Events.ThemePicker do
   @moduledoc false
 
+  alias Beamcore.TUI.Events.TextInput
   alias Beamcore.TUI.State
 
   def handle_key(code, mods, state) do
@@ -52,11 +53,13 @@ defmodule Beamcore.TUI.Events.ThemePicker do
     selected = Enum.at(themes, state.command_selected)
 
     if selected do
-      ExRatatui.textarea_set_value(state.textarea, "")
+      state = TextInput.set_value(state, "")
       Beamcore.TUI.Theme.set_theme(selected)
+      state
+    else
+      state
     end
-
-    %{state | show_theme_picker: false, command_selected: 0}
+    |> Map.merge(%{show_theme_picker: false, command_selected: 0})
     |> State.mark_dirty()
   rescue
     _ ->
