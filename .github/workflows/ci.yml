@@ -46,4 +46,7 @@ jobs:
         run: mix compile --warnings-as-errors
 
       - name: Run tests
-        run: mix test
+        # The :distributed-tagged tests start real :peer nodes, which needs
+        # Erlang distribution (EPMD + TCP) that the CI sandbox doesn't provide.
+        # They run locally; skip them here.
+        run: mix test --exclude distributed

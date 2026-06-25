@@ -22,12 +22,20 @@ defmodule Beamcore.Test.Peer do
 
   @doc """
   Ensure the test host is a distributed node with the shared cookie, so `:peer`
-  nodes can be started and connected. Idempotent across test modules.
+  nodes can be started and connected.
+
+  Distribution is normally already up (started in `test_helper.exs`, which also
+  excludes the `:distributed`-tagged tests when it can't start). This just
+  asserts that and sets the cookie; it starts distribution itself only as a
+  fallback for unusual run setups.
   """
   def ensure_distributed! do
-    case :net_kernel.start([:"beamcore_host@127.0.0.1", :longnames]) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
+    unless Node.alive?() do
+      case :net_kernel.start([:"beamcore_host@127.0.0.1", :longnames]) do
+        {:ok, _} -> :ok
+        {:error, {:already_started, _}} -> :ok
+        {:error, reason} -> raise "Erlang distribution unavailable: #{inspect(reason)}"
+      end
     end
 
     :erlang.set_cookie(Node.self(), cookie())

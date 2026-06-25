@@ -3,6 +3,7 @@ defmodule Beamcore.Remote.DispatchTest do
   use ExUnit.Case, async: false
 
   @moduletag :capture_log
+  @moduletag :distributed
 
   alias Beamcore.Agent.Tools.Eeva
   alias Beamcore.Remote.Session
