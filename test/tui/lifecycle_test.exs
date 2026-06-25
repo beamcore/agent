@@ -3,22 +3,31 @@ defmodule Beamcore.TUI.LifecycleTest do
 
   alias Beamcore.TUI
   alias Beamcore.TUI.Components.System, as: TuiSystem
+  alias Beamcore.TUI.Smoke
   alias Beamcore.TUI.TerminalOptions
   alias ExRatatui.Frame
 
   test "local TUI child is temporary and is not restarted after a crash" do
     assert %{restart: :temporary, start: {TUI, :start_link, [opts]}} = TUI.runtime_child_spec([])
-    assert opts[:poll_interval] == 1
+    assert opts[:poll_interval] == 16
     assert opts[:mouse_capture] == false
     assert opts[:focus_events] == false
   end
 
   test "local terminal defaults avoid risky VTE modes" do
     assert TerminalOptions.defaults() == [
-             poll_interval: 1,
+             poll_interval: 16,
              mouse_capture: false,
              focus_events: false
            ]
+  end
+
+  test "minimal smoke screen uses the same local terminal startup strategy" do
+    smoke_opts = TerminalOptions.apply([])
+    main_opts = elem(TUI.runtime_child_spec([]).start, 2) |> hd()
+
+    assert smoke_opts == main_opts
+    assert %{start: {Smoke, :start_link, [[]]}} = Smoke.child_spec([])
   end
 
   test "local terminal modes are configurable without terminal-specific branches" do
