@@ -7,7 +7,8 @@ defmodule Beamcore.TUI.MultiScreenState do
             f1_state: nil,
             f2_state: nil,
             f3_state: nil,
-            resize_redraw_ref: nil
+            resize_redraw_ref: nil,
+            tick_ref: nil
 
   def get_active(%__MODULE__{active_screen: :f1} = state), do: state.f1_state
   def get_active(%__MODULE__{active_screen: :f2} = state), do: state.f2_state
