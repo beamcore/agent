@@ -74,7 +74,8 @@ defmodule Beamcore.Agent do
         {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
         Beamcore.Agent.Tools.Eeva.AtomBudget,
         Beamcore.Agent.Tools.Eeva.Supervisor,
-        Beamcore.Provider.Health
+        Beamcore.Provider.Health,
+        Beamcore.Remote.Session
       ] ++ mesh_children() ++ tui_children() ++ gateway_children()
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
