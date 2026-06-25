@@ -9,11 +9,13 @@ defmodule Beamcore.TUI.LifecycleTest do
 
   @repo_root Path.expand("../..", __DIR__)
 
-  test "local TUI child is temporary and is not restarted after a crash" do
-    assert %{restart: :temporary, start: {TUI, :start_link, [opts]}} = TUI.runtime_child_spec([])
-    assert opts[:poll_interval] == 16
-    assert opts[:mouse_capture] == false
-    assert opts[:focus_events] == false
+  test "interactive TUI starts directly instead of through a supervisor" do
+    tui_source = File.read!(Path.expand("../../lib/tui/tui.ex", __DIR__))
+    app_source = File.read!(Path.expand("../../lib/beamcore/agent/agent.ex", __DIR__))
+
+    refute tui_source =~ "DynamicSupervisor.start_child"
+    refute tui_source =~ "runtime_child_spec"
+    refute app_source =~ "Beamcore.TUI.DynamicSupervisor"
   end
 
   test "local terminal defaults avoid risky VTE modes" do
@@ -26,7 +28,7 @@ defmodule Beamcore.TUI.LifecycleTest do
 
   test "minimal smoke screen uses the same local terminal startup strategy" do
     smoke_opts = TerminalOptions.apply([])
-    main_opts = elem(TUI.runtime_child_spec([]).start, 2) |> hd()
+    main_opts = TerminalOptions.apply([])
 
     assert smoke_opts == main_opts
     assert %{start: {Smoke, :start_link, [[]]}} = Smoke.child_spec([])

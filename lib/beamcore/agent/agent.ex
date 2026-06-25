@@ -77,7 +77,7 @@ defmodule Beamcore.Agent do
         Beamcore.Agent.Tools.Eeva.Supervisor,
         Beamcore.Provider.Health,
         Beamcore.Remote.Session
-      ] ++ mesh_children() ++ tui_children() ++ gateway_children()
+      ] ++ mesh_children() ++ gateway_children()
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
 
@@ -107,10 +107,6 @@ defmodule Beamcore.Agent do
   def stop(_state) do
     Beamcore.AppLog.info("Application stopped", app: :beamcore)
     :ok
-  end
-
-  defp tui_children do
-    if gateway_mode?(), do: [], else: [Beamcore.TUI.DynamicSupervisor]
   end
 
   # Mesh/discovery is disabled in tests through config to avoid starting

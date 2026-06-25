@@ -1,6 +1,11 @@
 defmodule Beamcore.TUI do
   @moduledoc """
-  Primary terminal UI for the agent chat, implemented as a supervised ExRatatui.App.
+  Primary terminal UI for the agent chat.
+
+  The local interactive TUI is started directly from the caller instead of via
+  an OTP supervisor. Terminal applications must inherit the caller's group
+  leader so raw mode, stdin, resize events, and cleanup all belong to the
+  foreground terminal session.
   """
 
   use ExRatatui.App
@@ -20,35 +25,14 @@ defmodule Beamcore.TUI do
 
   @dialyzer {:nowarn_function, [start: 0, start: 1]}
 
-  def runtime_child_spec(opts) do
-    opts = TerminalOptions.apply(opts)
-
-    %{
-      id: __MODULE__,
-      start: {__MODULE__, :start_link, [opts]},
-      type: :worker,
-      restart: :temporary
-    }
-  end
-
   def start(opts \\ []) do
     old_logger_level = silence_logger()
     opts = TerminalOptions.apply(opts)
 
     try do
-      if Process.whereis(Beamcore.TUI.DynamicSupervisor) do
-        case DynamicSupervisor.start_child(
-               Beamcore.TUI.DynamicSupervisor,
-               runtime_child_spec(opts)
-             ) do
-          {:ok, pid} -> wait_for_termination(pid)
-          {:error, {:already_started, _pid}} -> {:error, :already_running}
-        end
-      else
-        case start_link(opts) do
-          {:ok, pid} -> wait_for_termination(pid)
-          other -> other
-        end
+      case start_link(opts) do
+        {:ok, pid} -> wait_for_termination(pid)
+        other -> other
       end
     rescue
       error ->
