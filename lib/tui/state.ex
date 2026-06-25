@@ -72,6 +72,7 @@ defmodule Beamcore.TUI.State do
             file_finder_results: [],
             file_finder_selected: 0,
             file_finder_cache: nil,
+            file_finder_loading?: false,
             notice: nil,
             screen_type: :agent,
             show_theme_picker: false,

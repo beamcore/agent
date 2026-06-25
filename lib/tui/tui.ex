@@ -6,7 +6,6 @@ defmodule Beamcore.TUI do
   use ExRatatui.App
 
   alias Beamcore.TUI.{
-    FileFinder,
     Layout,
     MessageRouter,
     MultiScreenState,
@@ -103,9 +102,6 @@ defmodule Beamcore.TUI do
 
   @impl true
   def mount(opts) do
-    parent = self()
-    Task.start(fn -> send(parent, {:file_finder_cache, FileFinder.load_files()}) end)
-
     init_screen_providers()
 
     f1_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
@@ -142,11 +138,22 @@ defmodule Beamcore.TUI do
 
   @impl true
   def render(state, frame) do
-    Trace.event(:render_start, %{active_screen: Map.get(state, :active_screen)})
+    started_us = System.monotonic_time(:microsecond)
+
+    Trace.event(:render_start, %{
+      active_screen: Map.get(state, :active_screen),
+      tick_ref?: is_reference(Map.get(state, :tick_ref))
+    })
 
     try do
       widgets = state |> MultiScreenState.get_active() |> Render.render(frame)
-      Trace.event(:render_finish, %{active_screen: Map.get(state, :active_screen)})
+
+      Trace.event(:render_finish, %{
+        active_screen: Map.get(state, :active_screen),
+        duration_us: System.monotonic_time(:microsecond) - started_us,
+        widget_count: length(widgets)
+      })
+
       widgets
     rescue
       e -> render_error(frame, "Render error: #{Exception.message(e)}")
@@ -175,6 +182,12 @@ defmodule Beamcore.TUI do
       |> handle_actionable_event(state)
       |> maybe_schedule_tick_result()
     else
+      Trace.event(:event_ignored, %{
+        message_type: Trace.message_type(event),
+        event: inspect(event),
+        active_screen: Map.get(state, :active_screen)
+      })
+
       {:noreply, state, render?: false}
     end
   end
@@ -188,8 +201,10 @@ defmodule Beamcore.TUI do
 
   defp handle_actionable_event(event, state) do
     Trace.event(:event_received, %{
+      message_type: Trace.message_type(event),
       event: inspect(event),
-      active_screen: Map.get(state, :active_screen)
+      active_screen: Map.get(state, :active_screen),
+      tick_ref?: is_reference(Map.get(state, :tick_ref))
     })
 
     try do
@@ -216,7 +231,12 @@ defmodule Beamcore.TUI do
             MessageRouter.delegate_event(event, state, state.active_screen)
         end
 
-      Trace.event(:event_routed, %{event: inspect(event), result: trace_result(result)})
+      Trace.event(:event_routed, %{
+        message_type: Trace.message_type(event),
+        event: inspect(event),
+        result: trace_transition(state, result)
+      })
+
       result
     rescue
       e ->
@@ -229,20 +249,84 @@ defmodule Beamcore.TUI do
     end
   end
 
-  defp trace_result({:noreply, state}),
-    do: %{type: :noreply, active_screen: Map.get(state, :active_screen)}
+  defp trace_transition(before, {:noreply, state}),
+    do: trace_transition(before, {:noreply, state, []})
 
-  defp trace_result({:noreply, state, opts}),
-    do: %{type: :noreply, active_screen: Map.get(state, :active_screen), opts: opts}
+  defp trace_transition(before, {:noreply, state, opts}) do
+    before_text = active_input_text(before)
+    after_text = active_input_text(state)
 
-  defp trace_result({:stop, _state}), do: %{type: :stop}
-  defp trace_result(other), do: inspect(other)
+    %{
+      type: :noreply,
+      active_screen: Map.get(state, :active_screen),
+      render?: Keyword.get(opts, :render?, true),
+      dirty?: active_dirty?(state),
+      tick_ref?: is_reference(Map.get(state, :tick_ref)),
+      input_mutated?: before_text != after_text,
+      before_input_length: input_length(before_text),
+      after_input_length: input_length(after_text)
+    }
+  end
+
+  defp trace_transition(_before, {:stop, _state}), do: %{type: :stop}
+  defp trace_transition(_before, other), do: inspect(other)
+
+  defp active_input_text(state) do
+    case MultiScreenState.get_active(state) do
+      %{textarea: textarea} when not is_nil(textarea) ->
+        ExRatatui.textarea_get_value(textarea)
+
+      %{providers: %{adding?: true, form: %{field: field} = form}} ->
+        Map.get(form, field)
+
+      _ ->
+        nil
+    end
+  rescue
+    _ -> nil
+  catch
+    _, _ -> nil
+  end
+
+  defp input_length(text) when is_binary(text), do: String.length(text)
+  defp input_length(_text), do: nil
+
+  defp active_dirty?(state) do
+    case MultiScreenState.get_active(state) do
+      %{render_dirty?: dirty?} -> dirty?
+      _ -> nil
+    end
+  end
 
   @impl true
   def handle_info(msg, state) do
-    msg
-    |> route_info(state)
-    |> maybe_schedule_tick_result()
+    Trace.event(:message_received, %{
+      message_type: Trace.message_type(msg),
+      active_screen: Map.get(state, :active_screen),
+      tick_ref?: is_reference(Map.get(state, :tick_ref))
+    })
+
+    result = route_info(msg, state)
+
+    Trace.event(:message_routed, %{
+      message_type: Trace.message_type(msg),
+      result: trace_transition(state, result)
+    })
+
+    maybe_schedule_tick_result(result)
+  end
+
+  defp route_info(:load_file_finder_cache, state) do
+    parent = self()
+
+    Task.start(fn ->
+      Trace.event(:file_finder_load_start)
+      files = Beamcore.TUI.FileFinder.load_files()
+      Trace.event(:file_finder_load_finish, %{file_count: length(files)})
+      send(parent, {:file_finder_cache, files})
+    end)
+
+    {:noreply, state, render?: false}
   end
 
   defp route_info({:refresh_session, screen_type}, state) do

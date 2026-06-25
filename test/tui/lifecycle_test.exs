@@ -7,6 +7,8 @@ defmodule Beamcore.TUI.LifecycleTest do
   alias Beamcore.TUI.TerminalOptions
   alias ExRatatui.Frame
 
+  @repo_root Path.expand("../..", __DIR__)
+
   test "local TUI child is temporary and is not restarted after a crash" do
     assert %{restart: :temporary, start: {TUI, :start_link, [opts]}} = TUI.runtime_child_spec([])
     assert opts[:poll_interval] == 16
@@ -147,6 +149,19 @@ defmodule Beamcore.TUI.LifecycleTest do
     }
 
     assert {:noreply, ^state, [render?: false]} = TUI.handle_info({:tick, make_ref()}, state)
+  end
+
+  test "TUI runtime does not use unconditional interval timers" do
+    tui_sources =
+      "lib/tui"
+      |> Path.expand(@repo_root)
+      |> Path.join("**/*.{ex,exs}")
+      |> Path.wildcard()
+      |> Enum.map(&File.read!/1)
+      |> Enum.join("\n")
+
+    refute tui_sources =~ ":timer.send_interval"
+    refute tui_sources =~ "send_interval("
   end
 
   defp restore_tui_terminal(nil), do: Application.delete_env(:beamcore, :tui_terminal)

@@ -1,10 +1,21 @@
 defmodule Beamcore.TUI.Events.TextInput do
   @moduledoc false
 
-  alias Beamcore.TUI.{FileFinder, State}
+  alias Beamcore.TUI.{FileFinder, State, Trace}
 
   def handle_text_key(code, mods, state) do
+    before = ExRatatui.textarea_get_value(state.textarea)
     ExRatatui.textarea_handle_key(state.textarea, code, mods)
+    after_value = ExRatatui.textarea_get_value(state.textarea)
+
+    Trace.event(:text_input, %{
+      code: code,
+      modifiers: mods,
+      mutated?: before != after_value,
+      before_length: String.length(before),
+      after_length: String.length(after_value)
+    })
+
     state = %{state | history_index: nil} |> State.mark_dirty()
     state = handle_file_finder_key(code, mods, state)
 
@@ -26,6 +37,8 @@ defmodule Beamcore.TUI.Events.TextInput do
         case state.file_finder_cache do
           nil ->
             state
+            |> request_file_finder_cache()
+            |> State.activate_file_finder(query, [])
 
           cache ->
             results = FileFinder.search(query, cache)
@@ -44,6 +57,13 @@ defmodule Beamcore.TUI.Events.TextInput do
           state
         end
     end
+  end
+
+  defp request_file_finder_cache(%{file_finder_loading?: true} = state), do: state
+
+  defp request_file_finder_cache(state) do
+    send(self(), :load_file_finder_cache)
+    %{state | file_finder_loading?: true}
   end
 
   def accept_file_finder_selection(state) do

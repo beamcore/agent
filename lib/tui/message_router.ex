@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.MessageRouter do
   @moduledoc false
 
-  alias Beamcore.TUI.{Events, MultiScreenState, State}
+  alias Beamcore.TUI.{Events, FileFinder, MultiScreenState, State}
   alias Beamcore.TUI.Components.System, as: TuiSystem
 
   @animated_statuses [:thinking, :tool_running, :local_search, :rate_limited]
@@ -116,10 +116,35 @@ defmodule Beamcore.TUI.MessageRouter do
   end
 
   def route_file_finder_cache(files, state) do
-    set_cache = fn s -> %{s | file_finder_cache: s.file_finder_cache || files} end
+    active_before? = state.f1_state.file_finder_active? or state.f2_state.file_finder_active?
 
-    {:noreply,
-     %{state | f1_state: set_cache.(state.f1_state), f2_state: set_cache.(state.f2_state)}}
+    set_cache = fn s ->
+      cache = s.file_finder_cache || files
+
+      s = %{s | file_finder_cache: cache, file_finder_loading?: false}
+
+      if s.file_finder_active? do
+        State.update_file_finder_query(
+          s,
+          s.file_finder_query,
+          FileFinder.search(s.file_finder_query, cache)
+        )
+      else
+        s
+      end
+    end
+
+    updated = %{
+      state
+      | f1_state: set_cache.(state.f1_state),
+        f2_state: set_cache.(state.f2_state)
+    }
+
+    if active_before? do
+      {:noreply, updated}
+    else
+      {:noreply, updated, render?: false}
+    end
   end
 
   defp mark_dirty(%{render_dirty?: _} = s), do: State.mark_dirty(s)
