@@ -162,6 +162,21 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert result["summary"] =~ "timeout"
   end
 
+  test "a timed-out eval restores the working directory instead of leaking it", %{root: root} do
+    Beamcore.Config.put(:eeva_timeout_ms, "50")
+    home = Application.get_env(:beamcore, :initial_workspace_root)
+
+    result = Eeva.execute(%{"code" => "Process.sleep(5_000)"}) |> Jason.decode!()
+    refute result["ok"]
+
+    # The eval was killed mid-run inside the workspace; cwd must be restored to
+    # the launch dir, not left dangling in the workspace (which on_exit deletes).
+    assert {:ok, cwd} = File.cwd()
+    assert File.dir?(cwd)
+    refute Path.expand(cwd) == Path.expand(root)
+    if home, do: assert(Path.expand(cwd) == home)
+  end
+
   test "parent directory segments are treated as normal local path navigation", %{root: root} do
     outside = Path.join(Path.dirname(root), "outside.txt")
     on_exit(fn -> File.rm(outside) end)
