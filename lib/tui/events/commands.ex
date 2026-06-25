@@ -3,6 +3,7 @@ defmodule Beamcore.TUI.Events.Commands do
 
   alias Beamcore.Agent.Chat.{Commands, Loop}
   alias Beamcore.TUI.Events.Commands.Input, as: CmdInput
+  alias Beamcore.TUI.Events.Commands.Remote, as: RemoteCmd
   alias Beamcore.TUI.State
 
   defdelegate submit(state), to: CmdInput
@@ -43,6 +44,10 @@ defmodule Beamcore.TUI.Events.Commands do
   def run_command(state, "theme") do
     %{state | show_theme_picker: true} |> State.mark_dirty()
   end
+
+  def run_command(state, "attach"), do: RemoteCmd.attach(state, "")
+  def run_command(state, "attach " <> rest), do: RemoteCmd.attach(state, String.trim(rest))
+  def run_command(state, "detach"), do: RemoteCmd.detach(state)
 
   def run_command(state, command) do
     result =

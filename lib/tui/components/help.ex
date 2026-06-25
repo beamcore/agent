@@ -15,6 +15,8 @@ defmodule Beamcore.TUI.Components.Help do
     /api delete <n>  Delete an API provider config
     /env             Show redacted environment
     /theme           Switch UI themes
+    /attach <name>   Attach Eeva to a project node (live runtime)
+    /detach          Detach; run Eeva locally again
     /quit /exit /q   Exit
 
     Keys
