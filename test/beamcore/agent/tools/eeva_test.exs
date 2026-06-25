@@ -10,10 +10,21 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     File.mkdir_p!(root)
     previous_root = PathInput.configure_workspace_root(root)
 
+    # Isolate the eeva timeout per test: start from the default (not whatever
+    # sits in the ambient config store), and restore the prior value afterwards
+    # rather than deleting it. Without this, the first test to run inherits a
+    # stale eeva_timeout_ms and times out non-deterministically.
+    previous_timeout = Beamcore.Config.get(:eeva_timeout_ms)
+    Beamcore.Config.delete(:eeva_timeout_ms)
+
     on_exit(fn ->
       PathInput.restore_workspace_root(previous_root)
       File.rm_rf!(root)
-      Beamcore.Config.delete(:eeva_timeout_ms)
+
+      case previous_timeout do
+        nil -> Beamcore.Config.delete(:eeva_timeout_ms)
+        value -> Beamcore.Config.put(:eeva_timeout_ms, value)
+      end
     end)
 
     %{root: root}
