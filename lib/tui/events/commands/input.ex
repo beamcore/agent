@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.Events.Commands.Input do
   @moduledoc false
 
-  alias Beamcore.TUI.{History, State}
+  alias Beamcore.TUI.{History, State, Trace}
   alias Beamcore.TUI.Events.Commands
   alias ExRatatui.Widgets.SlashCommands
 
@@ -137,17 +137,26 @@ defmodule Beamcore.TUI.Events.Commands.Input do
   def refresh_commands(state) do
     value = ExRatatui.textarea_get_value(state.textarea)
 
-    case SlashCommands.parse(value) do
-      {:command, prefix} ->
-        matches = SlashCommands.match_commands(commands(), prefix)
+    updated =
+      case SlashCommands.parse(value) do
+        {:command, prefix} ->
+          matches = SlashCommands.match_commands(commands(), prefix)
 
-        %{state | show_commands: matches != [], command_matches: matches, command_selected: 0}
-        |> State.mark_dirty()
+          %{state | show_commands: matches != [], command_matches: matches, command_selected: 0}
+          |> State.mark_dirty()
 
-      :no_command ->
-        %{state | show_commands: false, command_matches: []}
-        |> State.mark_dirty()
-    end
+        :no_command ->
+          %{state | show_commands: false, command_matches: []}
+          |> State.mark_dirty()
+      end
+
+    Trace.event(:command_refresh, %{
+      input_length: String.length(value),
+      show_commands?: updated.show_commands,
+      match_count: length(updated.command_matches)
+    })
+
+    updated
   end
 
   defp record_history(state, value) do
