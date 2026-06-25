@@ -63,6 +63,8 @@ defmodule Beamcore.TUI.State do
             worker: nil,
             ctrl_c_pending: false,
             unicode?: true,
+            provider: nil,
+            model: nil,
             history: [],
             history_index: nil,
             history_draft: "",
@@ -146,7 +148,9 @@ defmodule Beamcore.TUI.State do
   def resume(state), do: %{clear_wait_status(state) | status: :idle} |> mark_dirty()
 
   def set_session(state, session) do
-    %{state | session: session} |> mark_dirty()
+    %{state | session: session}
+    |> set_provider_model_from_session(session)
+    |> mark_dirty()
   end
 
   def start_worker(state, pid),
@@ -190,4 +194,23 @@ defmodule Beamcore.TUI.State do
       _ -> Beamcore.Config.active_provider()
     end
   end
+
+  def set_provider_model_from_session(state, session) do
+    %{state | provider: provider_from_session(session), model: model_from_session(session)}
+  end
+
+  defp provider_from_session(%{roles: %{primary: %{provider: provider}}})
+       when is_binary(provider),
+       do: provider
+
+  defp provider_from_session(%{mode_settings: %{provider: provider}}) when is_binary(provider),
+    do: provider
+
+  defp provider_from_session(_session), do: nil
+
+  defp model_from_session(%{roles: %{primary: %{model: model}}}) when is_binary(model), do: model
+
+  defp model_from_session(%{mode_settings: %{model: model}}) when is_binary(model), do: model
+
+  defp model_from_session(_session), do: Beamcore.Agent.Chat.API.default_model()
 end
