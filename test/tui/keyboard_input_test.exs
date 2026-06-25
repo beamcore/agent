@@ -36,15 +36,9 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     {:noreply, updated} =
       Events.handle_event(key("a", "press"), %{state() | render_dirty?: false})
 
-    assert %ExRatatui.Widgets.Paragraph{text: lines} = Components.Input.widget(updated)
-
-    rendered =
-      lines
-      |> Enum.flat_map(& &1.spans)
-      |> Enum.map_join("", & &1.content)
-
-    assert rendered =~ "a"
-    refute rendered =~ "Ask BeamCore"
+    assert %ExRatatui.Widgets.Textarea{state: textarea} = Components.Input.widget(updated)
+    assert textarea == updated.textarea
+    assert ExRatatui.textarea_get_value(textarea) == "a"
   end
 
   test "atom press key events are handled and mark state dirty" do

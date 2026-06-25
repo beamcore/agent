@@ -3,8 +3,6 @@ import Config
 config :beamcore, :rate_limit_ms, 1000
 config :beamcore, :provider_receive_timeout_ms, 300_000
 config :beamcore, :mesh_enabled, true
-config :beamcore, :tui_terminal, mouse_capture: false, focus_events: false
-config :ex_ratatui, :detach_local_input, true
 
 if Config.config_env() == :test do
   config :beamcore, :completions_module, Beamcore.Agent.MockCompletions

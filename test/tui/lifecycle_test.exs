@@ -18,12 +18,9 @@ defmodule Beamcore.TUI.LifecycleTest do
     refute app_source =~ "Beamcore.TUI.DynamicSupervisor"
   end
 
-  test "local terminal defaults avoid risky VTE modes" do
-    assert TerminalOptions.defaults() == [
-             poll_interval: 16,
-             mouse_capture: false,
-             focus_events: false
-           ]
+  test "local terminal defaults defer to ExRatatui" do
+    assert TerminalOptions.defaults() == []
+    assert TerminalOptions.apply([]) == []
   end
 
   test "minimal smoke screen uses the same local terminal startup strategy" do

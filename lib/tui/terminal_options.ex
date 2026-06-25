@@ -1,13 +1,9 @@
 defmodule Beamcore.TUI.TerminalOptions do
   @moduledoc false
 
-  @defaults [
-    poll_interval: 16,
-    mouse_capture: false,
-    focus_events: false
-  ]
+  @defaults []
 
-  @terminal_keys Keyword.keys(@defaults)
+  @terminal_keys [:poll_interval, :mouse_capture, :focus_events]
 
   def apply(opts) when is_list(opts) do
     configured =
