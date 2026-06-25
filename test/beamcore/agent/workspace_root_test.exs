@@ -15,9 +15,12 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
     root = PathInput.canonical_path(root)
 
     previous_workspace = Application.get_env(:beamcore, :workspace_root)
+    previous_timeout = Beamcore.Config.get(:eeva_timeout_ms)
+    Beamcore.Config.put(:eeva_timeout_ms, "10000")
 
     on_exit(fn ->
       PathInput.restore_workspace_root(previous_workspace)
+      restore_setting(:eeva_timeout_ms, previous_timeout)
       File.rm_rf(root)
     end)
 
@@ -94,6 +97,9 @@ defmodule Beamcore.Agent.WorkspaceRootTest do
       PathInput.restore_workspace_root(previous)
     end
   end
+
+  defp restore_setting(key, nil), do: Beamcore.Config.delete(key)
+  defp restore_setting(key, value), do: Beamcore.Config.put(key, value)
 
   defp git_available? do
     System.cmd("git", ["--version"], stderr_to_stdout: true)

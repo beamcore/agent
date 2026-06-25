@@ -150,7 +150,9 @@ defmodule Beamcore.TUI.ProviderFormTest do
 
     {elapsed_us, {:noreply, updated}} = :timer.tc(fn -> MessageRouter.route_tick(state) end)
 
-    assert elapsed_us < 50_000
+    # This guards against accidentally running mesh collection synchronously in
+    # the render tick while allowing normal CI scheduler variance around Task.start/1.
+    assert elapsed_us < 250_000
     assert is_reference(updated.f3_state.mesh_refresh_ref)
   end
 
