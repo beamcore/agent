@@ -12,6 +12,8 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   alias Beamcore.Agent.Tools.Eeva.{Sandbox, Supervisor, Worker}
   alias Beamcore.Agent.Tools.PathInput
+  alias Beamcore.Remote
+  alias Beamcore.Remote.Session
 
   @default_timeout_ms 180_000
   @default_max_memory_bytes 256 * 1024 * 1024
@@ -165,12 +167,26 @@ defmodule Beamcore.Agent.Tools.Eeva do
   end
 
   defp execute_prepared(code, prepared) do
-    owner = self()
-    workspace_root = PathInput.workspace_root()
+    result =
+      case Session.target() do
+        :local ->
+          run(prepared.quoted, self(), PathInput.workspace_root())
 
-    result = run(prepared.quoted, owner, workspace_root)
+        {:attached, node} ->
+          Remote.run(node, prepared.quoted, remote_limits())
+      end
 
     format_result(result, code, prepared)
+  end
+
+  defp remote_limits do
+    %{
+      timeout_ms: limit(:timeout_ms, @default_timeout_ms),
+      max_memory_bytes: limit(:max_memory_bytes, @default_max_memory_bytes),
+      max_reductions: limit(:max_reductions, @default_max_reductions),
+      max_output_bytes: limit(:max_output_bytes, @default_max_output_bytes),
+      max_result_bytes: limit(:max_result_bytes, @default_max_result_bytes)
+    }
   end
 
   defp run(quoted, owner, workspace_root) do
@@ -225,6 +241,35 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "exit_code" => 1,
       "stdout" => stdout,
       "stderr" => Exception.format(result.kind, result.error, result.stacktrace),
+      "result" => nil,
+      "ast_nodes" => prepared.node_count,
+      "recoverable" => true,
+      "session_active" => true,
+      "next_step" => recoverable_next_step(),
+      "summary" => summary
+    }
+    |> Jason.encode!()
+  end
+
+  # Remote eval raised. stderr/message are already formatted to strings on the
+  # project node (where the exception's module exists), so we use them directly
+  # rather than re-deriving via Exception.format/3.
+  defp format_result(
+         {:remote_error, %{stdout: stdout, stderr: stderr, message: message}},
+         _code,
+         prepared
+       ) do
+    {out, dropped} = truncate_output(stdout)
+    summary = append_truncation(recoverable_summary("Eeva program raised #{message}."), dropped)
+
+    emit_failure(message)
+
+    %{
+      "ok" => false,
+      "tool" => name(),
+      "exit_code" => 1,
+      "stdout" => out,
+      "stderr" => stderr,
       "result" => nil,
       "ast_nodes" => prepared.node_count,
       "recoverable" => true,

@@ -72,6 +72,8 @@ Once inside the TUI, you can use these slash commands:
 | `/api add` | Add a new provider |
 | `/api list` | List configured providers |
 | `/clear` | Clear the chat history |
+| `/attach <name>` | Attach Eeva to a project node's live runtime |
+| `/detach` | Detach; run Eeva locally again |
 | `/exit` | Quit the agent |
 
 ## Architecture
@@ -141,6 +143,77 @@ end)
 The agent writes normal Elixir. The sandbox validates structure before
 execution. There is no special DSL or restricted API surface -- the model has
 full access to the language and runtime.
+
+
+## Live Runtime Attach
+
+By default Eeva evaluates in Beamcore's own VM. The filesystem and `System.cmd`
+(git, mix) target the project, because the worker runs in the project's
+directory -- but the project's *compiled modules and running applications* are
+not loaded here. So Eeva acts as a file + `mix`/`git` agent on other projects,
+and the live-runtime experience (inspecting processes, calling the project's
+own functions, reading its ETS and Ecto state) only appears when Beamcore is
+developing itself, where the running VM *is* the project.
+
+Attaching closes that gap for any project. When attached to a target node,
+Eeva ships the prepared AST to that node and evaluates it there, so the
+project's modules, dependencies and live processes are all in scope.
+
+### Attaching
+
+The target must be started as a **named** node -- a plain `mix run` /
+`mix phx.server` does not start distribution, so there is nothing to attach to.
+
+```bash
+# Terminal 1 -- the project, started named
+iex --sname myapp -S mix phx.server
+
+# Terminal 2 -- the agent, launched from the project directory
+cd my_app && beamcore
+```
+
+Then, inside the TUI:
+
+```
+/attach            # lists discoverable project nodes
+/attach myapp      # connects, injects the runner, routes eval there
+/detach            # returns to local eval
+```
+
+After `/attach`, Eeva evaluates inside the running project:
+
+```elixir
+MyApp.Repo.aggregate(MyApp.Accounts.User, :count)
+Process.list() |> length()
+:sys.get_state(MyApp.SomeServer)
+```
+
+The F3 system screen shows the current target (`local` or `attached > node`).
+
+### How it works
+
+There is no dependency to add to the project. On attach, Beamcore pushes one
+self-contained module (`Beamcore.RemoteRunner`) onto the target node with
+`:code.load_binary/3`, then routes each Eeva call to it over `:erpc`. The
+runner enforces the same timeout, memory and reduction limits as local eval,
+captures stdout, and returns results that survive the trip back even when the
+code raised a project-defined exception. If the attached node goes down, the
+session detaches automatically.
+
+On the same machine and user, both sides read `~/.erlang.cookie`, so local
+attach needs no cookie configuration. Cross-machine attach needs a shared
+cookie.
+
+For automation, `BEAMCORE_TARGET_NODE` (and optional `BEAMCORE_TARGET_COOKIE`)
+attach on boot. Launching inside a project directory never attaches on its own
+-- a candidate node only surfaces as a one-line hint.
+
+### Safety
+
+Attach is always explicit, and it is more powerful than local eval: code runs
+with full capability inside a live application and can mutate its state, crash
+its supervisors, or write to its database. Treat it as a trusted-user,
+dev-time tool, the same way the rest of Eeva is treated.
 
 
 ## Why One Tool, Not Many

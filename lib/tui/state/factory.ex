@@ -13,7 +13,7 @@ defmodule Beamcore.TUI.State.Factory do
 
     provider_ready? = primary_provider_ready?(screen_type)
 
-    messages =
+    base_messages =
       if client || provider_ready?,
         do: [],
         else: [
@@ -23,6 +23,8 @@ defmodule Beamcore.TUI.State.Factory do
               "Beamcore is not configured for the selected primary provider. Use /api list or /api add to configure one."
           }
         ]
+
+    messages = base_messages ++ Beamcore.Remote.attach_hint_messages()
 
     %State{
       terminal: terminal,

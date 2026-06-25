@@ -201,24 +201,38 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
     with_serialized_cwd(workspace_root, run)
   end
 
+  # cwd is per-VM, so the lock is node-local rather than cluster-wide. Every eval
+  # enters the workspace and exits back to the launch directory — a stable,
+  # never-deleted reference — instead of re-reading the current cwd, which a
+  # previously killed eval may have left pointing at a since-deleted dir.
   defp with_serialized_cwd(workspace_root, fun) do
-    :global.trans({__MODULE__, :cwd}, fn ->
-      old_cwd = safe_cwd()
+    home = home_cwd()
 
-      if File.dir?(workspace_root) do
-        File.cd!(workspace_root)
-      else
-        Beamcore.AppLog.warn("Workspace root does not exist, using current dir",
-          workspace_root: workspace_root
-        )
-      end
+    :global.trans(
+      {__MODULE__, :cwd},
+      fn ->
+        if File.dir?(workspace_root) do
+          File.cd!(workspace_root)
+        else
+          Beamcore.AppLog.warn("Workspace root does not exist, using current dir",
+            workspace_root: workspace_root
+          )
+        end
 
-      try do
-        fun.()
-      after
-        File.cd!(old_cwd)
-      end
-    end)
+        try do
+          fun.()
+        after
+          cd_if_dir(home)
+        end
+      end,
+      [node()]
+    )
+  end
+
+  # The launch directory, captured at application start. Stable for the life of
+  # the VM, so it's the safe target to return to after every eval.
+  defp home_cwd do
+    Application.get_env(:beamcore, :initial_workspace_root) || safe_cwd()
   end
 
   defp safe_cwd do
@@ -230,6 +244,15 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
         Beamcore.Agent.Tools.PathInput.workspace_root()
     end
   end
+
+  defp cd_if_dir(dir) when is_binary(dir) do
+    if File.dir?(dir), do: File.cd!(dir)
+    :ok
+  rescue
+    _ -> :ok
+  end
+
+  defp cd_if_dir(_), do: :ok
 
   # Temporarily replace a named process (e.g. :standard_io, :standard_error)
   # with new_pid. Returns the previous pid, or nil if none was registered.
@@ -367,6 +390,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
   defp finish(result, state) do
     cancel_timer(state.timeout_ref)
     cancel_timer(state.sample_ref)
+    ensure_home_cwd()
 
     if state.waiter do
       GenServer.reply(state.waiter, result)
@@ -375,6 +399,25 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
       retention_ref = Process.send_after(self(), :expire_result, @result_retention_ms)
       {:noreply, %{state | result: result, retention_ref: retention_ref}}
     end
+  end
+
+  # Backstop for the kill paths: a timed-out or over-budget eval is killed before
+  # its own `after` can run, leaving the VM cwd in the (possibly since-deleted)
+  # workspace. The worker survives the kill, so it restores cwd here. The happy
+  # path is already home, so it skips without taking the lock; only the kill
+  # paths take the (bounded, node-local) lock to avoid yanking a concurrent eval.
+  defp ensure_home_cwd do
+    home = home_cwd()
+
+    case File.cwd() do
+      {:ok, cwd} -> unless Path.expand(cwd) == home, do: locked_restore(home)
+      {:error, _reason} -> locked_restore(home)
+    end
+  end
+
+  defp locked_restore(home) do
+    :global.trans({__MODULE__, :cwd}, fn -> cd_if_dir(home) end, [node()], 5)
+    :ok
   end
 
   defp limit_binary(binary, max_bytes) when byte_size(binary) <= max_bytes, do: binary

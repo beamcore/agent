@@ -74,11 +74,28 @@ defmodule Beamcore.Agent do
         {Task.Supervisor, name: Beamcore.Agent.TaskSupervisor},
         Beamcore.Agent.Tools.Eeva.AtomBudget,
         Beamcore.Agent.Tools.Eeva.Supervisor,
-        Beamcore.Provider.Health
+        Beamcore.Provider.Health,
+        Beamcore.Remote.Session
       ] ++ mesh_children() ++ tui_children() ++ gateway_children()
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    case Supervisor.start_link(children, opts) do
+      {:ok, pid} ->
+        maybe_boot_attach()
+        {:ok, pid}
+
+      other ->
+        other
+    end
+  end
+
+  # Opt-in env-driven attach (BEAMCORE_TARGET_NODE). Best-effort and async so a
+  # slow or failing connect never blocks application startup.
+  defp maybe_boot_attach do
+    if System.get_env("BEAMCORE_TARGET_NODE") not in [nil, ""] do
+      Task.Supervisor.start_child(Beamcore.Agent.TaskSupervisor, &Beamcore.Remote.boot_attach/0)
+    end
   end
 
   def prep_stop(state) do

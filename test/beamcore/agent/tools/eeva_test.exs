@@ -10,10 +10,21 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     File.mkdir_p!(root)
     previous_root = PathInput.configure_workspace_root(root)
 
+    # Isolate the eeva timeout per test: start from the default (not whatever
+    # sits in the ambient config store), and restore the prior value afterwards
+    # rather than deleting it. Without this, the first test to run inherits a
+    # stale eeva_timeout_ms and times out non-deterministically.
+    previous_timeout = Beamcore.Config.get(:eeva_timeout_ms)
+    Beamcore.Config.delete(:eeva_timeout_ms)
+
     on_exit(fn ->
       PathInput.restore_workspace_root(previous_root)
       File.rm_rf!(root)
-      Beamcore.Config.delete(:eeva_timeout_ms)
+
+      case previous_timeout do
+        nil -> Beamcore.Config.delete(:eeva_timeout_ms)
+        value -> Beamcore.Config.put(:eeva_timeout_ms, value)
+      end
     end)
 
     %{root: root}
@@ -149,6 +160,21 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     result = Eeva.execute(%{"code" => "Process.sleep(5_000); :late"}) |> Jason.decode!()
     refute result["ok"]
     assert result["summary"] =~ "timeout"
+  end
+
+  test "a timed-out eval restores the working directory instead of leaking it", %{root: root} do
+    Beamcore.Config.put(:eeva_timeout_ms, "50")
+    home = Application.get_env(:beamcore, :initial_workspace_root)
+
+    result = Eeva.execute(%{"code" => "Process.sleep(5_000)"}) |> Jason.decode!()
+    refute result["ok"]
+
+    # The eval was killed mid-run inside the workspace; cwd must be restored to
+    # the launch dir, not left dangling in the workspace (which on_exit deletes).
+    assert {:ok, cwd} = File.cwd()
+    assert File.dir?(cwd)
+    refute Path.expand(cwd) == Path.expand(root)
+    if home, do: assert(Path.expand(cwd) == home)
   end
 
   test "parent directory segments are treated as normal local path navigation", %{root: root} do
