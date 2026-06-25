@@ -69,4 +69,30 @@ defmodule Beamcore.TUI.StatusBarTest do
     assert text =~ "Rate limited"
     assert text =~ "retrying in"
   end
+
+  test "status bar uses cached provider metadata without config lookups" do
+    widget =
+      StatusBar.widget(
+        %State{
+          screen_type: :agent,
+          session: nil,
+          provider: "cached-provider",
+          model: "cached-model",
+          status: :idle,
+          spinner_step: 0,
+          unicode?: true,
+          ctrl_c_pending: false,
+          notice: nil
+        },
+        120
+      )
+
+    text = widget.text |> hd() |> Map.fetch!(:spans) |> Enum.map_join(& &1.content)
+
+    assert text =~ "cached-provider/cached-model"
+
+    source = File.read!(Path.expand("../../lib/tui/components/status_bar.ex", __DIR__))
+    refute source =~ "Beamcore.Config"
+    refute source =~ "State.provider"
+  end
 end
