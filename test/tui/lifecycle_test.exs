@@ -107,6 +107,48 @@ defmodule Beamcore.TUI.LifecycleTest do
     assert settled.resize_redraw_ref == nil
   end
 
+  test "idle real TUI state does not run a permanent tick loop" do
+    state = %Beamcore.TUI.MultiScreenState{
+      active_screen: :f1,
+      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f3_state: TuiSystem.new(:agent)
+    }
+
+    {:noreply, updated} =
+      TUI.handle_event(%ExRatatui.Event.Key{code: "a", kind: "press", modifiers: []}, state)
+
+    assert updated.tick_ref == nil
+    assert ExRatatui.textarea_get_value(updated.f1_state.textarea) == "a"
+  end
+
+  test "F3 arms a bounded self-rearming tick for mesh refresh" do
+    state = %Beamcore.TUI.MultiScreenState{
+      active_screen: :f1,
+      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f3_state: TuiSystem.new(:agent)
+    }
+
+    {:noreply, updated} =
+      TUI.handle_event(%ExRatatui.Event.Key{code: "f3", kind: "press", modifiers: []}, state)
+
+    assert updated.active_screen == :f3
+    assert is_reference(updated.tick_ref)
+  end
+
+  test "stale tick messages are ignored without rendering" do
+    state = %Beamcore.TUI.MultiScreenState{
+      active_screen: :f1,
+      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f3_state: TuiSystem.new(:agent),
+      tick_ref: make_ref()
+    }
+
+    assert {:noreply, ^state, [render?: false]} = TUI.handle_info({:tick, make_ref()}, state)
+  end
+
   defp restore_tui_terminal(nil), do: Application.delete_env(:beamcore, :tui_terminal)
   defp restore_tui_terminal(value), do: Application.put_env(:beamcore, :tui_terminal, value)
 end

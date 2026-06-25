@@ -12,7 +12,8 @@ defmodule Beamcore.TUI do
     MultiScreenState,
     Render,
     State,
-    TerminalOptions
+    TerminalOptions,
+    Trace
   }
 
   alias Beamcore.TUI.Events.KeyEvents
@@ -102,7 +103,6 @@ defmodule Beamcore.TUI do
 
   @impl true
   def mount(opts) do
-    :timer.send_interval(100, self(), :tick)
     parent = self()
     Task.start(fn -> send(parent, {:file_finder_cache, FileFinder.load_files()}) end)
 
@@ -142,8 +142,12 @@ defmodule Beamcore.TUI do
 
   @impl true
   def render(state, frame) do
+    Trace.event(:render_start, %{active_screen: Map.get(state, :active_screen)})
+
     try do
-      state |> MultiScreenState.get_active() |> Render.render(frame)
+      widgets = state |> MultiScreenState.get_active() |> Render.render(frame)
+      Trace.event(:render_finish, %{active_screen: Map.get(state, :active_screen)})
+      widgets
     rescue
       e -> render_error(frame, "Render error: #{Exception.message(e)}")
     catch
@@ -167,7 +171,9 @@ defmodule Beamcore.TUI do
   @impl true
   def handle_event(%ExRatatui.Event.Key{} = event, state) do
     if KeyEvents.actionable?(event) do
-      handle_actionable_event(event, state)
+      event
+      |> handle_actionable_event(state)
+      |> maybe_schedule_tick_result()
     else
       {:noreply, state, render?: false}
     end
@@ -175,32 +181,43 @@ defmodule Beamcore.TUI do
 
   @impl true
   def handle_event(event, state) do
-    handle_actionable_event(event, state)
+    event
+    |> handle_actionable_event(state)
+    |> maybe_schedule_tick_result()
   end
 
   defp handle_actionable_event(event, state) do
+    Trace.event(:event_received, %{
+      event: inspect(event),
+      active_screen: Map.get(state, :active_screen)
+    })
+
     try do
-      case event do
-        %ExRatatui.Event.Key{code: "f1"} ->
-          MessageRouter.switch_or_delegate(event, state, :f1)
+      result =
+        case event do
+          %ExRatatui.Event.Key{code: "f1"} ->
+            MessageRouter.switch_or_delegate(event, state, :f1)
 
-        %ExRatatui.Event.Key{code: "f2"} ->
-          MessageRouter.switch_or_delegate(event, state, :f2)
+          %ExRatatui.Event.Key{code: "f2"} ->
+            MessageRouter.switch_or_delegate(event, state, :f2)
 
-        %ExRatatui.Event.Key{code: "f3"} ->
-          try do
-            {:noreply, switch_to_f3(state)}
-          rescue
-            e ->
-              {:noreply, State.set_notice(state, "F3 error: #{Exception.message(e)}")}
-          end
+          %ExRatatui.Event.Key{code: "f3"} ->
+            try do
+              {:noreply, switch_to_f3(state)}
+            rescue
+              e ->
+                {:noreply, State.set_notice(state, "F3 error: #{Exception.message(e)}")}
+            end
 
-        %ExRatatui.Event.Resize{width: w, height: h} ->
-          {:noreply, schedule_resize_redraw(state, w, h), render?: false}
+          %ExRatatui.Event.Resize{width: w, height: h} ->
+            {:noreply, schedule_resize_redraw(state, w, h), render?: false}
 
-        _ ->
-          MessageRouter.delegate_event(event, state, state.active_screen)
-      end
+          _ ->
+            MessageRouter.delegate_event(event, state, state.active_screen)
+        end
+
+      Trace.event(:event_routed, %{event: inspect(event), result: trace_result(result)})
+      result
     rescue
       e ->
         Beamcore.AppLog.exception(:error, e, __STACKTRACE__, boundary: :tui_event)
@@ -212,8 +229,21 @@ defmodule Beamcore.TUI do
     end
   end
 
+  defp trace_result({:noreply, state}),
+    do: %{type: :noreply, active_screen: Map.get(state, :active_screen)}
+
+  defp trace_result({:noreply, state, opts}),
+    do: %{type: :noreply, active_screen: Map.get(state, :active_screen), opts: opts}
+
+  defp trace_result({:stop, _state}), do: %{type: :stop}
+  defp trace_result(other), do: inspect(other)
+
   @impl true
-  def handle_info(msg, state), do: route_info(msg, state)
+  def handle_info(msg, state) do
+    msg
+    |> route_info(state)
+    |> maybe_schedule_tick_result()
+  end
 
   defp route_info({:refresh_session, screen_type}, state) do
     screen = if screen_type == :chat, do: :f2, else: :f1
@@ -223,7 +253,17 @@ defmodule Beamcore.TUI do
     {:noreply, MessageRouter.put_screen_state(state, screen, new_screen)}
   end
 
-  defp route_info(:tick, state), do: MessageRouter.route_tick(state)
+  defp route_info({:tick, ref}, %{tick_ref: ref} = state) do
+    state = %{state | tick_ref: nil}
+
+    case MessageRouter.route_tick(state) do
+      {:noreply, next_state} -> {:noreply, maybe_schedule_tick(next_state)}
+      {:noreply, next_state, opts} -> {:noreply, maybe_schedule_tick(next_state), opts}
+      other -> other
+    end
+  end
+
+  defp route_info({:tick, _ref}, state), do: {:noreply, state, render?: false}
 
   defp route_info({:runtime_event, pid, event}, state),
     do: MessageRouter.route_runtime_event(pid, event, state)
@@ -262,6 +302,7 @@ defmodule Beamcore.TUI do
         else: Beamcore.TUI.Components.System.new(for)
 
     %{state | active_screen: :f3, f3_state: f3}
+    |> maybe_schedule_tick()
   end
 
   defp mark_active_dirty(%{render_dirty?: _} = screen), do: State.mark_dirty(screen)
@@ -278,6 +319,32 @@ defmodule Beamcore.TUI do
     |> MultiScreenState.update_active(&mark_active_dirty/1)
     |> Map.put(:resize_redraw_ref, ref)
   end
+
+  defp maybe_schedule_tick(%{tick_ref: ref} = state) when is_reference(ref), do: state
+
+  defp maybe_schedule_tick(state) do
+    if tick_needed?(state) do
+      ref = make_ref()
+      Process.send_after(self(), {:tick, ref}, 100)
+      %{state | tick_ref: ref}
+    else
+      state
+    end
+  end
+
+  defp tick_needed?(%{active_screen: :f3}), do: true
+
+  defp tick_needed?(state) do
+    state.f1_state |> MessageRouter.animating?() or state.f2_state |> MessageRouter.animating?()
+  end
+
+  defp maybe_schedule_tick_result({:noreply, state}),
+    do: {:noreply, maybe_schedule_tick(state)}
+
+  defp maybe_schedule_tick_result({:noreply, state, opts}),
+    do: {:noreply, maybe_schedule_tick(state), opts}
+
+  defp maybe_schedule_tick_result(other), do: other
 
   defp set_active_notice(state, text) do
     MultiScreenState.update_active(state, fn
