@@ -17,3 +17,9 @@ erl_crash.dump
 /errors.DS_Store
 .DS_Store
 /tmp
+
+# Local dev notes
+/docs/dev/
+
+# mise
+/mise.toml
