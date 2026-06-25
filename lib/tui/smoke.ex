@@ -13,7 +13,7 @@ defmodule Beamcore.TUI.Smoke do
   alias Beamcore.TUI.TerminalOptions
   alias Beamcore.TUI.Trace
   alias ExRatatui.Layout.Rect
-  alias ExRatatui.Widgets.Paragraph
+  alias ExRatatui.Widgets.{Block, Paragraph, Textarea}
 
   def start(opts \\ []) do
     opts
@@ -23,16 +23,43 @@ defmodule Beamcore.TUI.Smoke do
   end
 
   @impl true
-  def mount(_opts) do
-    {:ok, %{text: "", events: 0, size: ExRatatui.terminal_size()}}
+  def mount(opts) do
+    mode = Keyword.get(opts, :mode, :paragraph)
+
+    state = %{
+      mode: mode,
+      textarea: if(mode == :textarea, do: ExRatatui.textarea_new()),
+      text: "",
+      events: 0,
+      size: Keyword.get_lazy(opts, :size, &ExRatatui.terminal_size/0)
+    }
+
+    {:ok, state}
   end
 
   @impl true
   def render(state, frame) do
     started_us = System.monotonic_time(:microsecond)
 
-    Trace.event(:render_start, %{app: :smoke, events: state.events})
+    Trace.event(:render_start, %{app: :smoke, mode: state.mode, events: state.events})
 
+    widgets =
+      case state.mode do
+        :textarea -> textarea_widgets(state, frame)
+        _ -> paragraph_widgets(state, frame)
+      end
+
+    Trace.event(:render_finish, %{
+      app: :smoke,
+      mode: state.mode,
+      duration_us: System.monotonic_time(:microsecond) - started_us,
+      widget_count: length(widgets)
+    })
+
+    widgets
+  end
+
+  defp paragraph_widgets(state, frame) do
     text = """
     Beamcore ExRatatui smoke
 
@@ -46,15 +73,39 @@ defmodule Beamcore.TUI.Smoke do
 
     paragraph = %Paragraph{text: text, wrap: true}
     area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
-    widgets = [{paragraph, area}]
+    [{paragraph, area}]
+  end
 
-    Trace.event(:render_finish, %{
-      app: :smoke,
-      duration_us: System.monotonic_time(:microsecond) - started_us,
-      widget_count: length(widgets)
-    })
+  defp textarea_widgets(state, frame) do
+    header = """
+    Beamcore ExRatatui textarea smoke
 
-    widgets
+    This uses the native Textarea widget directly. Type text, use Backspace,
+    resize, press Ctrl+C to exit.
+
+    Events: #{state.events}
+    Size: #{format_size(state.size)}
+    """
+
+    area = %Rect{x: 0, y: 0, width: frame.width, height: frame.height}
+    header_height = min(8, max(frame.height - 3, 1))
+
+    input_area = %Rect{
+      x: 0,
+      y: header_height,
+      width: frame.width,
+      height: max(frame.height - header_height, 1)
+    }
+
+    textarea = %Textarea{
+      state: state.textarea,
+      block: %Block{title: "Textarea", borders: [:all], border_type: :rounded}
+    }
+
+    [
+      {%Paragraph{text: header, wrap: true}, %{area | height: header_height}},
+      {textarea, input_area}
+    ]
   end
 
   @impl true
@@ -66,7 +117,7 @@ defmodule Beamcore.TUI.Smoke do
   def handle_event(%ExRatatui.Event.Key{code: "backspace"}, state) do
     event = %ExRatatui.Event.Key{code: "backspace"}
     trace_event(event, state)
-    updated = %{state | text: trim_last_grapheme(state.text), events: state.events + 1}
+    updated = handle_textarea_or_text(event, state, fn text -> trim_last_grapheme(text) end)
     trace_result(event, state, updated)
     {:noreply, updated}
   end
@@ -102,9 +153,27 @@ defmodule Beamcore.TUI.Smoke do
   defp wait_for_exit(other), do: other
 
   defp insert(code, state) do
-    updated = %{state | text: state.text <> code, events: state.events + 1}
+    updated = handle_textarea_or_text(%ExRatatui.Event.Key{code: code}, state, &(&1 <> code))
     trace_result(%ExRatatui.Event.Key{code: code}, state, updated)
     {:noreply, updated}
+  end
+
+  defp handle_textarea_or_text(
+         %ExRatatui.Event.Key{code: code, modifiers: mods},
+         %{mode: :textarea} = state,
+         _fun
+       ) do
+    ExRatatui.textarea_handle_key(state.textarea, code, List.wrap(mods))
+    %{state | text: ExRatatui.textarea_get_value(state.textarea), events: state.events + 1}
+  end
+
+  defp handle_textarea_or_text(%ExRatatui.Event.Key{code: code}, %{mode: :textarea} = state, _fun) do
+    ExRatatui.textarea_handle_key(state.textarea, code)
+    %{state | text: ExRatatui.textarea_get_value(state.textarea), events: state.events + 1}
+  end
+
+  defp handle_textarea_or_text(_event, state, fun) do
+    %{state | text: fun.(state.text), events: state.events + 1}
   end
 
   defp trim_last_grapheme(text) do
@@ -120,6 +189,7 @@ defmodule Beamcore.TUI.Smoke do
   defp trace_event(event, state) do
     Trace.event(:event_received, %{
       app: :smoke,
+      mode: state.mode,
       message_type: Trace.message_type(event),
       event: inspect(event),
       text_length: String.length(state.text)
@@ -129,6 +199,7 @@ defmodule Beamcore.TUI.Smoke do
   defp trace_result(event, before, after_state) do
     Trace.event(:event_routed, %{
       app: :smoke,
+      mode: before.mode,
       message_type: Trace.message_type(event),
       mutated?: before.text != after_state.text,
       before_length: String.length(before.text),

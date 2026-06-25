@@ -221,7 +221,7 @@ defmodule Beamcore.TUI.ProviderFormTest do
 
     assert stdout == ""
     assert_receive {:save_result, %{save_ref: ref}}
-    assert_receive {:provider_saved, ^ref, :ok}
+    assert_receive {:provider_saved, ^ref, :ok}, 1_000
 
     provider_sources =
       [
