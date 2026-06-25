@@ -187,6 +187,11 @@ defmodule Beamcore.TUI.Events.Commands.Input do
       },
       %SlashCommands.Command{name: "new", description: "Start a fresh session"},
       %SlashCommands.Command{
+        name: "attach",
+        description: "Attach Eeva to a project node (live runtime)"
+      },
+      %SlashCommands.Command{name: "detach", description: "Detach; run Eeva locally again"},
+      %SlashCommands.Command{
         name: "stop",
         description: "Pause the session; type a message to resume"
       },

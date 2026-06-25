@@ -14,8 +14,66 @@ defmodule Beamcore.Remote do
   giving up with `:remote_unavailable`.
   """
 
+  alias Beamcore.Remote.Discovery
   alias Beamcore.Remote.Injector
+  alias Beamcore.Remote.Session
   alias Beamcore.RemoteRunner
+
+  @doc """
+  Attach on boot if `BEAMCORE_TARGET_NODE` is set — the opt-in automation entry
+  point. An optional `BEAMCORE_TARGET_COOKIE` is applied for cross-machine
+  attach. Returns `:ignore` when unset, otherwise the `Session.attach/2` result.
+  """
+  @spec boot_attach() :: :ignore | :ok | {:error, term()}
+  def boot_attach do
+    case System.get_env("BEAMCORE_TARGET_NODE") do
+      blank when blank in [nil, ""] -> :ignore
+      name -> Session.attach(Discovery.resolve(name), boot_opts())
+    end
+  end
+
+  defp boot_opts do
+    case System.get_env("BEAMCORE_TARGET_COOKIE") do
+      blank when blank in [nil, ""] -> []
+      cookie -> [cookie: String.to_atom(cookie)]
+    end
+  end
+
+  @doc """
+  Startup hint messages for the TUI: a single nudge when project nodes are
+  discoverable and we're not already attached. Empty otherwise, so it never
+  appears when there's nothing to attach to. Never raises.
+  """
+  @spec attach_hint_messages() :: [%{role: :system, content: binary()}]
+  def attach_hint_messages do
+    if Session.attached?() do
+      []
+    else
+      hint_for(safe_candidates())
+    end
+  end
+
+  defp hint_for([]), do: []
+
+  defp hint_for(nodes) do
+    names = Enum.map_join(nodes, ", ", &Atom.to_string/1)
+
+    [
+      %{
+        role: :system,
+        content:
+          "Detected project node(s): #{names}. Run /attach <name> to evaluate Eeva in that live runtime."
+      }
+    ]
+  end
+
+  defp safe_candidates do
+    Discovery.candidates()
+  rescue
+    _ -> []
+  catch
+    _, _ -> []
+  end
 
   @doc """
   Evaluate `quoted` on `node` under `limits`, returning a local-style result.

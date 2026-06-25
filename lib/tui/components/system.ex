@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.Components.System do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Providers
-  alias Beamcore.TUI.Components.System.{Mesh, Stats}
+  alias Beamcore.TUI.Components.System.{Attach, Mesh, Stats}
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
@@ -85,17 +85,20 @@ defmodule Beamcore.TUI.Components.System do
     ]
 
     stats_lines = Stats.render(system.stats_snapshot || %{}, width)
+    attach_lines = Attach.lines()
 
     provider_reserved =
       if is_integer(height) do
         top_count = length(top) + length(stats_lines) + length(divider) + length(bottom)
-        mesh_count = length(mesh_header) + length(mesh_lines)
+        mesh_count = length(mesh_header) + length(attach_lines) + length(mesh_lines)
         max(height - top_count - mesh_count, 5)
       end
 
     provider_items = Providers.render_items(system.providers, width, provider_reserved)
 
-    top ++ stats_lines ++ divider ++ provider_items ++ bottom ++ mesh_header ++ mesh_lines
+    top ++
+      stats_lines ++
+      divider ++ provider_items ++ bottom ++ mesh_header ++ attach_lines ++ mesh_lines
   end
 
   def widget(system, area) do
