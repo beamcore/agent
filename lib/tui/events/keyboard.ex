@@ -25,8 +25,7 @@ defmodule Beamcore.TUI.Events.Keyboard do
 
   def handle_key("a", mods, state) do
     if ctrl?(mods) do
-      select_all_text(state.textarea)
-      {:noreply, State.mark_dirty(state)}
+      {:noreply, select_all_text(state)}
     else
       text_key("a", mods, state)
     end
@@ -141,11 +140,10 @@ defmodule Beamcore.TUI.Events.Keyboard do
   def handle_key("o", mods, state), do: text_key("o", mods, state)
   def handle_key(code, mods, state), do: text_key(code, mods, state)
 
-  def select_all_text(textarea) do
-    ExRatatui.textarea_handle_key(textarea, ">", ["alt"])
-    ExRatatui.textarea_handle_key(textarea, "end", [])
-    ExRatatui.textarea_handle_key(textarea, "<", ["alt", "shift"])
-    ExRatatui.textarea_handle_key(textarea, "home", ["shift"])
+  def select_all_text(state) do
+    state
+    |> Map.put(:input_cursor, String.length(TextInput.value(state)))
+    |> State.mark_dirty()
   end
 
   defp handle_ctrl_c(state) do
@@ -168,8 +166,10 @@ defmodule Beamcore.TUI.Events.Keyboard do
   defp worker_running?(%{worker: worker}), do: not is_nil(worker)
 
   defp insert_newline(state) do
-    ExRatatui.textarea_handle_key(state.textarea, "enter", [])
-    %{state | history_index: nil} |> State.mark_dirty()
+    state
+    |> TextInput.insert_newline()
+    |> Map.put(:history_index, nil)
+    |> State.mark_dirty()
   end
 
   defp close_panels(state) do

@@ -258,7 +258,7 @@ defmodule Beamcore.TUI do
   defp active_input_text(state) do
     case MultiScreenState.get_active(state) do
       %{textarea: textarea} when not is_nil(textarea) ->
-        ExRatatui.textarea_get_value(textarea)
+        Beamcore.TUI.Events.TextInput.value(MultiScreenState.get_active(state))
 
       %{providers: %{adding?: true, form: %{field: field} = form}} ->
         Map.get(form, field)
