@@ -4,15 +4,10 @@ defmodule Beamcore.Remote.DiscoveryTest do
   @moduletag :capture_log
 
   alias Beamcore.Remote.Discovery
+  alias Beamcore.Test.Peer
 
   setup_all do
-    case :net_kernel.start([:"beamcore_host@127.0.0.1", :longnames]) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
-    end
-
-    :erlang.set_cookie(Node.self(), :beamcore_discovery_cookie)
-    :ok
+    Peer.ensure_distributed!()
   end
 
   describe "resolve/1" do
@@ -36,15 +31,15 @@ defmodule Beamcore.Remote.DiscoveryTest do
 
   describe "candidates/0" do
     setup do
-      project = start_peer("myproject")
-      beamcore = start_peer("beamcore_fake")
+      {project_peer, project} = Peer.start!("myproject")
+      {beamcore_peer, beamcore} = Peer.start!("beamcore_fake")
 
       on_exit(fn ->
-        stop_peer(project.peer)
-        stop_peer(beamcore.peer)
+        Peer.stop(project_peer)
+        Peer.stop(beamcore_peer)
       end)
 
-      %{project: project.node, beamcore: beamcore.node}
+      %{project: project, beamcore: beamcore}
     end
 
     test "lists named project nodes", %{project: project} do
@@ -58,26 +53,5 @@ defmodule Beamcore.Remote.DiscoveryTest do
     test "excludes this node" do
       refute Node.self() in Discovery.candidates()
     end
-  end
-
-  defp start_peer(prefix) do
-    {:ok, peer, node} =
-      :peer.start(%{
-        name: :"#{prefix}_#{System.unique_integer([:positive])}",
-        host: ~c"127.0.0.1",
-        longnames: true,
-        args: [~c"-setcookie", ~c"beamcore_discovery_cookie"],
-        env: [{~c"ERL_CRASH_DUMP_SECONDS", ~c"0"}]
-      })
-
-    %{peer: peer, node: node}
-  end
-
-  defp stop_peer(peer) do
-    :peer.stop(peer)
-  rescue
-    _ -> :ok
-  catch
-    _, _ -> :ok
   end
 end

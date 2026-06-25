@@ -7,47 +7,27 @@ defmodule Beamcore.Remote.CommandsTest do
   @moduletag :capture_log
 
   alias Beamcore.Remote.Session
+  alias Beamcore.Test.Peer
   alias Beamcore.TUI.Components.System.Attach
   alias Beamcore.TUI.Events.Commands.Remote, as: RemoteCmd
   alias Beamcore.TUI.State
 
-  @cookie :beamcore_commands_test_cookie
-
   setup_all do
-    case :net_kernel.start([:"beamcore_host@127.0.0.1", :longnames]) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
-    end
-
-    :erlang.set_cookie(Node.self(), @cookie)
-    :ok
+    Peer.ensure_distributed!()
   end
 
   setup do
-    {:ok, peer, node} =
-      :peer.start(%{
-        # Non-beamcore prefix so it shows up as an attachable project candidate.
-        name: :"cmdtarget_#{System.unique_integer([:positive])}",
-        host: ~c"127.0.0.1",
-        longnames: true,
-        args: [~c"-setcookie", ~c"#{@cookie}"],
-        env: [{~c"ERL_CRASH_DUMP_SECONDS", ~c"0"}]
-      })
+    # Non-beamcore prefix so it shows up as an attachable project candidate.
+    # Bare node is fine here: these tests cover attach/detach state + messages,
+    # not eval.
+    {peer, node} = Peer.start!("cmdtarget")
 
     on_exit(fn ->
       Session.detach()
-      stop_peer(peer)
+      Peer.stop(peer)
     end)
 
     %{node: node}
-  end
-
-  defp stop_peer(peer) do
-    :peer.stop(peer)
-  rescue
-    _ -> :ok
-  catch
-    _, _ -> :ok
   end
 
   defp state, do: %State{messages: []}

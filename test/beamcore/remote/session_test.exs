@@ -8,58 +8,24 @@ defmodule Beamcore.Remote.SessionTest do
   alias Beamcore.Remote.Injector
   alias Beamcore.Remote.Session
   alias Beamcore.RemoteRunner
-
-  @cookie :beamcore_remote_test_cookie
+  alias Beamcore.Test.Peer
 
   setup_all do
-    # :peer needs a distributed host node; mix test runs as :nonode@nohost.
-    case :net_kernel.start([:"beamcore_host@127.0.0.1", :longnames]) do
-      {:ok, _} -> :ok
-      {:error, {:already_started, _}} -> :ok
-    end
-
-    :erlang.set_cookie(Node.self(), @cookie)
-    :ok
+    Peer.ensure_distributed!()
   end
 
   setup do
-    # Unlinked on purpose (see dispatch_test): a linked peer dies when the test
-    # process exits, before on_exit detaches — which would log a spurious
-    # nodedown. Unlinked, on_exit detaches cleanly before stopping it.
-    {:ok, peer, node} =
-      :peer.start(%{
-        name: :"beamcore_peer_#{System.unique_integer([:positive])}",
-        host: ~c"127.0.0.1",
-        longnames: true,
-        args: [~c"-setcookie", ~c"#{@cookie}"],
-        # Don't let a peer leave an erl_crash.dump behind on teardown.
-        env: [{~c"ERL_CRASH_DUMP_SECONDS", ~c"0"}]
-      })
-
-    # A real project node is an Elixir node, so give the peer Elixir — but NOT
-    # beamcore's own ebin, so the injection assertions stay honest (the runner
-    # is genuinely absent until we inject it).
-    elixir_paths = Enum.reject(:code.get_path(), &beamcore_path?/1)
-    :erpc.call(node, :code, :add_pathsa, [elixir_paths])
-    {:ok, _started} = :erpc.call(node, :application, :ensure_all_started, [:elixir])
+    # Elixir-loaded peer (minus beamcore's ebin) so injection assertions stay
+    # honest — the runner is genuinely absent until we inject it.
+    {peer, node} = Peer.start!("beamcore_peer", elixir?: true)
 
     on_exit(fn ->
       Session.detach()
-      stop_peer(peer)
+      Peer.stop(peer)
     end)
 
     %{peer: peer, node: node}
   end
-
-  defp stop_peer(peer) do
-    :peer.stop(peer)
-  rescue
-    _ -> :ok
-  catch
-    _, _ -> :ok
-  end
-
-  defp beamcore_path?(path), do: to_string(path) =~ "/beamcore/ebin"
 
   defp quoted(code), do: Code.string_to_quoted!(code, file: "eeva", line: 1)
 
