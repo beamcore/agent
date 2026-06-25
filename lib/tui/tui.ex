@@ -5,13 +5,24 @@ defmodule Beamcore.TUI do
 
   use ExRatatui.App
 
-  alias Beamcore.TUI.{FileFinder, Layout, MessageRouter, MultiScreenState, Render, State}
+  alias Beamcore.TUI.{
+    FileFinder,
+    Layout,
+    MessageRouter,
+    MultiScreenState,
+    Render,
+    State,
+    TerminalOptions
+  }
+
   alias Beamcore.TUI.Events.KeyEvents
   alias ExRatatui.Layout.Rect
 
   @dialyzer {:nowarn_function, [start: 0, start: 1]}
 
   def runtime_child_spec(opts) do
+    opts = TerminalOptions.apply(opts)
+
     %{
       id: __MODULE__,
       start: {__MODULE__, :start_link, [opts]},
@@ -22,7 +33,7 @@ defmodule Beamcore.TUI do
 
   def start(opts \\ []) do
     old_logger_level = silence_logger()
-    opts = Keyword.put_new(opts, :poll_interval, 1)
+    opts = TerminalOptions.apply(opts)
 
     try do
       if Process.whereis(Beamcore.TUI.DynamicSupervisor) do

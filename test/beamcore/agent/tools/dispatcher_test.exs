@@ -3,6 +3,18 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
 
   alias Beamcore.Agent.Tools.Dispatcher
 
+  setup do
+    previous_timeout = Beamcore.Config.get(:eeva_timeout_ms)
+    Beamcore.Config.put(:eeva_timeout_ms, "10000")
+
+    on_exit(fn ->
+      case previous_timeout do
+        nil -> Beamcore.Config.delete(:eeva_timeout_ms)
+        value -> Beamcore.Config.put(:eeva_timeout_ms, value)
+      end
+    end)
+  end
+
   test "provider tool specs contain only eeva" do
     specs = Dispatcher.tool_specs()
     assert Enum.map(specs, & &1.function.name) == ["eeva"]

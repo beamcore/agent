@@ -3,10 +3,38 @@ defmodule Beamcore.TUI.LifecycleTest do
 
   alias Beamcore.TUI
   alias Beamcore.TUI.Components.System, as: TuiSystem
+  alias Beamcore.TUI.TerminalOptions
   alias ExRatatui.Frame
 
   test "local TUI child is temporary and is not restarted after a crash" do
-    assert %{restart: :temporary, start: {TUI, :start_link, [[]]}} = TUI.runtime_child_spec([])
+    assert %{restart: :temporary, start: {TUI, :start_link, [opts]}} = TUI.runtime_child_spec([])
+    assert opts[:poll_interval] == 1
+    assert opts[:mouse_capture] == false
+    assert opts[:focus_events] == false
+  end
+
+  test "local terminal defaults avoid risky VTE modes" do
+    assert TerminalOptions.defaults() == [
+             poll_interval: 1,
+             mouse_capture: false,
+             focus_events: false
+           ]
+  end
+
+  test "local terminal modes are configurable without terminal-specific branches" do
+    previous = Application.get_env(:beamcore, :tui_terminal)
+
+    try do
+      Application.put_env(:beamcore, :tui_terminal, mouse_capture: true)
+
+      opts = TerminalOptions.apply(focus_events: true, poll_interval: 5)
+
+      assert opts[:mouse_capture] == true
+      assert opts[:focus_events] == true
+      assert opts[:poll_interval] == 5
+    after
+      restore_tui_terminal(previous)
+    end
   end
 
   test "render exceptions are contained inside the TUI frame" do
@@ -69,4 +97,7 @@ defmodule Beamcore.TUI.LifecycleTest do
     assert {:noreply, settled} = TUI.handle_info({:resize_redraw, ref}, resized)
     assert settled.resize_redraw_ref == nil
   end
+
+  defp restore_tui_terminal(nil), do: Application.delete_env(:beamcore, :tui_terminal)
+  defp restore_tui_terminal(value), do: Application.put_env(:beamcore, :tui_terminal, value)
 end
