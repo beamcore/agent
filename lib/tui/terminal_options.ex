@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.TerminalOptions do
   @moduledoc false
 
   @defaults [
-    poll_interval: 1,
+    poll_interval: 16,
     mouse_capture: false,
     focus_events: false
   ]
