@@ -8,6 +8,8 @@ defmodule Beamcore.TUI.Render do
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, List, Paragraph, Popup, SlashCommands}
 
+  @chat_cache_key {__MODULE__, :chat_widget_cache}
+
   def render(%{screen_type: :system} = state, frame) do
     area = %Rect{x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1)}
     status_h = 1
@@ -58,10 +60,41 @@ defmodule Beamcore.TUI.Render do
 
   defp standard_widgets(state, areas) do
     [
-      {Chat.widget(state, areas.chat), areas.chat},
+      {cached_chat_widget(state, areas.chat), areas.chat},
       {Input.widget(state), areas.input},
       {StatusBar.widget(state, areas.status.width), areas.status}
     ]
+  end
+
+  defp cached_chat_widget(state, %Rect{} = area) do
+    key = chat_cache_key(state, area)
+
+    case Process.get(@chat_cache_key) do
+      {^key, widget} ->
+        widget
+
+      _ ->
+        widget = Chat.widget(state, area)
+        Process.put(@chat_cache_key, {key, widget})
+        widget
+    end
+  end
+
+  defp chat_cache_key(state, %Rect{} = area) do
+    {
+      state.screen_type,
+      area.width,
+      area.height,
+      state.scroll_offset,
+      state.chat_viewport_height,
+      Theme.current_theme(),
+      :erlang.phash2({
+        state.messages,
+        state.collapsed_blocks,
+        state.memory_total,
+        state.notice
+      })
+    }
   end
 
   defp maybe_help(widgets, %{show_help: true}, area), do: widgets ++ [{Help.widget(), area}]

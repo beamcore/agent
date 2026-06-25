@@ -179,6 +179,15 @@ defmodule Beamcore.TUI.LifecycleTest do
     refute tui_sources =~ "send_interval("
   end
 
+  test "chat render is cached independently from input changes" do
+    render_source = File.read!(Path.expand("../../lib/tui/render.ex", __DIR__))
+
+    assert render_source =~ "cached_chat_widget"
+    assert render_source =~ "state.messages"
+    assert render_source =~ "state.scroll_offset"
+    refute render_source =~ "state.textarea"
+  end
+
   defp restore_tui_terminal(nil), do: Application.delete_env(:beamcore, :tui_terminal)
   defp restore_tui_terminal(value), do: Application.put_env(:beamcore, :tui_terminal, value)
 end
