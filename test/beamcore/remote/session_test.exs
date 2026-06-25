@@ -23,8 +23,11 @@ defmodule Beamcore.Remote.SessionTest do
   end
 
   setup do
+    # Unlinked on purpose (see dispatch_test): a linked peer dies when the test
+    # process exits, before on_exit detaches — which would log a spurious
+    # nodedown. Unlinked, on_exit detaches cleanly before stopping it.
     {:ok, peer, node} =
-      :peer.start_link(%{
+      :peer.start(%{
         name: :"beamcore_peer_#{System.unique_integer([:positive])}",
         host: ~c"127.0.0.1",
         longnames: true,
