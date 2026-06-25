@@ -32,6 +32,22 @@ defmodule Beamcore.TUI.LifecycleTest do
     assert %{start: {Smoke, :start_link, [[]]}} = Smoke.child_spec([])
   end
 
+  test "textarea smoke uses the same local terminal startup strategy and native textarea path" do
+    assert {:ok, state} = Smoke.mount(mode: :textarea, size: {80, 24})
+    assert state.mode == :textarea
+    assert is_reference(state.textarea)
+
+    {:noreply, updated} =
+      Smoke.handle_event(%ExRatatui.Event.Key{code: "a", kind: "press", modifiers: []}, state)
+
+    assert updated.text == "a"
+
+    frame = %Frame{width: 80, height: 24}
+
+    assert [{%ExRatatui.Widgets.Paragraph{}, _}, {%ExRatatui.Widgets.Textarea{}, _}] =
+             Smoke.render(updated, frame)
+  end
+
   test "local terminal modes are configurable without terminal-specific branches" do
     previous = Application.get_env(:beamcore, :tui_terminal)
 
