@@ -5,6 +5,7 @@ defmodule Beamcore.Remote.CommandsTest do
   use ExUnit.Case, async: false
 
   @moduletag :capture_log
+  @moduletag :distributed
 
   alias Beamcore.Remote.Session
   alias Beamcore.Test.Peer
