@@ -4,6 +4,7 @@ defmodule Beamcore.Remote.SessionTest do
   use ExUnit.Case, async: false
 
   @moduletag :capture_log
+  @moduletag :distributed
 
   alias Beamcore.Remote.Injector
   alias Beamcore.Remote.Session

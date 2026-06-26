@@ -2,6 +2,7 @@ defmodule Beamcore.Remote.DiscoveryTest do
   use ExUnit.Case, async: false
 
   @moduletag :capture_log
+  @moduletag :distributed
 
   alias Beamcore.Remote.Discovery
   alias Beamcore.Test.Peer
