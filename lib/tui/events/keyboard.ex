@@ -168,8 +168,10 @@ defmodule Beamcore.TUI.Events.Keyboard do
   defp worker_running?(%{worker: worker}), do: not is_nil(worker)
 
   defp insert_newline(state) do
-    ExRatatui.textarea_handle_key(state.textarea, "enter", [])
-    %{state | history_index: nil} |> State.mark_dirty()
+    state
+    |> TextInput.insert_newline()
+    |> Map.put(:history_index, nil)
+    |> State.mark_dirty()
   end
 
   defp close_panels(state) do

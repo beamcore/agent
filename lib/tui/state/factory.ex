@@ -26,13 +26,17 @@ defmodule Beamcore.TUI.State.Factory do
 
     messages = base_messages ++ Beamcore.Remote.attach_hint_messages()
 
+    session = Session.new(client, opts)
+
     %State{
       terminal: terminal,
       textarea: textarea,
-      session: Session.new(client, opts),
+      session: session,
       messages: messages,
       last_animation_tick_ms: System.monotonic_time(:millisecond),
       unicode?: Beamcore.TUI.Capability.unicode?(opts),
+      provider: session.mode_settings.provider,
+      model: session.mode_settings.model,
       history: history,
       history_index: nil,
       history_draft: "",

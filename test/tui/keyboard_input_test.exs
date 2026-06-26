@@ -32,6 +32,15 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     assert updated.render_dirty?
   end
 
+  test "first printable key is visible in the rendered input immediately" do
+    {:noreply, updated} =
+      Events.handle_event(key("a", "press"), %{state() | render_dirty?: false})
+
+    assert %ExRatatui.Widgets.Textarea{state: textarea} = Components.Input.widget(updated)
+    assert textarea == updated.textarea
+    assert ExRatatui.textarea_get_value(textarea) == "a"
+  end
+
   test "atom press key events are handled and mark state dirty" do
     {:noreply, updated} = Events.handle_event(key("a", :press), %{state() | render_dirty?: false})
     assert value(updated) == "a"
@@ -66,7 +75,7 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     assert updated.render_dirty?
   end
 
-  test "release and repeat key events are ignored" do
+  test "release key events are ignored" do
     initial = %{state() | render_dirty?: false}
 
     {:noreply, updated} = Events.handle_event(key("d", "release"), initial)
@@ -76,14 +85,18 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     {:noreply, updated} = Events.handle_event(key("d", :release), updated)
     assert value(updated) == ""
     refute updated.render_dirty?
+  end
 
-    {:noreply, updated} = Events.handle_event(key("d", "repeat"), updated)
-    assert value(updated) == ""
-    refute updated.render_dirty?
+  test "repeat key events are handled as input because terminals may use them for text" do
+    initial = %{state() | render_dirty?: false}
 
-    {:noreply, updated} = Events.handle_event(key("d", :repeat), updated)
-    assert value(updated) == ""
-    refute updated.render_dirty?
+    {:noreply, updated} = Events.handle_event(key("d", "repeat"), initial)
+    assert value(updated) == "d"
+    assert updated.render_dirty?
+
+    {:noreply, updated} = Events.handle_event(key("e", :repeat), updated)
+    assert value(updated) == "de"
+    assert updated.render_dirty?
   end
 
   test "repeated character input marks state dirty every time" do
@@ -140,7 +153,7 @@ defmodule Beamcore.TUI.KeyboardInputTest do
   test "function keys F1 through F12 have explicit actionable-kind coverage" do
     for n <- 1..12 do
       assert KeyEvents.actionable?(key("f#{n}", "press"))
-      refute KeyEvents.actionable?(key("f#{n}", "repeat"))
+      assert KeyEvents.actionable?(key("f#{n}", "repeat"))
       assert KeyEvents.actionable?(key("f#{n}", nil))
       assert KeyEvents.actionable?(key("f#{n}", "standard"))
       assert KeyEvents.actionable?(key("f#{n}", "unknown"))
@@ -148,7 +161,7 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     end
   end
 
-  test "top-level TUI suppresses render for release and repeat events before dispatch" do
+  test "top-level TUI suppresses render for release events before dispatch" do
     multi = %MultiScreenState{
       active_screen: :f1,
       f1_state: state(),
@@ -157,7 +170,6 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     }
 
     assert {:noreply, ^multi, [render?: false]} = TUI.handle_event(key("f3", "release"), multi)
-    assert {:noreply, ^multi, [render?: false]} = TUI.handle_event(key("f3", "repeat"), multi)
   end
 
   test "F3 press still switches to the system screen" do
@@ -172,7 +184,7 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     assert updated.active_screen == :f3
   end
 
-  test "F3 provider form accepts valid non-release kinds and ignores repeat/release" do
+  test "F3 provider form accepts valid non-release kinds and ignores release" do
     system = Components.System.new(:agent)
     {:noreply, system} = Events.handle_event(key("a"), system)
     {:noreply, system} = Events.handle_event(key("x", "repeat"), system)
@@ -181,7 +193,7 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     {:noreply, system} = Events.handle_event(key("z", "release"), system)
 
     assert system.providers.adding?
-    assert system.providers.form.name == "ys"
+    assert system.providers.form.name == "xys"
   end
 
   test "help modal does not swallow ordinary valid text input" do

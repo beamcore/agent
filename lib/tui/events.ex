@@ -57,8 +57,7 @@ defmodule Beamcore.TUI.Events do
         content =
           Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
 
-        TextInput.insert_textarea_content(state.textarea, content)
-
+        state = TextInput.insert_content(state, content)
         state = %{state | history_index: nil} |> State.mark_dirty()
         state = TextInput.handle_file_finder_key(nil, [], state)
 
@@ -94,8 +93,10 @@ defmodule Beamcore.TUI.Events do
   end
 
   defp insert_newline(state) do
-    ExRatatui.textarea_handle_key(state.textarea, "enter", [])
-    %{state | history_index: nil} |> State.mark_dirty()
+    state
+    |> TextInput.insert_newline()
+    |> Map.put(:history_index, nil)
+    |> State.mark_dirty()
   end
 
   defp maybe_disarm_ctrl_c("c", mods, state) do

@@ -43,8 +43,8 @@ defmodule Beamcore.TUI.Components.StatusBar do
   def widget(state, width) when is_integer(width) do
     usage = State.usage(state.session)
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
-    provider = State.provider(state.session)
-    model = State.model(state.session)
+    provider = state.provider || "provider"
+    model = state.model || State.model(state.session)
     provider_model = "#{provider}/#{model}"
 
     tokens =

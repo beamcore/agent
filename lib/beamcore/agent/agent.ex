@@ -63,8 +63,9 @@ defmodule Beamcore.Agent do
     Beamcore.AppLog.info("Application starting", app: :beamcore)
     remember_initial_workspace()
 
-    # Ensure we are a distributed Erlang node before starting supervised processes
-    Beamcore.Mesh.NodeNaming.ensure_distributed!()
+    if mesh_enabled?() do
+      Beamcore.Mesh.NodeNaming.ensure_distributed!()
+    end
 
     children =
       [
@@ -76,7 +77,7 @@ defmodule Beamcore.Agent do
         Beamcore.Agent.Tools.Eeva.Supervisor,
         Beamcore.Provider.Health,
         Beamcore.Remote.Session
-      ] ++ mesh_children() ++ tui_children() ++ gateway_children()
+      ] ++ mesh_children() ++ gateway_children()
 
     opts = [strategy: :one_for_one, name: Beamcore.Agent.Supervisor]
 
@@ -108,13 +109,15 @@ defmodule Beamcore.Agent do
     :ok
   end
 
-  defp tui_children do
-    if gateway_mode?(), do: [], else: [Beamcore.TUI.DynamicSupervisor]
+  # Mesh/discovery is disabled in tests through config to avoid starting
+  # distribution nodes and discovery processes during test runs. Runtime code
+  # must not call Mix.env(), because Mix is unavailable in releases.
+  defp mesh_children do
+    if mesh_enabled?(), do: [Beamcore.Mesh, Beamcore.Mesh.Discovery], else: []
   end
 
-  defp mesh_children do
-    if Mix.env() == :test, do: [], else: [Beamcore.Mesh, Beamcore.Mesh.Discovery]
-  end
+  @doc false
+  def mesh_enabled?, do: Application.get_env(:beamcore, :mesh_enabled, true)
 
   defp gateway_children do
     telegram = System.get_env("TELEGRAM_BOT_TOKEN")

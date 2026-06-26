@@ -1,15 +1,16 @@
 defmodule Beamcore.TUI.Events.Commands.Input do
   @moduledoc false
 
-  alias Beamcore.TUI.{History, State}
+  alias Beamcore.TUI.{History, State, Trace}
   alias Beamcore.TUI.Events.Commands
+  alias Beamcore.TUI.Events.TextInput
   alias ExRatatui.Widgets.SlashCommands
 
   def submit(%{worker: worker} = state) when not is_nil(worker) do
-    value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
+    value = TextInput.value(state) |> String.trim()
 
     if value == "/stop" do
-      ExRatatui.textarea_set_value(state.textarea, "")
+      state = TextInput.set_value(state, "")
       Commands.run_command(%{state | show_commands: false}, "stop")
     else
       State.add_message(
@@ -21,7 +22,7 @@ defmodule Beamcore.TUI.Events.Commands.Input do
   end
 
   def submit(state) do
-    value = ExRatatui.textarea_get_value(state.textarea) |> String.trim()
+    value = TextInput.value(state) |> String.trim()
 
     cond do
       value == "" ->
@@ -31,21 +32,21 @@ defmodule Beamcore.TUI.Events.Commands.Input do
         command = String.trim_leading(value, "/")
 
         if command == "theme" do
-          ExRatatui.textarea_set_value(state.textarea, "")
+          state = TextInput.set_value(state, "")
           Commands.run_command(%{state | show_commands: false}, command)
         else
-          ExRatatui.textarea_set_value(state.textarea, "")
+          state = TextInput.set_value(state, "")
           state = maybe_record_command_history(state, value)
           Commands.run_command(%{state | show_commands: false}, command)
         end
 
       State.paused?(state) ->
-        ExRatatui.textarea_set_value(state.textarea, "")
+        state = TextInput.set_value(state, "")
         state = record_history(state, value)
         Commands.resume_session(%{state | show_commands: false}, value)
 
       true ->
-        ExRatatui.textarea_set_value(state.textarea, "")
+        state = TextInput.set_value(state, "")
         state = record_history(state, value)
 
         state
@@ -61,27 +62,22 @@ defmodule Beamcore.TUI.Events.Commands.Input do
         state
 
       %SlashCommands.Command{name: name} ->
-        ExRatatui.textarea_set_value(state.textarea, "/" <> name)
-
-        %{state | show_commands: false, command_matches: [], command_selected: 0}
+        state
+        |> TextInput.set_value("/" <> name)
+        |> Map.merge(%{show_commands: false, command_matches: [], command_selected: 0})
         |> State.mark_dirty()
     end
   end
 
   def clear_input(state) do
-    ExRatatui.textarea_set_value(state.textarea, "")
-
-    %{state | history_index: nil, file_finder_active?: false, file_finder_results: []}
+    state
+    |> TextInput.set_value("")
+    |> Map.merge(%{history_index: nil, file_finder_active?: false, file_finder_results: []})
     |> State.disarm_ctrl_c()
     |> refresh_commands()
   end
 
-  def input_blank?(state) do
-    state.textarea
-    |> ExRatatui.textarea_get_value()
-    |> String.trim()
-    |> Kernel.==("")
-  end
+  def input_blank?(state), do: TextInput.input_blank?(state)
 
   def select_command(state, offset) do
     max_index = max(length(state.command_matches) - 1, 0)
@@ -99,17 +95,23 @@ defmodule Beamcore.TUI.Events.Commands.Input do
       history ->
         case state.history_index do
           nil ->
-            draft = ExRatatui.textarea_get_value(state.textarea)
+            draft = TextInput.value(state)
             index = length(history) - 1
             value = Enum.at(history, index)
-            ExRatatui.textarea_set_value(state.textarea, value)
-            %{state | history_index: index, history_draft: draft} |> State.mark_dirty()
+
+            state
+            |> TextInput.set_value(value)
+            |> Map.merge(%{history_index: index, history_draft: draft})
+            |> State.mark_dirty()
 
           index ->
             new_index = max(0, index - 1)
             value = Enum.at(history, new_index)
-            ExRatatui.textarea_set_value(state.textarea, value)
-            %{state | history_index: new_index} |> State.mark_dirty()
+
+            state
+            |> TextInput.set_value(value)
+            |> Map.put(:history_index, new_index)
+            |> State.mark_dirty()
         end
     end
   end
@@ -124,30 +126,44 @@ defmodule Beamcore.TUI.Events.Commands.Input do
         new_index = index + 1
 
         if new_index >= length(history) do
-          ExRatatui.textarea_set_value(state.textarea, state.history_draft)
-          %{state | history_index: nil} |> State.mark_dirty()
+          state
+          |> TextInput.set_value(state.history_draft)
+          |> Map.put(:history_index, nil)
+          |> State.mark_dirty()
         else
           value = Enum.at(history, new_index)
-          ExRatatui.textarea_set_value(state.textarea, value)
-          %{state | history_index: new_index} |> State.mark_dirty()
+
+          state
+          |> TextInput.set_value(value)
+          |> Map.put(:history_index, new_index)
+          |> State.mark_dirty()
         end
     end
   end
 
   def refresh_commands(state) do
-    value = ExRatatui.textarea_get_value(state.textarea)
+    value = TextInput.value(state)
 
-    case SlashCommands.parse(value) do
-      {:command, prefix} ->
-        matches = SlashCommands.match_commands(commands(), prefix)
+    updated =
+      case SlashCommands.parse(value) do
+        {:command, prefix} ->
+          matches = SlashCommands.match_commands(commands(), prefix)
 
-        %{state | show_commands: matches != [], command_matches: matches, command_selected: 0}
-        |> State.mark_dirty()
+          %{state | show_commands: matches != [], command_matches: matches, command_selected: 0}
+          |> State.mark_dirty()
 
-      :no_command ->
-        %{state | show_commands: false, command_matches: []}
-        |> State.mark_dirty()
-    end
+        :no_command ->
+          %{state | show_commands: false, command_matches: []}
+          |> State.mark_dirty()
+      end
+
+    Trace.event(:command_refresh, %{
+      input_length: String.length(value),
+      show_commands?: updated.show_commands,
+      match_count: length(updated.command_matches)
+    })
+
+    updated
   end
 
   defp record_history(state, value) do

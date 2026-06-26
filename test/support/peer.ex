@@ -13,6 +13,7 @@ defmodule Beamcore.Test.Peer do
 
   @cookie ~c"beamcore_test_cookie"
   @crash_dump_off [{~c"ERL_CRASH_DUMP_SECONDS", ~c"0"}]
+  @host_node :"beamcore_host@127.0.0.1"
 
   # Captured at compile time, when cwd is guaranteed to be the project root.
   @project_root File.cwd!()
@@ -30,16 +31,86 @@ defmodule Beamcore.Test.Peer do
   fallback for unusual run setups.
   """
   def ensure_distributed! do
-    unless Node.alive?() do
-      case :net_kernel.start([:"beamcore_host@127.0.0.1", :longnames]) do
-        {:ok, _} -> :ok
-        {:error, {:already_started, _}} -> :ok
-        {:error, reason} -> raise "Erlang distribution unavailable: #{inspect(reason)}"
-      end
-    end
+    unless Node.alive?(), do: ensure_epmd_started!()
 
-    :erlang.set_cookie(Node.self(), cookie())
-    :ok
+    case start_net_kernel() do
+      :ok ->
+        :erlang.set_cookie(Node.self(), cookie())
+        :ok
+
+      {:error, reason} ->
+        raise distribution_start_error(reason)
+    end
+  end
+
+  @doc false
+  def ensure_epmd_started!(
+        find_executable \\ &System.find_executable/1,
+        cmd \\ &System.cmd/3
+      ) do
+    case find_executable.("epmd") do
+      nil ->
+        raise """
+        could not start distributed Erlang test node #{@host_node}: epmd executable not found.
+
+        Remote tests start real :peer nodes and require Erlang distribution.
+        Install Erlang/OTP with epmd available on PATH, or run these tests in an environment
+        that supports distributed Erlang.
+        """
+
+      epmd ->
+        case cmd.(epmd, ["-daemon"], stderr_to_stdout: true) do
+          {_output, 0} ->
+            :ok
+
+          {output, status} ->
+            raise """
+            could not start distributed Erlang test node #{@host_node}: epmd -daemon failed with exit #{status}.
+
+            Output:
+            #{String.trim(to_string(output))}
+
+            Remote tests start real :peer nodes and require Erlang distribution.
+            Check that epmd can bind/listen in this CI or local environment.
+            """
+        end
+    end
+  end
+
+  @doc false
+  def distribution_start_error(reason) do
+    """
+    could not start distributed Erlang test node #{@host_node}: #{inspect(reason)}
+
+    Remote tests start real :peer nodes and require Erlang distribution.
+    This usually means epmd is unavailable, cannot bind/listen, or TCP distribution
+    is blocked in the CI/local environment. Verify that:
+
+      * epmd is installed and available on PATH
+      * epmd -daemon can start successfully
+      * localhost/127.0.0.1 TCP distribution is allowed
+      * no stale epmd/net_kernel state is blocking node registration
+    """
+  end
+
+  defp start_net_kernel(attempts \\ 3)
+
+  defp start_net_kernel(attempts) when attempts > 0 do
+    case :net_kernel.start([@host_node, :longnames]) do
+      {:ok, _} ->
+        :ok
+
+      {:error, {:already_started, _}} ->
+        :ok
+
+      {:error, _reason} when attempts > 1 ->
+        ensure_epmd_started!()
+        Process.sleep(100)
+        start_net_kernel(attempts - 1)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @doc """
