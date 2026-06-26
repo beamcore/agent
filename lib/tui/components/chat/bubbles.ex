@@ -9,10 +9,11 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
   def bubble(label, content, _label_style, body_style, wrap_width, kind, opts \\ []) do
     body_width = max(wrap_width - 2, 10)
     collapsed = Keyword.get(opts, :collapsed_blocks, MapSet.new())
+    viewport_lines = Keyword.get(opts, :viewport_lines)
     prefix = label_prefix(label)
 
     case kind do
-      :markdown -> markdown_bubble(prefix, content, body_style, body_width, collapsed)
+      :markdown -> markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines)
       :plain -> plain_bubble(prefix, content, body_style, body_width)
     end
   end
@@ -20,11 +21,11 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
   def tool_bubble(label, content, wrap_width),
     do: DiffRenderer.render(label, content, wrap_width)
 
-  def eeva_preview_bubble(code, wrap_width, collapsed \\ MapSet.new()),
-    do: CodeBlock.eeva_preview_bubble(code, wrap_width, collapsed)
+  def eeva_preview_bubble(code, wrap_width, collapsed \\ MapSet.new(), viewport \\ nil),
+    do: CodeBlock.eeva_preview_bubble(code, wrap_width, collapsed, viewport)
 
-  defp markdown_bubble(prefix, content, body_style, body_width, collapsed) do
-    CodeBlock.expanded_card(prefix, to_string(content), body_width, body_style, collapsed)
+  defp markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines) do
+    CodeBlock.expanded_card(prefix, to_string(content), body_width, body_style, collapsed, viewport_lines)
   end
 
   defp plain_bubble(prefix, text, body_style, body_width) do
