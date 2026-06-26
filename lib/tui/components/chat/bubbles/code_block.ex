@@ -14,7 +14,14 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles.CodeBlock do
     Eeva.render(code, wrap_width, collapsed, viewport)
   end
 
-  def expanded_card(prefix, text, body_width, body_style, collapsed \\ MapSet.new(), viewport_lines \\ nil) do
+  def expanded_card(
+        prefix,
+        text,
+        body_width,
+        body_style,
+        collapsed \\ MapSet.new(),
+        viewport_lines \\ nil
+      ) do
     segments = MarkdownParser.parse(text)
     indent = "  "
 
@@ -45,9 +52,27 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles.CodeBlock do
 
           rendered =
             if is_collapsed do
-              collapsed_segment(lang, code_lines, max_len, code_style, header_style, accent, indent)
+              collapsed_segment(
+                lang,
+                code_lines,
+                max_len,
+                code_style,
+                header_style,
+                accent,
+                indent
+              )
             else
-              expanded_segment(lang, code_lines, max_len, code_style, header_style, accent, indent, viewport_lines, code_start)
+              expanded_segment(
+                lang,
+                code_lines,
+                max_len,
+                code_style,
+                header_style,
+                accent,
+                indent,
+                viewport_lines,
+                code_start
+              )
             end
 
           {rendered, {block_idx + 1, cum_height + length(rendered)}}
@@ -87,7 +112,17 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles.CodeBlock do
     [header | highlighted]
   end
 
-  defp expanded_segment(lang, code_lines, max_len, code_style, header_style, accent, indent, viewport_lines, code_start) do
+  defp expanded_segment(
+         lang,
+         code_lines,
+         max_len,
+         code_style,
+         header_style,
+         accent,
+         indent,
+         viewport_lines,
+         code_start
+       ) do
     header = %Line{
       spans: [
         %Span{content: indent, style: header_style},

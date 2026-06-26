@@ -115,6 +115,97 @@ defmodule Beamcore.TUI.ProviderFormTest do
     assert form.name == ""
   end
 
+  test "OAuth2 fields are hidden until token url is entered" do
+    form = Form.new()
+
+    assert Form.visible_fields(form) |> Enum.map(& &1.id) == [
+             :name,
+             :key,
+             :url,
+             :model,
+             :token_url
+           ]
+
+    form =
+      %{form | field: :token_url}
+      |> Form.insert_text("https://auth.example/token")
+
+    assert Form.visible_fields(form) |> Enum.map(& &1.id) == [
+             :name,
+             :key,
+             :url,
+             :model,
+             :token_url,
+             :client_id,
+             :client_secret,
+             :scope,
+             :token_request_id_header,
+             :cacertfile,
+             :ssl_verify
+           ]
+  end
+
+  test "OAuth2 fields are skipped again when token url is cleared" do
+    form =
+      %{Form.new() | token_url: "x", mode: :oauth2, field: :scope}
+      |> Form.insert_text("scope-a")
+
+    assert form.field == :scope
+    assert Enum.any?(Form.visible_fields(form), &(&1.id == :scope))
+
+    form =
+      %{form | field: :token_url}
+      |> Form.handle_backspace()
+
+    refute Enum.any?(Form.visible_fields(form), &(&1.id == :scope))
+    assert form.field == :token_url
+  end
+
+  test "OAuth2 provider form saves generic auth and TLS fields" do
+    form = %{
+      Form.new()
+      | name: "oauth-provider",
+        url: "https://compatible.example/v1",
+        model: "chat-model",
+        token_url: "https://auth.example/token",
+        client_id: "client",
+        client_secret: "secret",
+        scope: "CHAT_API_SCOPE",
+        token_request_id_header: "RqUID",
+        cacertfile: "/tmp/provider-ca.pem"
+    }
+
+    assert {:save, "oauth-provider", config, _form} = Form.handle_key("enter", [], form)
+
+    assert config["auth"] == "oauth2"
+    assert config["token_url"] == "https://auth.example/token"
+    assert config["client_id"] == "client"
+    assert config["client_secret"] == "secret"
+    assert config["scope"] == "CHAT_API_SCOPE"
+    assert config["token_request_id_header"] == "RqUID"
+    assert config["cacertfile"] == "/tmp/provider-ca.pem"
+    assert config["ssl_verify"] == "auto"
+    refute Map.has_key?(config, "api_key")
+  end
+
+  test "OAuth2 provider form supports pre-encoded Basic credential in api key" do
+    form = %{
+      Form.new()
+      | name: "oauth-provider",
+        key: "preencoded-basic-key",
+        url: "https://compatible.example/v1",
+        model: "chat-model",
+        token_url: "https://auth.example/token"
+    }
+
+    assert {:save, "oauth-provider", config, _form} = Form.handle_key("enter", [], form)
+
+    assert config["auth"] == "oauth2"
+    assert config["api_key"] == "preencoded-basic-key"
+    refute Map.has_key?(config, "client_id")
+    refute Map.has_key?(config, "client_secret")
+  end
+
   test "provider selection behavior is not regressed" do
     providers = %Providers{providers: [{"one", %{}}, {"two", %{}}], selected: 0}
 

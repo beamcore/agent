@@ -212,7 +212,9 @@ defmodule Beamcore.Config do
       "api_key_header",
       "api_key_prefix",
       "token_headers",
-      "token_request_id_header"
+      "token_request_id_header",
+      "cacertfile",
+      "ssl_verify"
     ]
 
     config
