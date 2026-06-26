@@ -37,3 +37,25 @@ defmodule Beamcore.Provider.AuthHTTPMock do
     end
   end
 end
+
+defmodule Beamcore.Provider.CompatibleHTTPMock do
+  def post(url, opts) do
+    send(Process.get(:compatible_test_pid, self()), {:compatible_post, url, opts})
+
+    case Process.get(:compatible_http_responses) do
+      [response | rest] ->
+        Process.put(:compatible_http_responses, rest)
+        response
+
+      response when not is_nil(response) ->
+        response
+
+      nil ->
+        {:ok,
+         %{
+           status: 200,
+           body: %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "ok"}}]}
+         }}
+    end
+  end
+end

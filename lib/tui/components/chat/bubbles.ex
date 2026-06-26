@@ -13,8 +13,11 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
     prefix = label_prefix(label)
 
     case kind do
-      :markdown -> markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines)
-      :plain -> plain_bubble(prefix, content, body_style, body_width)
+      :markdown ->
+        markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines)
+
+      :plain ->
+        plain_bubble(prefix, content, body_style, body_width)
     end
   end
 
@@ -25,7 +28,14 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
     do: CodeBlock.eeva_preview_bubble(code, wrap_width, collapsed, viewport)
 
   defp markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines) do
-    CodeBlock.expanded_card(prefix, to_string(content), body_width, body_style, collapsed, viewport_lines)
+    CodeBlock.expanded_card(
+      prefix,
+      to_string(content),
+      body_width,
+      body_style,
+      collapsed,
+      viewport_lines
+    )
   end
 
   defp plain_bubble(prefix, text, body_style, body_width) do

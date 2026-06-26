@@ -76,7 +76,8 @@ defmodule Beamcore.TUI.Components.Chat do
       msg_collapsed = Map.get(collapsed, orig_idx, MapSet.new())
 
       # Per-message cache: skip re-rendering if this exact message hasn't changed
-      cache_key = {:bubble, orig_idx, :erlang.phash2(content), wrap_width, msg_collapsed, theme, role}
+      cache_key =
+        {:bubble, orig_idx, :erlang.phash2(content), wrap_width, msg_collapsed, theme, role}
 
       case bubble_cache_get(cache_key) do
         {:ok, cached} ->

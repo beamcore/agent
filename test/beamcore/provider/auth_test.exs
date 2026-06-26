@@ -60,6 +60,46 @@ defmodule Beamcore.Provider.AuthTest do
              List.keyfind(opts[:headers], "Authorization", 0)
   end
 
+  test "requests OAuth tokens with pre-encoded Basic credential from api key" do
+    Process.put(
+      :auth_http_responses,
+      {:ok, %{status: 200, body: %{"access_token" => "token-a", "expires_in" => 3600}}}
+    )
+
+    config = %{
+      "auth" => "oauth2",
+      "token_url" => "https://auth.example/token",
+      "api_key" => "preencoded-basic-key",
+      "scope" => "chat.read"
+    }
+
+    assert {:ok, [{"Authorization", "Bearer token-a"}]} =
+             Auth.headers(config, http_client: Beamcore.Provider.AuthHTTPMock)
+
+    assert_receive {:oauth_post, "https://auth.example/token", opts}
+    assert opts[:body] == "grant_type=client_credentials&scope=chat.read"
+    assert {"Authorization", "Basic preencoded-basic-key"} in opts[:headers]
+  end
+
+  test "preserves explicit Basic prefix for OAuth pre-encoded credentials" do
+    Process.put(
+      :auth_http_responses,
+      {:ok, %{status: 200, body: %{"access_token" => "token-a", "expires_in" => 3600}}}
+    )
+
+    config = %{
+      "auth" => "oauth2",
+      "token_url" => "https://auth.example/token",
+      "api_key" => "Basic preencoded-basic-key"
+    }
+
+    assert {:ok, %{token: "token-a"}} =
+             Auth.material(config, http_client: Beamcore.Provider.AuthHTTPMock)
+
+    assert_receive {:oauth_post, "https://auth.example/token", opts}
+    assert {"Authorization", "Basic preencoded-basic-key"} in opts[:headers]
+  end
+
   test "caches OAuth tokens until the refresh window" do
     Process.put(:auth_http_responses, [
       {:ok, %{status: 200, body: %{"access_token" => "cached-token", "expires_in" => 3600}}},
@@ -132,7 +172,73 @@ defmodule Beamcore.Provider.AuthTest do
     assert_receive {:oauth_post, _, opts}
     assert opts[:body] =~ "scope=CHAT_API_SCOPE"
     assert {"RqUID", request_id} = List.keyfind(opts[:headers], "RqUID", 0)
-    assert byte_size(request_id) == 32
+
+    assert request_id =~
+             ~r/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+  end
+
+  test "supports provider-neutral OAuth token TLS options" do
+    Process.put(
+      :auth_http_responses,
+      {:ok, %{status: 200, body: %{"access_token" => "tls-token", "expires_in" => 3600}}}
+    )
+
+    config =
+      oauth_config()
+      |> Map.put("cacertfile", "/tmp/provider-ca.pem")
+      |> Map.put("ssl_verify", false)
+
+    assert {:ok, %{token: "tls-token"}} =
+             Auth.material(config, http_client: Beamcore.Provider.AuthHTTPMock)
+
+    assert_receive {:oauth_post, _, opts}
+
+    assert opts[:connect_options] == [
+             transport_opts: [cacertfile: "/tmp/provider-ca.pem", verify: :verify_none]
+           ]
+  end
+
+  test "auto TLS mode retries OAuth token requests without verify on unknown CA" do
+    Process.put(:auth_http_responses, [
+      {:error,
+       %Req.TransportError{
+         reason:
+           {:tls_alert, {:unknown_ca, ~c"TLS client generated CLIENT ALERT: Fatal - Unknown CA"}}
+       }},
+      {:ok, %{status: 200, body: %{"access_token" => "retried-token", "expires_in" => 3600}}}
+    ])
+
+    config = Map.put(oauth_config(), "ssl_verify", "auto")
+
+    assert {:ok, %{token: "retried-token"}} =
+             Auth.material(config, http_client: Beamcore.Provider.AuthHTTPMock)
+
+    assert_receive {:oauth_post, _, first_opts}
+    assert_receive {:oauth_post, _, retry_opts}
+
+    refute Keyword.has_key?(first_opts, :connect_options)
+    assert retry_opts[:connect_options] == [transport_opts: [verify: :verify_none]]
+  end
+
+  test "strict TLS mode does not retry OAuth token unknown CA failures" do
+    reason =
+      %Req.TransportError{
+        reason:
+          {:tls_alert, {:unknown_ca, ~c"TLS client generated CLIENT ALERT: Fatal - Unknown CA"}}
+      }
+
+    Process.put(:auth_http_responses, [
+      {:error, reason},
+      {:ok, %{status: 200, body: %{"access_token" => "unexpected", "expires_in" => 3600}}}
+    ])
+
+    config = Map.put(oauth_config(), "ssl_verify", true)
+
+    assert {:error, %Error{kind: :unavailable}} =
+             Auth.material(config, http_client: Beamcore.Provider.AuthHTTPMock)
+
+    assert_receive {:oauth_post, _, _}
+    refute_receive {:oauth_post, _, _}, 20
   end
 
   defp oauth_config do

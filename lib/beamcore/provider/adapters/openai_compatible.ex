@@ -47,10 +47,17 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
 
   @impl true
   def chat(request, config) do
-    with {:ok, client} <- client(config),
-         {:ok, params} <- params(request) do
-      @completions_module.create(client, params)
-      |> normalize()
+    with {:ok, params} <- params(request) do
+      params = maybe_order_system_messages_first(params, config)
+
+      if Auth.request_options(config) == [] and not Auth.tls_auto?(config) do
+        with {:ok, client} <- client(config) do
+          @completions_module.create(client, params)
+          |> normalize()
+        end
+      else
+        compatible_request(params, config)
+      end
     end
   end
 
@@ -101,9 +108,129 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
      )}
   end
 
+  defp compatible_request(params, config) do
+    with {:ok, %{headers: headers}} <- Auth.material(config) do
+      http_client =
+        Application.get_env(:beamcore, :compatible_http_client, Req)
+
+      config
+      |> chat_completions_url()
+      |> post_compatible(http_client, params, headers, config, :configured)
+      |> maybe_retry_unknown_ca(config, fn ->
+        config
+        |> chat_completions_url()
+        |> post_compatible(http_client, params, headers, config, :insecure)
+      end)
+      |> normalize_compatible_response()
+    end
+  end
+
+  defp post_compatible(url, http_client, params, headers, config, tls_mode) do
+    http_client.post(
+      url,
+      [
+        json: params,
+        headers: [{"Content-Type", "application/json"} | headers],
+        receive_timeout: Map.get(config, :receive_timeout, 30_000)
+      ] ++ Auth.request_options(config, tls_mode)
+    )
+  end
+
+  defp maybe_retry_unknown_ca({:error, reason}, config, retry_fun) do
+    if Auth.tls_auto?(config) and Auth.unknown_ca_error?(reason),
+      do: retry_fun.(),
+      else: {:error, reason}
+  end
+
+  defp maybe_retry_unknown_ca(result, _config, _retry_fun), do: result
+
+  defp normalize_compatible_response({:ok, %{status: status, body: body}})
+       when status >= 200 and status < 300,
+       do: {:ok, body}
+
+  defp normalize_compatible_response({:ok, %{status: status, body: %{"error" => error}}}) do
+    {:error,
+     Error.exception(
+       kind: :provider_error,
+       message: "Provider request failed with status #{status}: #{inspect(error)}.",
+       status: status
+     )}
+  end
+
+  defp normalize_compatible_response({:ok, %{status: status, body: body}}) do
+    {:error,
+     Error.exception(
+       kind: :provider_error,
+       message: "Provider request failed with status #{status}: #{inspect(body)}.",
+       status: status
+     )}
+  end
+
+  defp normalize_compatible_response({:error, reason}) do
+    {:error,
+     Error.exception(
+       kind: :unavailable,
+       message: "Provider request failed: #{inspect(reason)}."
+     )}
+  end
+
   defp normalize({:ok, response}), do: {:ok, response}
   defp normalize({:error, %OpenaiEx.Error{} = error}), do: {:error, error}
   defp normalize({:error, error}), do: {:error, error}
+
+  defp chat_completions_url(config) do
+    config
+    |> base_url()
+    |> String.trim_trailing("/")
+    |> Kernel.<>("/chat/completions")
+  end
+
+  defp maybe_order_system_messages_first(params, config) do
+    if oauth2?(config) do
+      Map.update(params, :messages, [], &normalize_oauth2_messages/1)
+    else
+      params
+    end
+  end
+
+  defp oauth2?(config),
+    do: (Map.get(config, "auth") || Map.get(config, :auth)) in [:oauth2, "oauth2"]
+
+  defp normalize_oauth2_messages(messages) when is_list(messages) do
+    {system, rest} = Enum.split_with(messages, &(message_role(&1) == "system"))
+
+    case system do
+      [] -> rest
+      [one] -> [one | rest]
+      [_ | _] -> [merge_system_messages(system) | rest]
+    end
+  end
+
+  defp normalize_oauth2_messages(messages), do: messages
+
+  defp merge_system_messages(system_messages) do
+    first = List.first(system_messages)
+
+    content =
+      system_messages
+      |> Enum.map(&message_content/1)
+      |> Enum.reject(&(&1 == ""))
+      |> Enum.join("\n\n")
+
+    case first do
+      %{role: _} = message -> %{message | role: "system", content: content}
+      %{"role" => _} = message -> %{message | "role" => "system", "content" => content}
+      _ -> %{role: "system", content: content}
+    end
+  end
+
+  defp message_role(%{role: role}), do: role
+  defp message_role(%{"role" => role}), do: role
+  defp message_role(_message), do: nil
+
+  defp message_content(%{content: content}) when is_binary(content), do: content
+  defp message_content(%{"content" => content}) when is_binary(content), do: content
+  defp message_content(_message), do: ""
 
   defp base_url(config), do: Map.get(config, "base_url") || Map.get(config, :base_url)
 

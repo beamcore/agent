@@ -60,6 +60,26 @@ defmodule Beamcore.Provider.Auth do
     end
   end
 
+  @doc false
+  def request_options(config, tls_mode \\ :configured) when is_map(config) do
+    case transport_options(config, tls_mode) do
+      [] -> []
+      transport_opts -> [connect_options: [transport_opts: transport_opts]]
+    end
+  end
+
+  @doc false
+  def tls_auto?(config), do: ssl_verify_mode(config) == :auto
+
+  @doc false
+  def unknown_ca_error?(%Req.TransportError{reason: reason}), do: unknown_ca_error?(reason)
+
+  def unknown_ca_error?(reason) do
+    reason
+    |> inspect()
+    |> String.contains?("unknown_ca")
+  end
+
   defp validate_static_token(config, label) do
     case static_token(config) do
       {:ok, _token} ->
@@ -74,6 +94,9 @@ defmodule Beamcore.Provider.Auth do
     cond do
       not present?(token_url(config)) ->
         error(:missing_config, "Provider #{provider_name(config)} is missing OAuth token_url.")
+
+      present?(oauth_basic_credential(config)) ->
+        :ok
 
       not present?(oauth_client_id(config)) ->
         error(:missing_config, "Provider #{provider_name(config)} is missing OAuth client_id.")
@@ -105,18 +128,21 @@ defmodule Beamcore.Provider.Auth do
     body = oauth_body(config)
     headers = oauth_headers(config)
 
-    case http_client.post(token_url(config),
-           body: body,
-           headers: headers,
-           receive_timeout: 15_000
-         ) do
+    config
+    |> post_oauth_token(http_client, body, headers, :configured)
+    |> maybe_retry_unknown_ca(config, fn ->
+      post_oauth_token(config, http_client, body, headers, :insecure)
+    end)
+    |> case do
       {:ok, %{status: status, body: %{"access_token" => token} = response}}
       when status >= 200 and status < 300 and is_binary(token) ->
         cache_token(config, token, expires_at(response))
         {:ok, token}
 
-      {:ok, %{status: status}} ->
-        error(:provider_error, "OAuth token request failed with status #{status}.",
+      {:ok, %{status: status, body: body}} ->
+        error(
+          :provider_error,
+          "OAuth token request failed with status #{status}: #{inspect(body)}.",
           status: status
         )
 
@@ -124,6 +150,19 @@ defmodule Beamcore.Provider.Auth do
         error(:unavailable, "OAuth token request failed: #{inspect(reason)}.")
     end
   end
+
+  defp post_oauth_token(config, http_client, body, headers, tls_mode) do
+    http_client.post(
+      token_url(config),
+      [body: body, headers: headers, receive_timeout: 15_000] ++ request_options(config, tls_mode)
+    )
+  end
+
+  defp maybe_retry_unknown_ca({:error, reason}, config, retry_fun) do
+    if tls_auto?(config) and unknown_ca_error?(reason), do: retry_fun.(), else: {:error, reason}
+  end
+
+  defp maybe_retry_unknown_ca(result, _config, _retry_fun), do: result
 
   defp oauth_body(config) do
     base =
@@ -150,16 +189,79 @@ defmodule Beamcore.Provider.Auth do
       ]
 
     headers =
-      if oauth_client_auth(config) == :basic do
-        credentials = Base.encode64("#{oauth_client_id(config)}:#{oauth_client_secret(config)}")
-        [{"Authorization", "Basic #{credentials}"} | headers]
-      else
-        headers
+      cond do
+        present?(oauth_basic_credential(config)) ->
+          [{"Authorization", basic_header_value(oauth_basic_credential(config))} | headers]
+
+        oauth_client_auth(config) == :basic ->
+          credentials = Base.encode64("#{oauth_client_id(config)}:#{oauth_client_secret(config)}")
+          [{"Authorization", "Basic #{credentials}"} | headers]
+
+        true ->
+          headers
       end
 
     headers
     |> Kernel.++(configured_token_headers(config))
     |> maybe_add_request_id(config)
+  end
+
+  defp transport_options(config, tls_mode) do
+    []
+    |> maybe_put_ssl_verify(config, tls_mode)
+    |> maybe_put_cacertfile(config)
+  end
+
+  defp maybe_put_ssl_verify(opts, _config, :insecure),
+    do: Keyword.put(opts, :verify, :verify_none)
+
+  defp maybe_put_ssl_verify(opts, config, :configured) do
+    case ssl_verify_mode(config) do
+      :disabled -> Keyword.put(opts, :verify, :verify_none)
+      _ -> opts
+    end
+  end
+
+  defp ssl_verify_mode(config) do
+    case first_config_value(config, "ssl_verify") do
+      false -> :disabled
+      "false" -> :disabled
+      "FALSE" -> :disabled
+      "0" -> :disabled
+      "no" -> :disabled
+      "NO" -> :disabled
+      true -> :strict
+      "true" -> :strict
+      "TRUE" -> :strict
+      "1" -> :strict
+      "yes" -> :strict
+      "YES" -> :strict
+      "auto" -> :auto
+      "AUTO" -> :auto
+      nil -> :strict
+      "" -> :strict
+      _ -> :strict
+    end
+  end
+
+  defp maybe_put_cacertfile(opts, config) do
+    case first_config_value(config, "cacertfile") do
+      path when is_binary(path) and path != "" -> Keyword.put(opts, :cacertfile, path)
+      _ -> opts
+    end
+  end
+
+  defp first_config_value(config, key) do
+    case fetch_config_value(config, key) do
+      {:ok, value} ->
+        value
+
+      :error ->
+        case fetch_auth_value(config, key) do
+          {:ok, value} -> value
+          :error -> nil
+        end
+    end
   end
 
   defp api_key_material(config, token) do
@@ -283,6 +385,38 @@ defmodule Beamcore.Provider.Auth do
       split_api_key(config, 1)
   end
 
+  defp oauth_basic_credential(config) do
+    auth_value(config, "basic_credential") ||
+      auth_value(config, "authorization_key") ||
+      config_value(config, "oauth_basic_credential") ||
+      config_value(config, "authorization_key") ||
+      raw_api_key_credential(config)
+  end
+
+  defp raw_api_key_credential(config) do
+    explicit_client? =
+      present?(auth_value(config, "client_id") || config_value(config, "client_id"))
+
+    explicit_secret? =
+      present?(auth_value(config, "client_secret") || config_value(config, "client_secret"))
+
+    case config_value(config, "api_key") do
+      value when is_binary(value) ->
+        if explicit_client? or explicit_secret? or String.contains?(value, ":") do
+          nil
+        else
+          value
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp basic_header_value("Basic " <> _ = value), do: value
+  defp basic_header_value("basic " <> rest), do: "Basic " <> rest
+  defp basic_header_value(value), do: "Basic #{value}"
+
   defp oauth_scope(config) do
     value =
       auth_value(config, "scope") || auth_value(config, "scopes") || config_value(config, "scope") ||
@@ -323,11 +457,33 @@ defmodule Beamcore.Provider.Auth do
     case auth_value(config, "token_request_id_header") ||
            config_value(config, "token_request_id_header") do
       name when is_binary(name) ->
-        [{name, Base.encode16(:crypto.strong_rand_bytes(16), case: :lower)} | headers]
+        [{name, request_id()} | headers]
 
       _ ->
         headers
     end
+  end
+
+  defp request_id do
+    <<a::32, b::16, c::16, d::16, e::48>> = :crypto.strong_rand_bytes(16)
+    c = Bitwise.bor(Bitwise.band(c, 0x0FFF), 0x4000)
+    d = Bitwise.bor(Bitwise.band(d, 0x3FFF), 0x8000)
+
+    [
+      hex(a, 8),
+      hex(b, 4),
+      hex(c, 4),
+      hex(d, 4),
+      hex(e, 12)
+    ]
+    |> Enum.join("-")
+  end
+
+  defp hex(value, width) do
+    value
+    |> Integer.to_string(16)
+    |> String.downcase()
+    |> String.pad_leading(width, "0")
   end
 
   defp split_api_key(config, index) do
@@ -352,6 +508,21 @@ defmodule Beamcore.Provider.Auth do
   end
 
   defp config_value(config, key), do: Map.get(config, key) || Map.get(config, String.to_atom(key))
+
+  defp fetch_auth_value(config, key) do
+    case config_value(config, "auth") do
+      auth when is_map(auth) -> fetch_config_value(auth, key)
+      _ -> :error
+    end
+  end
+
+  defp fetch_config_value(config, key) do
+    cond do
+      Map.has_key?(config, key) -> {:ok, Map.fetch!(config, key)}
+      Map.has_key?(config, String.to_atom(key)) -> {:ok, Map.fetch!(config, String.to_atom(key))}
+      true -> :error
+    end
+  end
 
   defp present?(value), do: is_binary(value) and String.trim(value) != ""
 

@@ -7,10 +7,16 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   @default_visible_rows 12
   @fields [
     %{id: :name, label: "name", required?: true},
-    %{id: :key, label: "api key", required?: true},
+    %{id: :key, label: "api key"},
     %{id: :url, label: "base url"},
     %{id: :model, label: "model"},
-    %{id: :token_url, label: "token url", required_when: :oauth2}
+    %{id: :token_url, label: "token url"},
+    %{id: :client_id, label: "client id", oauth?: true},
+    %{id: :client_secret, label: "client secret", oauth?: true},
+    %{id: :scope, label: "scope", oauth?: true},
+    %{id: :token_request_id_header, label: "request id header", oauth?: true},
+    %{id: :cacertfile, label: "ca cert file", oauth?: true},
+    %{id: :ssl_verify, label: "ssl verify", oauth?: true}
   ]
 
   defstruct field: :name,
@@ -19,6 +25,12 @@ defmodule Beamcore.TUI.Components.Providers.Form do
             url: "",
             model: "",
             token_url: "",
+            client_id: "",
+            client_secret: "",
+            scope: "",
+            token_request_id_header: "",
+            cacertfile: "",
+            ssl_verify: "auto",
             mode: :openai,
             error: nil,
             fields: nil,
@@ -36,6 +48,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   def render(form, muted, accent, input_style, visible_rows \\ nil) do
     form =
       form
+      |> auto_detect_mode()
       |> set_visible_rows(visible_rows)
       |> ensure_focus_valid()
       |> ensure_focus_visible()
@@ -126,7 +139,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   def visible_fields(form) do
     form
     |> fields()
-    |> Enum.reject(&field_hidden?/1)
+    |> Enum.reject(&field_hidden?(&1, form))
   end
 
   def focusable_fields(form) do
@@ -153,19 +166,32 @@ defmodule Beamcore.TUI.Components.Providers.Form do
       form.name == "" ->
         focus_field(%{form | error: "name required"}, :name)
 
-      form.key == "" ->
+      form.mode != :oauth2 and form.key == "" ->
         focus_field(%{form | error: "key required"}, :key)
 
       form.mode == :oauth2 and form.token_url == "" ->
         focus_field(%{form | error: "token url required for OAuth2"}, :token_url)
 
+      form.mode == :oauth2 and form.key == "" and form.client_id == "" ->
+        focus_field(%{form | error: "client id required for OAuth2"}, :client_id)
+
+      form.mode == :oauth2 and form.key == "" and form.client_secret == "" ->
+        focus_field(%{form | error: "client secret required for OAuth2"}, :client_secret)
+
       true ->
         config =
           %{
-            "api_key" => form.key,
-            "base_url" => if(form.url != "", do: form.url, else: nil),
-            "default_model" => if(form.model != "", do: form.model, else: nil),
-            "token_url" => if(form.token_url != "", do: form.token_url, else: nil)
+            "api_key" => non_empty(form.key),
+            "base_url" => non_empty(form.url),
+            "default_model" => non_empty(form.model),
+            "auth" => if(form.mode == :oauth2, do: "oauth2", else: nil),
+            "token_url" => non_empty(form.token_url),
+            "client_id" => non_empty(form.client_id),
+            "client_secret" => non_empty(form.client_secret),
+            "scope" => non_empty(form.scope),
+            "token_request_id_header" => non_empty(form.token_request_id_header),
+            "cacertfile" => non_empty(form.cacertfile),
+            "ssl_verify" => ssl_verify_value(form.ssl_verify)
           }
           |> Enum.reject(fn {_, v} -> is_nil(v) end)
           |> Map.new()
@@ -182,7 +208,11 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     char = if String.length(key) == 1, do: key, else: ""
     form = ensure_focus_valid(form)
     field = field_atom(form.field)
+
     %{Map.update!(form, field, &(&1 <> char)) | error: nil}
+    |> auto_detect_mode()
+    |> ensure_focus_valid()
+    |> ensure_focus_visible()
   end
 
   def handle_backspace(form) do
@@ -190,14 +220,22 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     field = field_atom(form.field)
     current = Map.get(form, field)
     new_val = if String.length(current) > 0, do: String.slice(current, 0..-2//1), else: current
+
     %{Map.put(form, field, new_val) | error: nil}
+    |> auto_detect_mode()
+    |> ensure_focus_valid()
+    |> ensure_focus_visible()
   end
 
   def insert_text(form, text) do
     form = ensure_focus_valid(form)
     field = field_atom(form.field)
     clean = String.replace(text, "\n", " ")
+
     %{Map.update!(form, field, &(&1 <> clean)) | error: nil}
+    |> auto_detect_mode()
+    |> ensure_focus_valid()
+    |> ensure_focus_visible()
   end
 
   # -- Private -----------------------------------------------------------------
@@ -245,12 +283,24 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp field_value(form, :url), do: form.url
   defp field_value(form, :model), do: form.model
   defp field_value(form, :token_url), do: form.token_url
+  defp field_value(form, :client_id), do: form.client_id
+  defp field_value(form, :client_secret), do: mask(form.client_secret)
+  defp field_value(form, :scope), do: form.scope
+  defp field_value(form, :token_request_id_header), do: form.token_request_id_header
+  defp field_value(form, :cacertfile), do: form.cacertfile
+  defp field_value(form, :ssl_verify), do: form.ssl_verify
 
   defp field_atom(:name), do: :name
   defp field_atom(:key), do: :key
   defp field_atom(:url), do: :url
   defp field_atom(:model), do: :model
   defp field_atom(:token_url), do: :token_url
+  defp field_atom(:client_id), do: :client_id
+  defp field_atom(:client_secret), do: :client_secret
+  defp field_atom(:scope), do: :scope
+  defp field_atom(:token_request_id_header), do: :token_request_id_header
+  defp field_atom(:cacertfile), do: :cacertfile
+  defp field_atom(:ssl_verify), do: :ssl_verify
 
   defp fields(%{fields: nil}), do: @fields
   defp fields(%{fields: fields}) when is_list(fields), do: Enum.map(fields, &normalize_field/1)
@@ -275,9 +325,13 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp normalize_field_key("hidden?"), do: :hidden?
   defp normalize_field_key("disabled?"), do: :disabled?
   defp normalize_field_key("editable?"), do: :editable?
+  defp normalize_field_key("oauth?"), do: :oauth?
   defp normalize_field_key(key), do: key
 
-  defp field_hidden?(field), do: Map.get(field, :hidden?, false)
+  defp field_hidden?(field, form) do
+    Map.get(field, :hidden?, false) or (Map.get(field, :oauth?, false) and form.mode != :oauth2)
+  end
+
   defp field_disabled?(field), do: Map.get(field, :disabled?, false)
   defp field_editable?(field), do: Map.get(field, :editable?, true)
 
@@ -352,9 +406,16 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     end
   end
 
-  defp auto_detect_mode(form) do
-    if form.token_url != "", do: %{form | mode: :oauth2}, else: %{form | mode: :openai}
-  end
+  defp auto_detect_mode(form),
+    do: if(form.token_url != "", do: %{form | mode: :oauth2}, else: %{form | mode: :openai})
+
+  defp ssl_verify_value(value) when value in ["false", "FALSE", "0", "no", "NO"], do: false
+  defp ssl_verify_value(value) when value in ["true", "TRUE", "1", "yes", "YES"], do: true
+  defp ssl_verify_value(value) when value in ["auto", "AUTO", ""], do: "auto"
+  defp ssl_verify_value(_value), do: nil
+
+  defp non_empty(value) when is_binary(value), do: if(value == "", do: nil, else: value)
+  defp non_empty(_value), do: nil
 
   defp auto_fill(name) do
     case Beamcore.Provider.Registry.get(name) do
