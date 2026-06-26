@@ -15,11 +15,62 @@ defmodule Beamcore.TUI.Components.Chat.SyntaxHighlight do
   @identifier_rx ~r/^[a-z_][a-zA-Z0-9_?!]*/
   @operator_rx ~r/^(->|\|>|=>|==|!=|=~|<=|>=|<>|&&|\|\||\+\+|--|=|\+|-|\*|\/|%|<|>)/
 
+  # TODO: consolidate into viewport_line/5 — only used by collapsed previews (eeva.ex, code_block.ex)
   def highlight_line(line, max_len, base_style \\ nil) do
     line
     |> tokenize()
     |> limit_length(max_len)
     |> to_spans(base_style)
+  end
+
+  @doc """
+  Ultra-fast plain rendering: no length check, no regex.
+  Caller must ensure `str` is already a truncated binary.
+  """
+  def lean_plain(str, style) do
+    %Line{spans: [%Span{content: "  " <> str, style: style}]}
+  end
+
+  @doc """
+  Viewport-aware line rendering: full syntax highlighting for visible lines,
+  ultra-fast lean_plain for off-screen lines.
+
+  For non-visible lines, avoids regex entirely (~0.5µs vs 9-121µs).
+  `indent` is the prefix for the first span (e.g. `"  "`).
+  """
+  def viewport_line(line, max_len, code_style, indent, is_visible?) do
+    if is_visible? do
+      line
+      |> to_string()
+      |> tokenize()
+      |> limit_length(max_len)
+      |> to_spans_with_indent(indent, code_style)
+    else
+      str = to_string(line)
+
+      truncated =
+        if byte_size(str) <= max_len,
+          do: str,
+          else: String.slice(str, 0, max(max_len - 1, 0)) <> "\u2026"
+
+      %Line{spans: [%Span{content: indent <> truncated, style: code_style}]}
+    end
+  end
+
+  defp to_spans_with_indent([], indent, style) do
+    %Line{spans: [%Span{content: indent, style: style || %ExRatatui.Style{}}]}
+  end
+
+  defp to_spans_with_indent([{type, first} | rest], indent, base_style) do
+    first_span = %Span{content: indent <> first, style: apply_base(style(type), base_style)}
+
+    other_spans =
+      Enum.map(rest, fn {type, content} ->
+        %Span{content: content, style: apply_base(style(type), base_style)}
+      end)
+
+    [first_span | other_spans]
+    |> then(&%Line{spans: &1})
   end
 
   defp tokenize(line) do

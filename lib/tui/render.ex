@@ -80,6 +80,10 @@ defmodule Beamcore.TUI.Render do
     end
   end
 
+  # Lightweight cache key: avoids expensive phash2 of entire message list.
+  # Message content is immutable once created (only appended, never mutated),
+  # so `length(messages)` alone detects all structural message changes.
+  # Per-message bubble cache in Chat handles the heavy content caching.
   defp chat_cache_key(state, %Rect{} = area) do
     {
       state.screen_type,
@@ -88,12 +92,10 @@ defmodule Beamcore.TUI.Render do
       state.scroll_offset,
       state.chat_viewport_height,
       Theme.current_theme(),
-      :erlang.phash2({
-        state.messages,
-        state.collapsed_blocks,
-        state.memory_total,
-        state.notice
-      })
+      length(state.messages),
+      :erlang.phash2(state.collapsed_blocks),
+      state.memory_total,
+      state.notice
     }
   end
 
