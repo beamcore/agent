@@ -7,7 +7,7 @@
 Beamcore is a terminal coding agent built on the Erlang/OTP distribution
 protocol. Every instance is a distributed node. Eeva, the model-facing runtime,
 runs arbitrary Elixir inside the same VM -- giving the agent direct access to
-the Beam module system, process tree, and inter-node RPC. The agent can
+the BEAM module system, process tree, and inter-node RPC. The agent can
 configure itself, call its own functions recursively, spawn sub-agents, talk to
 other agents on the same machine or across the network, and (if it chooses)
 recompile its own modules at runtime.
@@ -69,7 +69,7 @@ Once inside the TUI, you can use these slash commands:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
-| `/new [id]` | Start a new chat session |
+| `/new [id]` | Start a new chat session (optionally with a custom ID) |
 | `/compress` | Compress/rollover session context |
 | `/api list` | List configured providers |
 | `/api add <name> <key> [url] [model]` | Add a provider |
@@ -82,6 +82,19 @@ Once inside the TUI, you can use these slash commands:
 | `/clear` | Clear chat history |
 | `/theme` | Change color theme |
 | `/exit` | Quit the agent |
+
+### Keyboard shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+S` | Send message |
+| `Ctrl+C` | Clear input; press twice to pause/exit |
+| `PgUp` / `PgDn` | Scroll chat history |
+| `@` | Open file finder |
+| `/` | Open command suggestions |
+| `Tab` | Accept command suggestion |
+| `Esc` | Close suggestions, help, or details |
+| `F1`–`F3` | Switch screens (help, chat, system) |
 
 
 ## Architecture
@@ -118,8 +131,9 @@ tuned limits.
 - **System commands**: `System.cmd/2` is intercepted and routed through
   `Eeva.system_cmd/3` for tracking, but the agent can run git, mix, make, or
   any installed binary.
-- **Memory**: `Beamcore.Memory.remember/3`, `recall/3`, `list/3`, `search/2`,
-  `forget/2` -- scoped persistent storage backed by ETS and DETS.
+- **Memory**: `Beamcore.Memory.remember/2`, `recall/1`, `search/1`,
+  `list/0`, `forget/1`, `overview/0` -- scoped persistent storage backed by
+  ETS and DETS.
 - **Config**: `Beamcore.Config.put/2`, `get/1`, `put_provider/2`,
   `set_active_provider/1` -- the agent can reconfigure itself mid-session.
 - **Sub-agents**: `Beamcore.Agent.SubAgent.run/2` -- spawn a bounded sub-agent
@@ -237,7 +251,7 @@ Beamcore takes a different approach. The model has **one tool**: execute Elixir.
 
 Classic agents front-load capability into the harness. Want to read a file? Call
 `file_read`. Want to search? Call `grep`. Want to do both and correlate the
-results? Call `file_read`, then `grep`, then `file_read` again -- three
+results? Call `file_read`, then `grep`, then `file_read` -- three
 round-trips, three fixed output formats, three context slots consumed.
 
 With eeva, the model writes code that does exactly what it needs in a single
@@ -248,7 +262,7 @@ Path.wildcard("lib/**/*.ex")
 |> Enum.map(fn path -> {path, File.read!(path)} end)
 |> Enum.filter(fn {_, src} -> String.contains?(src, "GenServer") end)
 |> Enum.map(fn {path, src} ->
-  functions = Regex.scan(~r/def (\w+)/, src) |> Enum.map(fn [_, f] -> f end)
+  functions = Regex.scan(~r/def (w+)/, src) |> Enum.map(fn [_, f] -> f end)
   {Path.basename(path), functions}
 end)
 ```
@@ -338,7 +352,7 @@ The agent can reach any connected peer from Eeva:
 # List connected peers
 Node.list()
 
-# Fetch memory entries from another agents project
+# Fetch memory entries from another agent's project
 remote_memory = :rpc.call(:"beamcore-e5f6g7h8@hostname", Beamcore.Memory, :list, [:facts])
 
 # Ask another agent to run a function
@@ -401,7 +415,9 @@ Because Eeva runs inside the same BEAM VM as the agent, the agent can
 recompile modules at runtime:
 
 ```elixir
-Code.compile_string("defmodule MyProject.NewFunction do\\n  def hello, do: :world\\nend")
+Code.compile_string("defmodule MyProject.NewFunction do
+  def hello, do: :world
+end")
 ```
 
 This is real hot code loading -- the new module definition replaces the old one
@@ -429,13 +445,42 @@ restarting.
 
 ## Memory
 
-Beamcore.Memory is a supervised key-value store scoped by
-`{org, repo, type, key}`. Types include: facts, decisions, patterns,
-errors, context, notes, preferences, tasks, projects.
+Beamcore.Memory is a supervised key-value store scoped by type and key. Types
+include: facts, decisions, patterns, errors, context, notes, preferences,
+tasks, projects.
 
 Backed by ETS for reads and DETS for persistence. The agent uses it to remember
 decisions, file relationships, test patterns, and project conventions across
 sessions.
+
+```elixir
+Beamcore.Memory.remember("project_description", "A Phoenix web app")
+Beamcore.Memory.remember(:decisions, "use_uuids", true)
+Beamcore.Memory.recall("project_description")
+Beamcore.Memory.recall(:decisions, "use_uuids")
+Beamcore.Memory.search("phoenix")
+Beamcore.Memory.list(:decisions)
+Beamcore.Memory.forget("old_key")
+Beamcore.Memory.overview()
+```
+
+## Messaging Gateway
+
+Beamcore can run as a chat bot on Telegram and Discord. Set the appropriate
+token(s) and the gateway starts automatically alongside the TUI:
+
+```sh
+# Telegram
+export TELEGRAM_BOT_TOKEN=...
+
+# Discord
+export DISCORD_BOT_TOKEN=...
+
+beamcore
+```
+
+Each chat gets its own session. Messages are queued and processed in order.
+Sessions idle-expire after 4 hours.
 
 ## Application Logs
 

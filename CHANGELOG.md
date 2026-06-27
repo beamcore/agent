@@ -14,6 +14,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Supervised memory, ledger, provider scheduler, and task runtime.
 - Alignment pause/resume for user corrections mid-turn.
 - Token usage tracking with provider-reported or estimated counts.
-- Theme system with 13 built-in themes.
+- Theme system with 30 built-in themes.
 - Multi-node mesh networking for distributed clusters.
 - Release builds for Linux and macOS (x86 and ARM).
