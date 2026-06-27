@@ -71,7 +71,9 @@ The simple path stays unchanged:
 ```
 
 For OAuth2-style providers, use the F3 system screen provider form and set
-`auth strategy` to the strategy the provider needs.
+`auth strategy` to the strategy the provider needs. Type the strategy name
+directly, or use `Space`, `Left`, and `Right` to cycle through the available
+strategies.
 
 Google Vertex AI / Gemini through the OpenAI-compatible Vertex endpoint uses
 Application Default Credentials, so it does not need `token_url`,
