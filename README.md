@@ -62,6 +62,61 @@ export MISTRAL_API_KEY=...
 
 See [`.env.example`](.env.example) for all supported providers.
 
+#### Advanced OAuth2 providers
+
+The simple path stays unchanged:
+
+```sh
+/api add <name> <token> [<base_url>] [<default_model>]
+```
+
+For OAuth2-style providers, use the F3 system screen provider form and set
+`auth strategy` to the strategy the provider needs.
+
+Google Vertex AI / Gemini through the OpenAI-compatible Vertex endpoint uses
+Application Default Credentials, so it does not need `token_url`,
+`client_id`, or `client_secret` in the provider config:
+
+```text
+name: google-vertex
+auth strategy: google_adc
+scope: https://www.googleapis.com/auth/cloud-platform
+credentials file: /absolute/path/to/service-account.json
+base url: https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/LOCATION/endpoints/openapi
+model: google/gemini-2.5-flash
+```
+
+The same config shape in JSON:
+
+```json
+{
+  "auth": {
+    "strategy": "google_adc",
+    "scope": "https://www.googleapis.com/auth/cloud-platform",
+    "credentials_file": "/absolute/path/to/service-account.json"
+  },
+  "base_url": "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/LOCATION/endpoints/openapi",
+  "default_model": "google/gemini-2.5-flash"
+}
+```
+
+If `credentials_file` is omitted, Beamcore checks
+`GOOGLE_APPLICATION_CREDENTIALS` and then the local gcloud ADC file. Existing
+OAuth2 client-credentials providers should use `oauth2_client_credentials`:
+
+```json
+{
+  "auth": {
+    "strategy": "oauth2_client_credentials",
+    "scope": "provider.scope"
+  },
+  "token_url": "https://auth.example.com/oauth/token",
+  "api_key": "base64-basic-credential",
+  "base_url": "https://api.example.com/v1",
+  "default_model": "provider-model"
+}
+```
+
 ### Commands
 
 Once inside the TUI, you can use these slash commands:

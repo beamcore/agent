@@ -86,7 +86,7 @@ defmodule Beamcore.TUI.ProviderFormTest do
     form = Form.handle_key("down", [], form)
     form = Form.handle_key("down", [], form)
 
-    assert form.field == :token_url
+    assert form.field == :auth_strategy
     assert form.scroll_offset > 0
 
     lines =
@@ -99,7 +99,7 @@ defmodule Beamcore.TUI.ProviderFormTest do
       )
       |> rendered_text()
 
-    assert lines =~ "token url"
+    assert lines =~ "auth strategy"
     refute lines =~ "name *"
   end
 
@@ -115,7 +115,7 @@ defmodule Beamcore.TUI.ProviderFormTest do
     assert form.name == ""
   end
 
-  test "OAuth2 fields are hidden until token url is entered" do
+  test "advanced auth fields are hidden until an advanced strategy is selected" do
     form = Form.new()
 
     assert Form.visible_fields(form) |> Enum.map(& &1.id) == [
@@ -123,18 +123,20 @@ defmodule Beamcore.TUI.ProviderFormTest do
              :key,
              :url,
              :model,
+             :auth_strategy,
              :token_url
            ]
 
     form =
-      %{form | field: :token_url}
-      |> Form.insert_text("https://auth.example/token")
+      %{form | field: :auth_strategy, auth_strategy: ""}
+      |> Form.insert_text("oauth2_client_credentials")
 
     assert Form.visible_fields(form) |> Enum.map(& &1.id) == [
              :name,
              :key,
              :url,
              :model,
+             :auth_strategy,
              :token_url,
              :client_id,
              :client_secret,
@@ -145,20 +147,42 @@ defmodule Beamcore.TUI.ProviderFormTest do
            ]
   end
 
-  test "OAuth2 fields are skipped again when token url is cleared" do
+  test "auth strategy field can be typed or cycled" do
+    typed =
+      %{Form.new() | field: :auth_strategy}
+      |> Form.insert_text("g")
+      |> Form.insert_text("oogle_adc")
+
+    assert typed.auth_strategy == "google_adc"
+    assert typed.mode == :google_adc
+
+    cycled =
+      %{Form.new() | field: :auth_strategy}
+      |> then(&Form.handle_key(" ", [], &1))
+
+    assert cycled.auth_strategy == "api_key"
+    assert cycled.mode == :api_key
+  end
+
+  test "OAuth2 fields are skipped again when strategy is reset" do
     form =
-      %{Form.new() | token_url: "x", mode: :oauth2, field: :scope}
+      %{
+        Form.new()
+        | auth_strategy: "oauth2_client_credentials",
+          mode: :oauth2_client_credentials,
+          field: :scope
+      }
       |> Form.insert_text("scope-a")
 
     assert form.field == :scope
     assert Enum.any?(Form.visible_fields(form), &(&1.id == :scope))
 
     form =
-      %{form | field: :token_url}
-      |> Form.handle_backspace()
+      %{form | field: :auth_strategy, auth_strategy: ""}
+      |> Form.insert_text("bearer")
 
     refute Enum.any?(Form.visible_fields(form), &(&1.id == :scope))
-    assert form.field == :token_url
+    assert form.field == :auth_strategy
   end
 
   test "OAuth2 provider form saves generic auth and TLS fields" do
@@ -167,6 +191,8 @@ defmodule Beamcore.TUI.ProviderFormTest do
       | name: "oauth-provider",
         url: "https://compatible.example/v1",
         model: "chat-model",
+        auth_strategy: "oauth2_client_credentials",
+        mode: :oauth2_client_credentials,
         token_url: "https://auth.example/token",
         client_id: "client",
         client_secret: "secret",
@@ -177,7 +203,11 @@ defmodule Beamcore.TUI.ProviderFormTest do
 
     assert {:save, "oauth-provider", config, _form} = Form.handle_key("enter", [], form)
 
-    assert config["auth"] == "oauth2"
+    assert config["auth"] == %{
+             "strategy" => "oauth2_client_credentials",
+             "scope" => "CHAT_API_SCOPE"
+           }
+
     assert config["token_url"] == "https://auth.example/token"
     assert config["client_id"] == "client"
     assert config["client_secret"] == "secret"
@@ -195,13 +225,42 @@ defmodule Beamcore.TUI.ProviderFormTest do
         key: "preencoded-basic-key",
         url: "https://compatible.example/v1",
         model: "chat-model",
+        auth_strategy: "oauth2_client_credentials",
+        mode: :oauth2_client_credentials,
         token_url: "https://auth.example/token"
     }
 
     assert {:save, "oauth-provider", config, _form} = Form.handle_key("enter", [], form)
 
-    assert config["auth"] == "oauth2"
+    assert config["auth"] == %{"strategy" => "oauth2_client_credentials"}
     assert config["api_key"] == "preencoded-basic-key"
+    refute Map.has_key?(config, "client_id")
+    refute Map.has_key?(config, "client_secret")
+  end
+
+  test "Google ADC provider form saves strategy without OAuth client secret fields" do
+    form = %{
+      Form.new()
+      | name: "google-vertex",
+        url:
+          "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/endpoints/openapi",
+        model: "google/gemini-2.5-flash",
+        auth_strategy: "google_adc",
+        mode: :google_adc,
+        scope: "https://www.googleapis.com/auth/cloud-platform",
+        credentials_file: "/tmp/google-service-account.json"
+    }
+
+    assert {:save, "google-vertex", config, _form} = Form.handle_key("enter", [], form)
+
+    assert config["auth"] == %{
+             "strategy" => "google_adc",
+             "scope" => "https://www.googleapis.com/auth/cloud-platform",
+             "credentials_file" => "/tmp/google-service-account.json"
+           }
+
+    refute Map.has_key?(config, "api_key")
+    refute Map.has_key?(config, "token_url")
     refute Map.has_key?(config, "client_id")
     refute Map.has_key?(config, "client_secret")
   end
@@ -288,8 +347,8 @@ defmodule Beamcore.TUI.ProviderFormTest do
 
     lines = TuiSystem.render_text(resized.f3_state, 76, 15) |> rendered_text()
 
-    assert resized.f3_state.providers.form.field == :token_url
-    assert lines =~ "token url"
+    assert resized.f3_state.providers.form.field == :auth_strategy
+    assert lines =~ "auth strategy"
   end
 
   test "provider save key path does not write directly to stdout or stderr" do

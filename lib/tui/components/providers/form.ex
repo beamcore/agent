@@ -10,13 +10,19 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     %{id: :key, label: "api key"},
     %{id: :url, label: "base url"},
     %{id: :model, label: "model"},
+    %{id: :auth_strategy, label: "auth strategy"},
     %{id: :token_url, label: "token url"},
-    %{id: :client_id, label: "client id", oauth?: true},
-    %{id: :client_secret, label: "client secret", oauth?: true},
-    %{id: :scope, label: "scope", oauth?: true},
-    %{id: :token_request_id_header, label: "request id header", oauth?: true},
-    %{id: :cacertfile, label: "ca cert file", oauth?: true},
-    %{id: :ssl_verify, label: "ssl verify", oauth?: true}
+    %{id: :client_id, label: "client id", strategies: [:oauth2_client_credentials]},
+    %{id: :client_secret, label: "client secret", strategies: [:oauth2_client_credentials]},
+    %{id: :scope, label: "scope", strategies: [:oauth2_client_credentials, :google_adc]},
+    %{id: :credentials_file, label: "credentials file", strategies: [:google_adc]},
+    %{
+      id: :token_request_id_header,
+      label: "request id header",
+      strategies: [:oauth2_client_credentials]
+    },
+    %{id: :cacertfile, label: "ca cert file", strategies: [:oauth2_client_credentials]},
+    %{id: :ssl_verify, label: "ssl verify", strategies: [:oauth2_client_credentials]}
   ]
 
   defstruct field: :name,
@@ -24,14 +30,16 @@ defmodule Beamcore.TUI.Components.Providers.Form do
             key: "",
             url: "",
             model: "",
+            auth_strategy: "bearer",
             token_url: "",
             client_id: "",
             client_secret: "",
             scope: "",
+            credentials_file: "",
             token_request_id_header: "",
             cacertfile: "",
             ssl_verify: "auto",
-            mode: :openai,
+            mode: :bearer,
             error: nil,
             fields: nil,
             scroll_offset: 0,
@@ -53,8 +61,10 @@ defmodule Beamcore.TUI.Components.Providers.Form do
       |> ensure_focus_valid()
       |> ensure_focus_visible()
 
-    mode_label = if form.mode == :oauth2, do: "OAuth2", else: "OpenAI"
-    mode_style = if form.mode == :oauth2, do: accent, else: muted
+    mode_label = strategy_label(form.mode)
+
+    mode_style =
+      if form.mode in [:oauth2_client_credentials, :google_adc], do: accent, else: muted
 
     rows =
       form
@@ -108,7 +118,10 @@ defmodule Beamcore.TUI.Components.Providers.Form do
           spans: [
             %Span{content: "  Add Provider  ", style: accent},
             %Span{content: "[#{mode_label}]", style: mode_style},
-            %Span{content: "  (fill token url = OAuth2)", style: muted}
+            %Span{
+              content: "  (auth: bearer | oauth2_client_credentials | google_adc)",
+              style: muted
+            }
           ]
         },
         %Line{spans: [%Span{content: "  #{String.duplicate("─", 40)}", style: muted}]}
@@ -159,6 +172,15 @@ defmodule Beamcore.TUI.Components.Providers.Form do
 
   def handle_key("up", _mods, form), do: previous_field(form, wrap?: false)
 
+  def handle_key(key, _mods, %{field: :auth_strategy} = form)
+      when key in ["left", "right", " "] do
+    direction = if key == "left", do: -1, else: 1
+
+    form
+    |> cycle_auth_strategy(direction)
+    |> ensure_focus_visible()
+  end
+
   def handle_key("enter", _mods, form) do
     form = auto_detect_mode(form)
 
@@ -166,32 +188,36 @@ defmodule Beamcore.TUI.Components.Providers.Form do
       form.name == "" ->
         focus_field(%{form | error: "name required"}, :name)
 
-      form.mode != :oauth2 and form.key == "" ->
+      form.mode in [:bearer, :api_key] and form.key == "" ->
         focus_field(%{form | error: "key required"}, :key)
 
-      form.mode == :oauth2 and form.token_url == "" ->
+      form.mode == :oauth2_client_credentials and form.token_url == "" ->
         focus_field(%{form | error: "token url required for OAuth2"}, :token_url)
 
-      form.mode == :oauth2 and form.key == "" and form.client_id == "" ->
+      form.mode == :oauth2_client_credentials and form.key == "" and form.client_id == "" ->
         focus_field(%{form | error: "client id required for OAuth2"}, :client_id)
 
-      form.mode == :oauth2 and form.key == "" and form.client_secret == "" ->
+      form.mode == :oauth2_client_credentials and form.key == "" and form.client_secret == "" ->
         focus_field(%{form | error: "client secret required for OAuth2"}, :client_secret)
 
       true ->
+        auth = auth_config(form)
+
         config =
           %{
             "api_key" => non_empty(form.key),
             "base_url" => non_empty(form.url),
             "default_model" => non_empty(form.model),
-            "auth" => if(form.mode == :oauth2, do: "oauth2", else: nil),
+            "auth" => auth,
             "token_url" => non_empty(form.token_url),
             "client_id" => non_empty(form.client_id),
             "client_secret" => non_empty(form.client_secret),
             "scope" => non_empty(form.scope),
+            "credentials_file" => non_empty(form.credentials_file),
             "token_request_id_header" => non_empty(form.token_request_id_header),
             "cacertfile" => non_empty(form.cacertfile),
-            "ssl_verify" => ssl_verify_value(form.ssl_verify)
+            "ssl_verify" =>
+              if(form.mode == :oauth2_client_credentials, do: ssl_verify_value(form.ssl_verify))
           }
           |> Enum.reject(fn {_, v} -> is_nil(v) end)
           |> Map.new()
@@ -209,7 +235,8 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     form = ensure_focus_valid(form)
     field = field_atom(form.field)
 
-    %{Map.update!(form, field, &(&1 <> char)) | error: nil}
+    form
+    |> update_field_text(field, char)
     |> auto_detect_mode()
     |> ensure_focus_valid()
     |> ensure_focus_visible()
@@ -232,13 +259,40 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     field = field_atom(form.field)
     clean = String.replace(text, "\n", " ")
 
-    %{Map.update!(form, field, &(&1 <> clean)) | error: nil}
+    form
+    |> update_field_text(field, clean)
     |> auto_detect_mode()
     |> ensure_focus_valid()
     |> ensure_focus_visible()
   end
 
   # -- Private -----------------------------------------------------------------
+
+  defp update_field_text(form, :auth_strategy, text) do
+    current = String.trim(form.auth_strategy)
+
+    value =
+      cond do
+        text == "" -> current
+        complete_strategy?(current) -> text
+        true -> current <> text
+      end
+
+    %{form | auth_strategy: value, error: nil}
+  end
+
+  defp update_field_text(form, field, text) do
+    %{Map.update!(form, field, &(&1 <> text)) | error: nil}
+  end
+
+  defp cycle_auth_strategy(form, direction) do
+    strategies = [:bearer, :api_key, :oauth2_client_credentials, :google_adc, :none]
+    current = normalize_strategy(String.trim(form.auth_strategy))
+    idx = Enum.find_index(strategies, &(&1 == current)) || 0
+    next = Enum.at(strategies, rem(idx + direction + length(strategies), length(strategies)))
+
+    %{form | auth_strategy: strategy_input(next), mode: next, error: nil}
+  end
 
   defp next_field(form, opts) do
     form = auto_detect_mode(form)
@@ -282,10 +336,12 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp field_value(form, :key), do: mask(form.key)
   defp field_value(form, :url), do: form.url
   defp field_value(form, :model), do: form.model
+  defp field_value(form, :auth_strategy), do: form.auth_strategy
   defp field_value(form, :token_url), do: form.token_url
   defp field_value(form, :client_id), do: form.client_id
   defp field_value(form, :client_secret), do: mask(form.client_secret)
   defp field_value(form, :scope), do: form.scope
+  defp field_value(form, :credentials_file), do: form.credentials_file
   defp field_value(form, :token_request_id_header), do: form.token_request_id_header
   defp field_value(form, :cacertfile), do: form.cacertfile
   defp field_value(form, :ssl_verify), do: form.ssl_verify
@@ -294,10 +350,12 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp field_atom(:key), do: :key
   defp field_atom(:url), do: :url
   defp field_atom(:model), do: :model
+  defp field_atom(:auth_strategy), do: :auth_strategy
   defp field_atom(:token_url), do: :token_url
   defp field_atom(:client_id), do: :client_id
   defp field_atom(:client_secret), do: :client_secret
   defp field_atom(:scope), do: :scope
+  defp field_atom(:credentials_file), do: :credentials_file
   defp field_atom(:token_request_id_header), do: :token_request_id_header
   defp field_atom(:cacertfile), do: :cacertfile
   defp field_atom(:ssl_verify), do: :ssl_verify
@@ -326,10 +384,16 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp normalize_field_key("disabled?"), do: :disabled?
   defp normalize_field_key("editable?"), do: :editable?
   defp normalize_field_key("oauth?"), do: :oauth?
+  defp normalize_field_key("strategies"), do: :strategies
   defp normalize_field_key(key), do: key
 
   defp field_hidden?(field, form) do
-    Map.get(field, :hidden?, false) or (Map.get(field, :oauth?, false) and form.mode != :oauth2)
+    Map.get(field, :hidden?, false) or strategy_hidden?(field, form)
+  end
+
+  defp strategy_hidden?(field, form) do
+    strategies = Map.get(field, :strategies)
+    is_list(strategies) and form.mode not in strategies
   end
 
   defp field_disabled?(field), do: Map.get(field, :disabled?, false)
@@ -406,8 +470,89 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     end
   end
 
-  defp auto_detect_mode(form),
-    do: if(form.token_url != "", do: %{form | mode: :oauth2}, else: %{form | mode: :openai})
+  defp auto_detect_mode(form) do
+    raw_strategy = String.trim(form.auth_strategy)
+    strategy = normalize_strategy(raw_strategy)
+
+    strategy =
+      if form.token_url != "" and strategy == :bearer do
+        :oauth2_client_credentials
+      else
+        strategy
+      end
+
+    auth_strategy =
+      cond do
+        form.token_url != "" and raw_strategy in ["", "bearer", "openai"] ->
+          strategy_input(strategy)
+
+        form.field == :auth_strategy and not complete_strategy?(raw_strategy) ->
+          form.auth_strategy
+
+        true ->
+          strategy_input(strategy)
+      end
+
+    %{form | auth_strategy: auth_strategy, mode: strategy}
+  end
+
+  defp normalize_strategy(""), do: :bearer
+  defp normalize_strategy("openai"), do: :bearer
+  defp normalize_strategy("bearer"), do: :bearer
+  defp normalize_strategy("api_key"), do: :api_key
+  defp normalize_strategy("none"), do: :none
+  defp normalize_strategy("oauth2"), do: :oauth2_client_credentials
+  defp normalize_strategy("client_credentials"), do: :oauth2_client_credentials
+  defp normalize_strategy("oauth2_client_credentials"), do: :oauth2_client_credentials
+  defp normalize_strategy("google_adc"), do: :google_adc
+  defp normalize_strategy(_value), do: :bearer
+
+  defp complete_strategy?(value),
+    do:
+      value in [
+        "",
+        "openai",
+        "bearer",
+        "api_key",
+        "none",
+        "oauth2",
+        "client_credentials",
+        "oauth2_client_credentials",
+        "google_adc"
+      ]
+
+  defp strategy_input(:oauth2_client_credentials), do: "oauth2_client_credentials"
+  defp strategy_input(strategy), do: Atom.to_string(strategy)
+
+  defp strategy_label(:oauth2_client_credentials), do: "OAuth2 client credentials"
+  defp strategy_label(:google_adc), do: "Google ADC"
+  defp strategy_label(:api_key), do: "API key"
+  defp strategy_label(:none), do: "None"
+  defp strategy_label(_strategy), do: "Bearer"
+
+  defp auth_config(%{mode: :bearer}), do: nil
+  defp auth_config(%{mode: :oauth2_client_credentials} = form), do: oauth_auth_config(form)
+  defp auth_config(%{mode: :google_adc} = form), do: google_adc_auth_config(form)
+  defp auth_config(%{mode: mode}), do: Atom.to_string(mode)
+
+  defp oauth_auth_config(form) do
+    %{
+      "strategy" => "oauth2_client_credentials",
+      "scope" => non_empty(form.scope)
+    }
+    |> Enum.reject(fn {_, v} -> is_nil(v) end)
+    |> Map.new()
+  end
+
+  defp google_adc_auth_config(form) do
+    %{
+      "strategy" => "google_adc",
+      "scope" => non_empty(form.scope),
+      "credentials_file" => non_empty(form.credentials_file)
+    }
+    |> Enum.reject(fn {_, v} -> is_nil(v) end)
+    |> Map.new()
+  end
 
   defp ssl_verify_value(value) when value in ["false", "FALSE", "0", "no", "NO"], do: false
   defp ssl_verify_value(value) when value in ["true", "TRUE", "1", "yes", "YES"], do: true

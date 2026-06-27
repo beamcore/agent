@@ -283,13 +283,19 @@ defmodule Beamcore.Provider.Registry do
   defp custom_default(_name, config) when is_map(config) do
     has_token_url = is_binary(Map.get(config, "token_url") || Map.get(config, :token_url))
 
+    auth =
+      Map.get(config, "auth") || Map.get(config, :auth) ||
+        if(has_token_url, do: :oauth2_client_credentials, else: :bearer)
+
+    strategy = Auth.strategy(Map.put(config, "auth", auth))
+
     %{
       id: :openai_compatible,
       adapter: OpenAICompatible,
       base_url: nil,
-      auth: if(has_token_url, do: :oauth2, else: :bearer),
+      auth: auth,
       default_model: nil,
-      requires_api_key?: true,
+      requires_api_key?: strategy in [:bearer, :api_key],
       local?: false
     }
   end
@@ -347,8 +353,16 @@ defmodule Beamcore.Provider.Registry do
     config
     |> decrypt_secret_fields(["api_key", "client_secret", "bearer_token", "access_token"])
     |> Map.update("auth", nil, fn
-      auth when is_map(auth) -> decrypt_secret_fields(auth, ["client_secret", "token"])
-      auth -> auth
+      auth when is_map(auth) ->
+        decrypt_secret_fields(auth, [
+          "client_secret",
+          "token",
+          "basic_credential",
+          "authorization_key"
+        ])
+
+      auth ->
+        auth
     end)
   end
 

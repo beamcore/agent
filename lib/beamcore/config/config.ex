@@ -209,10 +209,15 @@ defmodule Beamcore.Config do
       "scopes",
       "client_auth",
       "token_auth",
+      "basic_credential",
+      "authorization_key",
       "api_key_header",
       "api_key_prefix",
       "token_headers",
       "token_request_id_header",
+      "credentials_file",
+      "credential_file",
+      "google_application_credentials",
       "cacertfile",
       "ssl_verify"
     ]
@@ -240,8 +245,16 @@ defmodule Beamcore.Config do
     config
     |> encrypt_secret_fields(["api_key", "client_secret", "bearer_token", "access_token"])
     |> Map.update("auth", nil, fn
-      auth when is_map(auth) -> encrypt_secret_fields(auth, ["client_secret", "token"])
-      auth -> auth
+      auth when is_map(auth) ->
+        encrypt_secret_fields(auth, [
+          "client_secret",
+          "token",
+          "basic_credential",
+          "authorization_key"
+        ])
+
+      auth ->
+        auth
     end)
   end
 
