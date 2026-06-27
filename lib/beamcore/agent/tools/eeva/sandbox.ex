@@ -100,7 +100,6 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
     end)
   end
 
-
   # Rewrite String.to_existing_atom/1,2 -> String.to_atom/1,2 so that
   # models don't hit ArgumentError when the atom hasn't been created yet.
   # Atom table exhaustion is already guarded by AtomBudget.
@@ -108,14 +107,13 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
     Macro.postwalk(quoted, fn
       {{:., meta, [{:__aliases__, alias_meta, [:String]}, :to_existing_atom]}, call_meta, args}
       when length(args) in [1, 2] ->
-        {{:., meta,
-          [{:__aliases__, alias_meta, [:String]}, :to_atom]},
-         call_meta, args}
+        {{:., meta, [{:__aliases__, alias_meta, [:String]}, :to_atom]}, call_meta, args}
 
       node ->
         node
     end)
   end
+
   defp unsafe_atom_name({_location, message, token}) do
     text = to_string(message) <> to_string(token)
 

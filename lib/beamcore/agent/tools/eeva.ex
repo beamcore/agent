@@ -473,12 +473,15 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   end
 
-  defp add_common_hint(message, %Protocol.UndefinedError{protocol: Enumerable, value: value}, _fmt)
+  defp add_common_hint(
+         message,
+         %Protocol.UndefinedError{protocol: Enumerable, value: value},
+         _fmt
+       )
        when is_tuple(value) do
     message <>
       ~s| Hint: many File.* functions return {:ok, value}; pattern-match first, for example {:ok, entries} = File.ls(".").|
   end
-
 
   # Atom confusion: string passed where atom expected (Process.whereis, GenServer.call, :erlang BIFs, etc.)
   # Uses the *formatted* exception string because bare :badarg atoms normalise to
@@ -486,7 +489,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   defp add_common_hint(message, %ArgumentError{}, formatted) do
     cond do
       String.contains?(formatted, "not an atom") or
-        String.contains?(formatted, "not an already existing atom") ->
+          String.contains?(formatted, "not an already existing atom") ->
         message <>
           " Hint: this function requires an atom, not a string." <>
           " For registered processes use Process.whereis(ModuleName)." <>
@@ -510,6 +513,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       message
     end
   end
+
   defp add_common_hint(message, _error, _fmt), do: message
 
   defp recoverable_summary(message) do
