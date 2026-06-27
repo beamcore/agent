@@ -124,33 +124,35 @@ defmodule Beamcore.Agent.Tools.Eeva.HeredocTransform do
     String.contains?(text, "\#{") and has_foreign_indicators?(text)
   end
 
-  @foreign_indicators [
-    # Ruby
-    ~r/\bputs\b/,
-    ~r/\brequire\b/,
-    ~r/\bgets\b/,
-    # Python
-    ~r/\bprint\s*\(/,
-    ~r/\bimport\s+\w+/,
-    ~r/\bfrom\s+\w+/,
-    # JavaScript / TypeScript
-    ~r/\bconsole\.\w+/,
-    ~r/\bconst\s+\w+\s*=/,
-    ~r/\blet\s+\w+\s*=/,
-    # Go
-    ~r/\bfmt\.\w+/,
-    ~r/\bfunc\s+\w+/,
-    ~r/\bpackage\s+\w+/,
-    # Java
-    ~r/\bSystem\.out/,
-    ~r/\bpublic\s+static/,
-    # Shell
-    ~r/\becho\s+/,
-    ~r/^#!\//
-  ]
+  defp foreign_indicators do
+    [
+      # Ruby
+      ~r/\bputs\b/,
+      ~r/\brequire\b/,
+      ~r/\bgets\b/,
+      # Python
+      ~r/\bprint\s*\(/,
+      ~r/\bimport\s+\w+/,
+      ~r/\bfrom\s+\w+/,
+      # JavaScript / TypeScript
+      ~r/\bconsole\.\w+/,
+      ~r/\bconst\s+\w+\s*=/,
+      ~r/\blet\s+\w+\s*=/,
+      # Go
+      ~r/\bfmt\.\w+/,
+      ~r/\bfunc\s+\w+/,
+      ~r/\bpackage\s+\w+/,
+      # Java
+      ~r/\bSystem\.out/,
+      ~r/\bpublic\s+static/,
+      # Shell
+      ~r/\becho\s+/,
+      ~r/^#!\//
+    ]
+  end
 
   defp has_foreign_indicators?(text) do
-    Enum.any?(@foreign_indicators, &Regex.match?(&1, text))
+    Enum.any?(foreign_indicators(), &Regex.match?(&1, text))
   end
 
   # --- rewriting ---
