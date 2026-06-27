@@ -142,6 +142,52 @@ defmodule Beamcore.Provider.RouterTest do
     assert {"RqUID", _request_id} = List.keyfind(opts[:headers], "RqUID", 0)
   end
 
+  test "routes Gemini Vertex OpenAI-compatible provider with Google ADC auth" do
+    Application.put_env(:beamcore, :compatible_http_client, Beamcore.Provider.CompatibleHTTPMock)
+
+    credentials_path = google_adc_credentials_file()
+
+    assert :ok =
+             Beamcore.Config.put_provider("google-vertex", %{
+               auth: %{
+                 strategy: :google_adc,
+                 credentials_file: credentials_path,
+                 scope: "https://www.googleapis.com/auth/cloud-platform"
+               },
+               base_url:
+                 "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/endpoints/openapi",
+               default_model: "google/gemini-2.5-flash"
+             })
+
+    Process.put(
+      :auth_http_responses,
+      {:ok, %{status: 200, body: %{"access_token" => "google-chat-token", "expires_in" => 3600}}}
+    )
+
+    parent = self()
+
+    Process.put(:mock_completions_create, fn client, params ->
+      send(parent, {:call, client.base_url, client.token, client._http_headers, params.model})
+      {:ok, %{"choices" => [%{"message" => %{"role" => "assistant", "content" => "ok"}}]}}
+    end)
+
+    assert {:ok, %{"choices" => [%{"message" => %{"content" => "ok"}}]}} =
+             Router.chat(
+               %{provider: "google-vertex", model: "google/gemini-2.5-flash"},
+               %{messages: [%{role: "user", content: "hi"}], tools: []}
+             )
+
+    assert_receive {:oauth_post, "https://oauth2.googleapis.com/token", auth_opts}
+    assert auth_opts[:body] =~ "grant_type=refresh_token"
+    assert auth_opts[:body] =~ "refresh_token=refresh-token"
+
+    assert_receive {:call,
+                    "https://us-central1-aiplatform.googleapis.com/v1/projects/my-project/locations/us-central1/endpoints/openapi",
+                    "google-chat-token", headers, "google/gemini-2.5-flash"}
+
+    assert {"Authorization", "Bearer google-chat-token"} in headers
+  end
+
   test "OAuth2 compatible providers send system messages before conversation messages" do
     Application.put_env(:beamcore, :compatible_http_client, Beamcore.Provider.CompatibleHTTPMock)
 
@@ -321,4 +367,26 @@ defmodule Beamcore.Provider.RouterTest do
 
   defp restore_compatible_http_client(module),
     do: Application.put_env(:beamcore, :compatible_http_client, module)
+
+  defp google_adc_credentials_file do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_router_google_adc_#{System.unique_integer([:positive])}.json"
+      )
+
+    File.write!(
+      path,
+      Jason.encode!(%{
+        "type" => "authorized_user",
+        "client_id" => "google-client",
+        "client_secret" => "google-secret",
+        "refresh_token" => "refresh-token",
+        "token_uri" => "https://oauth2.googleapis.com/token"
+      })
+    )
+
+    on_exit(fn -> File.rm(path) end)
+    path
+  end
 end
