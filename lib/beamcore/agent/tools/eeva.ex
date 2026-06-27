@@ -227,13 +227,17 @@ defmodule Beamcore.Agent.Tools.Eeva do
   defp format_result({:ok, %{status: :error} = result}, _code, prepared) do
     {stdout, dropped} = truncate_output(result.output)
 
+    # Build the hint-enriched message once; use it for both the model-facing
+    # summary and the TUI failure event so models get actionable guidance.
+    error_message = failure_message(result.kind, result.error, result.stacktrace)
+
     summary =
       append_truncation(
-        recoverable_summary("Eeva program raised #{inspect(result.error)}."),
+        recoverable_summary("Eeva program raised #{error_message}."),
         dropped
       )
 
-    emit_failure(failure_message(result.kind, result.error))
+    emit_failure(error_message)
 
     %{
       "ok" => false,
@@ -446,14 +450,22 @@ defmodule Beamcore.Agent.Tools.Eeva do
     |> String.slice(0, @max_failure_message_chars)
   end
 
-  defp failure_message(kind, error) do
+  defp failure_message(kind, error, stacktrace) do
+    # Normalize bare atoms like :badarg into proper exception structs so
+    # add_common_hint can pattern-match on the struct type.
+    normalized = Exception.normalize(kind, error)
+
+    # The formatted exception with stacktrace includes BIF-specific details
+    # (e.g. "not an atom" from :erlang.whereis) that the message alone lacks.
+    formatted = Exception.format(kind, error, stacktrace)
+
     message =
       try do
-        Exception.message(error)
+        Exception.message(normalized)
       rescue
         _ -> inspect(error)
       end
-      |> add_common_hint(error)
+      |> add_common_hint(normalized, formatted)
 
     case kind do
       :error -> message
@@ -461,13 +473,44 @@ defmodule Beamcore.Agent.Tools.Eeva do
     end
   end
 
-  defp add_common_hint(message, %Protocol.UndefinedError{protocol: Enumerable, value: value})
+  defp add_common_hint(message, %Protocol.UndefinedError{protocol: Enumerable, value: value}, _fmt)
        when is_tuple(value) do
     message <>
       ~s| Hint: many File.* functions return {:ok, value}; pattern-match first, for example {:ok, entries} = File.ls(".").|
   end
 
-  defp add_common_hint(message, _error), do: message
+
+  # Atom confusion: string passed where atom expected (Process.whereis, GenServer.call, :erlang BIFs, etc.)
+  # Uses the *formatted* exception string because bare :badarg atoms normalise to
+  # %ArgumentError{message: "argument error"} which lacks the "not an atom" detail.
+  defp add_common_hint(message, %ArgumentError{}, formatted) do
+    cond do
+      String.contains?(formatted, "not an atom") or
+        String.contains?(formatted, "not an already existing atom") ->
+        message <>
+          " Hint: this function requires an atom, not a string." <>
+          " For registered processes use Process.whereis(ModuleName)." <>
+          " For dynamic module dispatch use Module.concat/1 or Module.safe_concat/1." <>
+          " To convert a string to an atom use String.to_atom/1."
+
+      true ->
+        message
+    end
+  end
+
+  # FunctionClauseError from GenServer.whereis/1 when given a non-atom (e.g. a string)
+  # Matches via formatted exception because bare :function_clause normalises to
+  # %FunctionClauseError{module: nil} — the module/function info is only in the trace.
+  defp add_common_hint(message, %FunctionClauseError{}, formatted) do
+    if String.contains?(formatted, "GenServer.whereis") do
+      message <>
+        " Hint: GenServer.call/3 expects an atom (registered name) or a pid, not a string." <>
+        " Use Process.whereis(MyModule) to look up a registered process by its atom name."
+    else
+      message
+    end
+  end
+  defp add_common_hint(message, _error, _fmt), do: message
 
   defp recoverable_summary(message) do
     "Tool call failed, but the session is still active. #{message} " <>
