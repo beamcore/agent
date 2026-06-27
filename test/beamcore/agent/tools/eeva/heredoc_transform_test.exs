@@ -44,15 +44,20 @@ defmodule Beamcore.Agent.Tools.Eeva.HeredocTransformTest do
 
     test "rewrites only suspicious heredocs when multiple present" do
       dq = dq3()
-      input = Enum.join([
-        "ruby_code = #{dq}",
-        "puts \"Hello \#{name}\"",
-        "#{dq}",
-        "",
-        "elixir_code = #{dq}",
-        "IO.puts(\"Hello world\")",
-        "#{dq}"
-      ], "\n")
+
+      input =
+        Enum.join(
+          [
+            "ruby_code = #{dq}",
+            "puts \"Hello \#{name}\"",
+            "#{dq}",
+            "",
+            "elixir_code = #{dq}",
+            "IO.puts(\"Hello world\")",
+            "#{dq}"
+          ],
+          "\n"
+        )
 
       output = HeredocTransform.transform(input)
       assert output =~ "ruby_code = ~S#{dq}"
@@ -61,12 +66,17 @@ defmodule Beamcore.Agent.Tools.Eeva.HeredocTransformTest do
 
     test "rewrites heredoc with Go regex patterns" do
       dq = dq3()
-      input = Enum.join([
-        "code = #{dq}",
-        "re := regexp.MustCompile(`\\d{4}-\\d{2}-\\d{2}`)",
-        "fmt.Println(re.MatchString(\"2024-01-01\"))",
-        "#{dq}"
-      ], "\n")
+
+      input =
+        Enum.join(
+          [
+            "code = #{dq}",
+            "re := regexp.MustCompile(`\\d{4}-\\d{2}-\\d{2}`)",
+            "fmt.Println(re.MatchString(\"2024-01-01\"))",
+            "#{dq}"
+          ],
+          "\n"
+        )
 
       output = HeredocTransform.transform(input)
       assert output =~ "code = ~S#{dq}"
@@ -74,12 +84,17 @@ defmodule Beamcore.Agent.Tools.Eeva.HeredocTransformTest do
 
     test "does not rewrite JS template literals" do
       dq = dq3()
-      input = Enum.join([
-        "code = #{dq}",
-        "const name = \"world\";",
-        "console.log(`Hello ${name}`);",
-        "#{dq}"
-      ], "\n")
+
+      input =
+        Enum.join(
+          [
+            "code = #{dq}",
+            "const name = \"world\";",
+            "console.log(`Hello ${name}`);",
+            "#{dq}"
+          ],
+          "\n"
+        )
 
       output = HeredocTransform.transform(input)
       # console.log is foreign but no #{} present, and no backslashes
@@ -88,12 +103,17 @@ defmodule Beamcore.Agent.Tools.Eeva.HeredocTransformTest do
 
     test "rewrites when #{} combined with foreign keyword" do
       dq = dq3()
-      input = Enum.join([
-        "code = #{dq}",
-        "require 'json'",
-        "data = JSON.parse(\"\#{input}\")",
-        "#{dq}"
-      ], "\n")
+
+      input =
+        Enum.join(
+          [
+            "code = #{dq}",
+            "require 'json'",
+            "data = JSON.parse(\"\#{input}\")",
+            "#{dq}"
+          ],
+          "\n"
+        )
 
       output = HeredocTransform.transform(input)
       assert output =~ "code = ~S#{dq}"

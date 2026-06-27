@@ -39,6 +39,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
         The runtime captures stdout/stderr and returns structured results.
         For delegating work to other models, use Beamcore.Agent.SubAgent -- spawn a sub-agent with SubAgent.run("task") or offload to cheaper models with SubAgent.run("task", provider: "mistral").
         No tool chaining -- one program does it all.
+        When writing heredocs, use `~S\"""` to avoid interpolation and escape processing.
         """,
         parameters: %{
           type: "object",

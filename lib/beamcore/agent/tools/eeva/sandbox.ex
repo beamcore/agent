@@ -33,9 +33,9 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   ## Heredoc transform
 
   Before parsing, `HeredocTransform.transform/1` scans the raw source text for
-  bare `"""` heredocs whose content looks like foreign code (regex patterns,
+  bare `\"""` heredocs whose content looks like foreign code (regex patterns,
   heavy backslashes, or `` with foreign-language keywords). Suspicious heredocs
-  are rewritten to `~S"""` form, which disables Elixir interpolation and escape
+  are rewritten to `~S\"""` form, which disables Elixir interpolation and escape
   processing. This prevents models from corrupting embedded Python, Ruby, Go, JS,
   etc. code without needing to know about Elixir's escaping rules.
 
