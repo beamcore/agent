@@ -30,9 +30,20 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   been loaded yet, which raises ArgumentError. Since the AtomBudget guard
   already prevents atom table exhaustion, the sandbox safely rewrites
   `String.to_existing_atom/1,2` → `String.to_atom/1,2` so these calls succeed.
+  ## Heredoc transform
+
+  Before parsing, `HeredocTransform.transform/1` scans the raw source text for
+  bare `\"""` heredocs whose content looks like foreign code (regex patterns,
+  heavy backslashes, or `` with foreign-language keywords). Suspicious heredocs
+  are rewritten to `~S\"""` form, which disables Elixir interpolation and escape
+  processing. This prevents models from corrupting embedded Python, Ruby, Go, JS,
+  etc. code without needing to know about Elixir's escaping rules.
+
   """
 
   alias Beamcore.Agent.Tools.Eeva.AtomBudget
+
+  alias Beamcore.Agent.Tools.Eeva.HeredocTransform
 
   @type prepared :: %{quoted: Macro.t(), node_count: non_neg_integer()}
 
@@ -49,6 +60,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
 
       true ->
         with :ok <- AtomBudget.admit(code),
+             code = HeredocTransform.transform(code),
              {:ok, quoted} <- parse(code),
              quoted <- instrument_system_cmd(quoted),
              quoted <- instrument_to_existing_atom(quoted),

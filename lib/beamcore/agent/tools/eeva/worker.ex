@@ -316,6 +316,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Worker do
     parts =
       [stdout, stderr, diag_text]
       |> Enum.reject(&(&1 == "" or is_nil(&1)))
+      |> Enum.map(&Beamcore.Text.sanitize/1)
 
     Enum.join(parts, "\n")
   end

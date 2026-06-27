@@ -12,6 +12,7 @@ defmodule Beamcore.TUI.Wrap do
 
     text
     |> to_string()
+    |> Beamcore.Text.sanitize()
     |> String.split("\n")
     |> wrap_lines(width, false, [])
     |> Enum.reverse()
