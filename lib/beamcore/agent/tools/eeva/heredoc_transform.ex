@@ -93,23 +93,27 @@ defmodule Beamcore.Agent.Tools.Eeva.HeredocTransform do
     end
   end
 
-  defp heredoc_closer?(line), do: String.trim(line) == triple_quote()
+  defp heredoc_closer?(line) do
+    line |> String.trim_leading() |> String.starts_with?(triple_quote())
+  end
 
   defp triple_quote, do: String.duplicate("\"", 3)
 
   # --- suspicion heuristics ---
 
   defp suspicious_line?(line) do
-    backslash_suspicious?(line) or interpolation_with_corroboration?(line)
+    backslash_suspicious?(line) or interpolation_with_corroboration?(line) or
+      has_shebang?(line)
   end
 
   defp suspicious_content?(content) do
-    backslash_heavy?(content) or interpolation_with_corroboration?(content)
+    backslash_heavy?(content) or interpolation_with_corroboration?(content) or
+      has_shebang?(content)
   end
 
   # Tier 1: regex/path backslash patterns on a single line
   defp backslash_suspicious?(line) do
-    Regex.match?(~r/\\[dswDSWnrtbB]/, line) or
+    Regex.match?(~r/\\[dswDSWnrtbB"']/, line) or
       String.contains?(line, "\\\\")
   end
 
@@ -154,6 +158,8 @@ defmodule Beamcore.Agent.Tools.Eeva.HeredocTransform do
   defp has_foreign_indicators?(text) do
     Enum.any?(foreign_indicators(), &Regex.match?(&1, text))
   end
+
+  defp has_shebang?(text), do: String.contains?(text, "#!/")
 
   # --- rewriting ---
 
