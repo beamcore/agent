@@ -23,6 +23,13 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
   Note: other OS-execution paths (:os.cmd, System.shell, etc.) are not
   rewritten because models usually dont use it. Eeva is a
   full-capability tool for trusted users.
+
+  ## String.to_existing_atom rewrite
+
+  Models frequently call `String.to_existing_atom/1,2` on atoms that have not
+  been loaded yet, which raises ArgumentError. Since the AtomBudget guard
+  already prevents atom table exhaustion, the sandbox safely rewrites
+  `String.to_existing_atom/1,2` → `String.to_atom/1,2` so these calls succeed.
   """
 
   alias Beamcore.Agent.Tools.Eeva.AtomBudget
@@ -44,6 +51,7 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
         with :ok <- AtomBudget.admit(code),
              {:ok, quoted} <- parse(code),
              quoted <- instrument_system_cmd(quoted),
+             quoted <- instrument_to_existing_atom(quoted),
              {:ok, node_count} <- count_nodes(quoted, max_ast_nodes),
              {:ok, quoted} do
           {:ok, %{quoted: quoted, node_count: node_count}}
@@ -92,6 +100,22 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
     end)
   end
 
+
+  # Rewrite String.to_existing_atom/1,2 -> String.to_atom/1,2 so that
+  # models don't hit ArgumentError when the atom hasn't been created yet.
+  # Atom table exhaustion is already guarded by AtomBudget.
+  defp instrument_to_existing_atom(quoted) do
+    Macro.postwalk(quoted, fn
+      {{:., meta, [{:__aliases__, alias_meta, [:String]}, :to_existing_atom]}, call_meta, args}
+      when length(args) in [1, 2] ->
+        {{:., meta,
+          [{:__aliases__, alias_meta, [:String]}, :to_atom]},
+         call_meta, args}
+
+      node ->
+        node
+    end)
+  end
   defp unsafe_atom_name({_location, message, token}) do
     text = to_string(message) <> to_string(token)
 

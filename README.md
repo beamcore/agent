@@ -69,12 +69,20 @@ Once inside the TUI, you can use these slash commands:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
-| `/api add` | Add a new provider |
+| `/new [id]` | Start a new chat session |
+| `/compress` | Compress/rollover session context |
 | `/api list` | List configured providers |
-| `/clear` | Clear the chat history |
-| `/attach <name>` | Attach Eeva to a project node's live runtime |
-| `/detach` | Detach; run Eeva locally again |
+| `/api add <name> <key> [url] [model]` | Add a provider |
+| `/api use <name>` | Switch active provider |
+| `/api delete <name>` | Delete a provider |
+| `/env` | Show environment/providers |
+| `/attach [name]` | Attach Eeva to a project node |
+| `/detach` | Detach from remote node |
+| `/stop` | Cancel running task |
+| `/clear` | Clear chat history |
+| `/theme` | Change color theme |
 | `/exit` | Quit the agent |
+
 
 ## Architecture
 
