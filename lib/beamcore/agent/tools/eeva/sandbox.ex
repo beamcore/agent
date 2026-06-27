@@ -58,6 +58,10 @@ defmodule Beamcore.Agent.Tools.Eeva.Sandbox do
       byte_size(code) > max_code_bytes ->
         {:error, "Eeva code exceeds the #{max_code_bytes}-byte limit."}
 
+      not String.valid?(code) ->
+        {:error,
+         "Eeva code contains invalid UTF-8 encoding. Ensure all characters are valid Unicode."}
+
       true ->
         with :ok <- AtomBudget.admit(code),
              code = HeredocTransform.transform(code),

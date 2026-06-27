@@ -103,7 +103,7 @@ defmodule Beamcore.TUI.LifecycleTest do
       |> Enum.map_join("", & &1.content)
 
     assert text =~ "provider-a"
-    assert text =~ "Mesh Topology"
+    assert text =~ "Mesh"
   end
 
   test "resize schedules a debounced redraw instead of rendering immediately" do

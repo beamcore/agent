@@ -70,7 +70,10 @@ defmodule Beamcore.Agent.MixProject do
       {:dialyxir, "~> 1.4", only: [:dev], runtime: false},
       {:nadia, "~> 1.0.0"},
       {:nostrum, "~> 0.10.4", runtime: false},
-      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false},
+      {:postgrex, "~> 0.22.2"},
+      {:myxql, "~> 0.8.0"},
+      {:mongodb_driver, "~> 1.6"}
     ]
   end
 end
