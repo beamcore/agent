@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.Components.System.Stats do
   @moduledoc false
 
-  alias Beamcore.TUI.Components.System.Store
+  alias Beamcore.TUI.Components.System.{Section, Store}
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
   alias Number.SI
@@ -16,7 +16,7 @@ defmodule Beamcore.TUI.Components.System.Stats do
 
   def render(stats, width) when is_map(stats) do
     content = build_content(stats, width)
-    box_frame(content, width)
+    Section.section("Token Usage", content, width, icon: "◈")
   end
 
   def snapshot, do: Store.load()
@@ -25,14 +25,10 @@ defmodule Beamcore.TUI.Components.System.Stats do
     accent = Theme.style(:accent)
     muted = Theme.style(:muted)
     subtle = Theme.style(:subtle)
-    inner = width - 6
-
-    title = [
-      %Line{spans: [%Span{content: " ◈ Token Usage", style: accent}]}
-    ]
+    inner = width - 10
 
     if map_size(stats) == 0 do
-      title ++ [%Line{spans: [%Span{content: "   no usage recorded yet", style: muted}]}]
+      [%Line{spans: [%Span{content: "  no usage recorded yet", style: muted}]}]
     else
       max_total =
         stats
@@ -42,7 +38,7 @@ defmodule Beamcore.TUI.Components.System.Stats do
       header = [
         %Line{
           spans: [
-            %Span{content: "   #{pad("provider", 12)}", style: muted},
+            %Span{content: "  #{pad("provider", 12)}", style: muted},
             %Span{content: pad("input", 9), style: muted},
             %Span{content: pad("output", 9), style: muted},
             %Span{content: pad("total", 9), style: muted},
@@ -51,7 +47,7 @@ defmodule Beamcore.TUI.Components.System.Stats do
           ]
         },
         %Line{
-          spans: [%Span{content: "   #{String.duplicate("─", max(inner - 3, 4))}", style: subtle}]
+          spans: [%Span{content: "  #{String.duplicate("─", max(inner - 3, 4))}", style: subtle}]
         }
       ]
 
@@ -67,7 +63,7 @@ defmodule Beamcore.TUI.Components.System.Stats do
 
           %Line{
             spans: [
-              %Span{content: "   #{pad(name, 12)}", style: Theme.style(:base)},
+              %Span{content: "  #{pad(name, 12)}", style: Theme.style(:base)},
               %Span{content: pad(inp, 9), style: Theme.style(:done)},
               %Span{content: pad(out, 9), style: Theme.style(:done)},
               %Span{content: pad(fmt(tot), 9), style: accent},
@@ -77,7 +73,7 @@ defmodule Beamcore.TUI.Components.System.Stats do
           }
         end)
 
-      title ++ header ++ rows
+      header ++ rows
     end
   end
 
@@ -93,42 +89,6 @@ defmodule Beamcore.TUI.Components.System.Stats do
 
   defp bar_style(value, max) when value == max, do: Theme.style(:status_hot)
   defp bar_style(_, _), do: Theme.style(:done)
-
-  defp box_frame(lines, width) do
-    max_len = lines |> Enum.map(&line_char_len/1) |> Enum.max(fn -> 0 end)
-    inner = max(max_len + 2, width - 4)
-
-    top = "┌" <> String.duplicate("─", inner) <> "┐"
-    bot = "└" <> String.duplicate("─", inner) <> "┘"
-
-    content =
-      Enum.map(lines, fn line ->
-        pad_line(line, inner)
-      end)
-
-    subtle = Theme.style(:subtle)
-
-    [%Line{spans: [%Span{content: top, style: subtle}]}] ++
-      content ++
-      [%Line{spans: [%Span{content: bot, style: subtle}]}]
-  end
-
-  defp pad_line(%Line{spans: spans} = line, target) do
-    diff = target - line_char_len(line)
-
-    if diff > 0 do
-      last = List.last(spans)
-      rest = Enum.drop(spans, -1)
-      padded = %{last | content: last.content <> String.duplicate(" ", diff)}
-      %Line{spans: rest ++ [padded]}
-    else
-      line
-    end
-  end
-
-  defp line_char_len(%Line{spans: spans}) do
-    spans |> Enum.map(fn s -> String.length(s.content || "") end) |> Enum.sum()
-  end
 
   defp fmt(nil), do: "0"
   defp fmt(0), do: "0"

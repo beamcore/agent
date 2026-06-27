@@ -1,8 +1,5 @@
 defmodule Beamcore.TUI.Components.System.Mesh do
-  @moduledoc """
-  Real-time mesh topology visualization.
-  Builds mesh topology snapshots for the F3 screen.
-  """
+  @moduledoc "Real-time mesh topology visualization for the F3 screen."
 
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
@@ -113,45 +110,30 @@ defmodule Beamcore.TUI.Components.System.Mesh do
   end
 
   # ── Line Building ──
+  # Returns content-only lines (no section header — Section handles that).
 
-  defp build_lines(snapshot, width) do
+  defp build_lines(snapshot, _width) do
     accent = Theme.style(:accent)
     subtle = Theme.style(:subtle)
     muted = Theme.style(:muted)
     done = Theme.style(:done)
     base = Theme.style(:base)
 
-    inner = max(width - 6, 40)
-
-    # Section header
-    header = [
-      %Line{spans: [%Span{content: ""}]},
-      %Line{
-        spans: [
-          %Span{content: " ╰─ ", style: subtle},
-          %Span{content: "Mesh", style: accent},
-          %Span{content: " " <> String.duplicate("─", max(inner - 9, 4)), style: subtle}
-        ]
-      },
-      %Line{spans: [%Span{content: ""}]}
-    ]
-
-    # Self node + peers rendered as a compact table
-    self_lines = node_row(snapshot.self_info, inner, accent, done, base, subtle, muted, true)
+    # Self node + peers
+    self_lines = node_row(snapshot.self_info, accent, done, base, subtle, muted, true)
 
     peer_lines =
       if snapshot.peers == [] do
         [
           %Line{
             spans: [
-              %Span{content: "   ", style: base},
-              %Span{content: "no peers connected", style: muted}
+              %Span{content: "  no peers connected", style: muted}
             ]
           }
         ]
       else
         Enum.flat_map(snapshot.peers, fn info ->
-          node_row(info, inner, accent, done, base, subtle, muted, false)
+          node_row(info, accent, done, base, subtle, muted, false)
         end)
       end
 
@@ -164,7 +146,7 @@ defmodule Beamcore.TUI.Components.System.Mesh do
       %Line{spans: [%Span{content: ""}]},
       %Line{
         spans: [
-          %Span{content: "   peers ", style: muted},
+          %Span{content: "  peers ", style: muted},
           %Span{content: "#{peer_count}", style: accent},
           %Span{content: "  ·  epmd ", style: muted},
           %Span{content: "#{epmd_count}", style: accent},
@@ -176,10 +158,10 @@ defmodule Beamcore.TUI.Components.System.Mesh do
       }
     ]
 
-    header ++ self_lines ++ peer_lines ++ summary
+    self_lines ++ peer_lines ++ summary
   end
 
-  defp node_row(info, _inner, accent, done, base, subtle, muted, is_self?) do
+  defp node_row(info, accent, done, base, subtle, muted, is_self?) do
     dot = if is_self?, do: "●", else: "○"
     dot_style = if is_self?, do: done, else: accent
     label = if is_self?, do: "self", else: "peer"
@@ -200,7 +182,7 @@ defmodule Beamcore.TUI.Components.System.Mesh do
       %Line{
         spans:
           [
-            %Span{content: "   ", style: base},
+            %Span{content: "  ", style: base},
             %Span{content: "#{dot} ", style: dot_style},
             %Span{content: "#{info.short_name}", style: accent},
             %Span{content: "@#{info.host}", style: muted},

@@ -6,8 +6,6 @@ defmodule Beamcore.TUI.Components.Providers do
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
 
-  @box_inner 74
-
   defstruct screen_type: :providers,
             render_dirty?: true,
             configure_for: :agent,
@@ -30,8 +28,8 @@ defmodule Beamcore.TUI.Components.Providers do
   def mark_dirty(p), do: %{p | render_dirty?: true}
   def clear_dirty(p), do: %{p | render_dirty?: false}
 
-  def render_items(p, width, height \\ nil) when is_struct(p, __MODULE__),
-    do: render_list_items(p, width, height)
+  def render_items(p, height \\ nil) when is_struct(p, __MODULE__),
+    do: render_list_items(p, height)
 
   def handle_event(%ExRatatui.Event.Mouse{}, p), do: {:noreply, p}
 
@@ -71,11 +69,11 @@ defmodule Beamcore.TUI.Components.Providers do
 
   defp paste_event?(_), do: false
 
-  defp render_list_items(p, width, height) do
+  defp render_list_items(p, height) do
     if p.adding?,
       do:
         Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base), height),
-      else: table_header() ++ render_rows(p, width)
+      else: table_header() ++ render_rows(p)
   end
 
   defp table_header do
@@ -83,86 +81,64 @@ defmodule Beamcore.TUI.Components.Providers do
     muted = Theme.style(:muted)
 
     [
-      %Line{spans: [%Span{content: "   ╭─ provider #{dashes(62)}─╮", style: subtle}]},
       %Line{
         spans: [
-          %Span{content: "   │  ", style: subtle},
+          %Span{content: "  ", style: muted},
           %Span{content: pad("name", 16), style: muted},
           %Span{content: pad("model", 20), style: muted},
           %Span{content: pad("url", 24), style: muted},
-          %Span{content: "key", style: muted},
-          %Span{content: "   │", style: subtle}
+          %Span{content: "key", style: muted}
         ]
       },
-      %Line{spans: [%Span{content: "   ├#{dashes(@box_inner)}┤", style: subtle}]}
+      %Line{
+        spans: [%Span{content: "  " <> String.duplicate("─", 68), style: subtle}]
+      }
     ]
   end
 
-  defp render_rows(p, width) do
+  defp render_rows(p) do
     accent = Theme.style(:accent)
     muted = Theme.style(:muted)
     base = Theme.style(:base)
-    subtle = Theme.style(:subtle)
-    r = rp(width)
-    bottom = %Line{spans: [%Span{content: "   ╰#{dashes(@box_inner)}╯#{r}", style: subtle}]}
 
     if p.providers == [] do
       [
         %Line{
           spans: [
-            %Span{content: "   │#{String.duplicate(" ", @box_inner - 1)}│#{r}", style: subtle}
+            %Span{content: "  no providers configured", style: muted}
           ]
-        },
-        %Line{
-          spans: [
-            %Span{content: "   │  no providers configured", style: muted},
-            %Span{content: String.duplicate(" ", @box_inner - 30) <> "│#{r}", style: subtle}
-          ]
-        },
-        %Line{
-          spans: [
-            %Span{content: "   │#{String.duplicate(" ", @box_inner - 1)}│#{r}", style: subtle}
-          ]
-        },
-        bottom
+        }
       ]
     else
-      rows =
-        p.providers
-        |> Enum.with_index()
-        |> Enum.flat_map(fn {{name, config}, idx} ->
-          sel? = idx == p.selected
-          act? = name == p.active_provider
-          cur = if sel?, do: "▸", else: " "
-          mark = if act?, do: "●", else: "○"
-          ns = if sel?, do: accent, else: base
-          ms = if act?, do: Theme.style(:done), else: muted
-          model = Map.get(config, "default_model") || "—"
-          url = Map.get(config, "base_url") || "—"
-          key = if Map.get(config, "api_key"), do: "✓", else: "✗"
-          ks = if key == "✓", do: Theme.style(:done), else: Theme.style(:error)
+      p.providers
+      |> Enum.with_index()
+      |> Enum.flat_map(fn {{name, config}, idx} ->
+        sel? = idx == p.selected
+        act? = name == p.active_provider
+        cur = if sel?, do: "▸", else: " "
+        mark = if act?, do: "●", else: "○"
+        ns = if sel?, do: accent, else: base
+        ms = if act?, do: Theme.style(:done), else: muted
+        model = Map.get(config, "default_model") || "—"
+        url = Map.get(config, "base_url") || "—"
+        key = if Map.get(config, "api_key"), do: "✓", else: "✗"
+        ks = if key == "✓", do: Theme.style(:done), else: Theme.style(:error)
 
-          [
-            %Line{
-              spans: [
-                %Span{content: "   │ #{cur}", style: subtle},
-                %Span{content: mark, style: ms},
-                %Span{content: " #{pad(truncate(name, 14), 16)}", style: ns},
-                %Span{content: pad(truncate(model, 18), 20), style: muted},
-                %Span{content: pad(truncate(url, 22), 24), style: subtle},
-                %Span{content: key, style: ks},
-                %Span{content: "   │#{r}", style: subtle}
-              ]
-            }
-          ]
-        end)
-
-      rows ++ [bottom]
+        [
+          %Line{
+            spans: [
+              %Span{content: " #{cur}", style: accent},
+              %Span{content: mark, style: ms},
+              %Span{content: " #{pad(truncate(name, 14), 16)}", style: ns},
+              %Span{content: pad(truncate(model, 18), 20), style: muted},
+              %Span{content: pad(truncate(url, 22), 24), style: muted},
+              %Span{content: key, style: ks}
+            ]
+          }
+        ]
+      end)
     end
   end
-
-  defp rp(width), do: String.duplicate(" ", max(width - @box_inner - 4, 0))
-  defp dashes(n), do: String.duplicate("─", n)
 
   def handle_key("up", _mods, p), do: %{p | selected: max(p.selected - 1, 0)}
 

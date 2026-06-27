@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.Components.System do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Providers
-  alias Beamcore.TUI.Components.System.{Attach, Mesh, Stats}
+  alias Beamcore.TUI.Components.System.{Attach, Mesh, Section, Stats}
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
@@ -24,27 +24,14 @@ defmodule Beamcore.TUI.Components.System do
     }
   end
 
-  def render_text(system, width, height \\ nil) do
+  def render_text(system, width, _height \\ nil) do
     width = max(width, 1)
     accent = Theme.style(:accent)
     subtle = Theme.style(:subtle)
     flourish = String.duplicate("· ", max(div(width - 24, 2), 0))
 
-    mesh_lines = Mesh.render(system.mesh_snapshot || Mesh.local_snapshot(), width)
-    divider_w = max(76, width - 4)
-
-    mesh_header = [
-      %Line{spans: [%Span{content: ""}]},
-      %Line{
-        spans: [
-          %Span{content: " ◆ Mesh Topology  ", style: accent},
-          %Span{content: flourish, style: subtle}
-        ]
-      },
-      %Line{spans: [%Span{content: ""}]}
-    ]
-
-    top = [
+    # ── Page header ──
+    header = [
       %Line{spans: [%Span{content: ""}]},
       %Line{
         spans: [
@@ -55,23 +42,12 @@ defmodule Beamcore.TUI.Components.System do
       %Line{spans: [%Span{content: ""}]}
     ]
 
-    divider = [
+    # ── Keyboard hints ──
+    hints = [
       %Line{spans: [%Span{content: ""}]},
       %Line{
         spans: [
-          %Span{content: " ╰─ ", style: subtle},
-          %Span{content: "Providers", style: accent},
-          %Span{content: " " <> String.duplicate("─", max(divider_w - 13, 4)), style: subtle}
-        ]
-      },
-      %Line{spans: [%Span{content: ""}]}
-    ]
-
-    bottom = [
-      %Line{spans: [%Span{content: ""}]},
-      %Line{
-        spans: [
-          %Span{content: " ── ", style: subtle},
+          %Span{content: "  ── ", style: subtle},
           %Span{content: "enter", style: accent},
           %Span{content: " activate  ", style: Theme.style(:muted)},
           %Span{content: "a", style: accent},
@@ -84,21 +60,20 @@ defmodule Beamcore.TUI.Components.System do
       }
     ]
 
-    stats_lines = Stats.render(system.stats_snapshot || %{}, width)
-    attach_lines = Attach.lines()
+    # ── Build each section ──
+    stats_section = Stats.render(system.stats_snapshot || %{}, width)
+    provider_lines = Providers.render_items(system.providers)
+    provider_section = Section.section("Providers", provider_lines, width)
+    mesh_lines = Mesh.render(system.mesh_snapshot || Mesh.local_snapshot(), width)
+    mesh_section = Section.section("Mesh", mesh_lines, width)
+    attach_section = Section.section("Eeva Runtime", Attach.lines(), width, icon: "▸")
 
-    provider_reserved =
-      if is_integer(height) do
-        top_count = length(top) + length(stats_lines) + length(divider) + length(bottom)
-        mesh_count = length(mesh_header) + length(attach_lines) + length(mesh_lines)
-        max(height - top_count - mesh_count, 5)
-      end
-
-    provider_items = Providers.render_items(system.providers, width, provider_reserved)
-
-    top ++
-      stats_lines ++
-      divider ++ provider_items ++ bottom ++ mesh_header ++ attach_lines ++ mesh_lines
+    header ++
+      stats_section ++
+      provider_section ++
+      hints ++
+      attach_section ++
+      mesh_section
   end
 
   def widget(system, area) do
