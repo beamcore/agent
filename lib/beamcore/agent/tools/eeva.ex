@@ -38,6 +38,8 @@ defmodule Beamcore.Agent.Tools.Eeva do
         Execute arbitrary Elixir code. This universal tool can inspect and edit files, run direct system commands such as git or mix, parse data, and interact with Beamcore.Memory.
         The runtime captures stdout/stderr and returns structured results.
         For delegating work to other models, use Beamcore.Agent.SubAgent -- spawn a sub-agent with SubAgent.run("task") or offload to cheaper models with SubAgent.run("task", provider: "mistral").
+        No tool chaining -- one program does it all.
+        **Heredoc escaping**: When the code you write contains Elixir heredocs (triple-quotes), any #{} inside them is interpolated at evaluation time. To produce literal #{} in the output (e.g., when generating Elixir code that uses string interpolation), escape as \#{}.
         """,
         parameters: %{
           type: "object",
