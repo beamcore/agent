@@ -97,7 +97,8 @@ defmodule Beamcore.TUI do
       active_screen: :f1,
       f1_state: f1_state,
       f2_state: f2_state,
-      f3_state: f3_state
+      f3_state: f3_state,
+      started_at: System.monotonic_time(:millisecond)
     }
 
     {:ok, set_viewports(state)}
@@ -434,5 +435,66 @@ defmodule Beamcore.TUI do
   end
 
   @impl true
-  def terminate(_reason, _state), do: :ok
+  def terminate(_reason, state) do
+    print_goodbye(state)
+    :ok
+  end
+
+  defp print_goodbye(state) do
+    sessions = collect_sessions(state)
+    total_tokens = Enum.reduce(sessions, 0, fn s, acc -> acc + (s.total_tokens || 0) end)
+    session_name = active_session_name(state)
+    message_count = count_messages(state)
+    duration = format_duration(state.started_at)
+
+    IO.puts("")
+    IO.puts("Session: #{session_name}")
+    IO.puts("Duration: #{duration}")
+    IO.puts("Messages: #{message_count}")
+    IO.puts("Tokens spent: #{total_tokens}")
+    IO.puts("See you later.")
+  end
+
+  defp collect_sessions(state) do
+    [state.f1_state, state.f2_state]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map(fn s -> s.session end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  defp count_messages(state) do
+    [state.f1_state, state.f2_state]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.reduce(0, fn s, acc -> acc + length(s.messages || []) end)
+  end
+
+  defp active_session_name(state) do
+    screen =
+      case state.active_screen do
+        :f1 -> state.f1_state
+        :f2 -> state.f2_state
+        _ -> state.f1_state
+      end
+
+    case screen do
+      %{session: %{session_id: id}} when is_binary(id) -> id
+      _ -> "unknown"
+    end
+  end
+
+  defp format_duration(nil), do: "unknown"
+
+  defp format_duration(started_at) do
+    elapsed_ms = System.monotonic_time(:millisecond) - started_at
+    total_seconds = div(elapsed_ms, 1000)
+    hours = div(total_seconds, 3600)
+    minutes = div(rem(total_seconds, 3600), 60)
+    seconds = rem(total_seconds, 60)
+
+    cond do
+      hours > 0 -> "#{hours}h #{minutes}m #{seconds}s"
+      minutes > 0 -> "#{minutes}m #{seconds}s"
+      true -> "#{seconds}s"
+    end
+  end
 end
