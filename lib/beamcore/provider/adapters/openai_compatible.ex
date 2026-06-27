@@ -194,7 +194,7 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
   end
 
   defp oauth2?(config),
-    do: (Map.get(config, "auth") || Map.get(config, :auth)) in [:oauth2, "oauth2"]
+    do: Beamcore.Provider.Auth.strategy(config) == :oauth2_client_credentials
 
   defp normalize_oauth2_messages(messages) when is_list(messages) do
     {system, rest} = Enum.split_with(messages, &(message_role(&1) == "system"))

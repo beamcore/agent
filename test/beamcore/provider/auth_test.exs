@@ -60,6 +60,25 @@ defmodule Beamcore.Provider.AuthTest do
              List.keyfind(opts[:headers], "Authorization", 0)
   end
 
+  test "accepts explicit OAuth client credentials strategy alias" do
+    Process.put(
+      :auth_http_responses,
+      {:ok, %{status: 200, body: %{"access_token" => "token-a", "expires_in" => 3600}}}
+    )
+
+    config = %{
+      "auth" => %{"strategy" => "oauth2_client_credentials"},
+      "token_url" => "https://auth.example/token",
+      "client_id" => "client",
+      "client_secret" => "secret"
+    }
+
+    assert :ok = Auth.validate_config(config)
+
+    assert {:ok, [{"Authorization", "Bearer token-a"}]} =
+             Auth.headers(config, http_client: Beamcore.Provider.AuthHTTPMock)
+  end
+
   test "requests OAuth tokens with pre-encoded Basic credential from api key" do
     Process.put(
       :auth_http_responses,
@@ -142,6 +161,46 @@ defmodule Beamcore.Provider.AuthTest do
 
     assert message =~ "client_id"
     refute message =~ "secret"
+  end
+
+  test "google_adc does not require token_url client_id or client_secret" do
+    credentials_path = google_adc_credentials_file()
+
+    Process.put(
+      :auth_http_responses,
+      {:ok, %{status: 200, body: %{"access_token" => "google-token", "expires_in" => 3600}}}
+    )
+
+    config = %{
+      "auth" => %{
+        "strategy" => "google_adc",
+        "credentials_file" => credentials_path,
+        "scope" => "https://www.googleapis.com/auth/cloud-platform"
+      }
+    }
+
+    assert :ok = Auth.validate_config(config)
+
+    assert {:ok, [{"Authorization", "Bearer google-token"}]} =
+             Auth.headers(config, http_client: Beamcore.Provider.AuthHTTPMock)
+
+    assert_receive {:oauth_post, "https://oauth2.googleapis.com/token", opts}
+    assert opts[:body] =~ "grant_type=refresh_token"
+    assert opts[:body] =~ "refresh_token=refresh-token"
+  end
+
+  test "google_adc returns a clear error when credentials are missing" do
+    config = %{
+      "auth" => %{
+        "strategy" => "google_adc",
+        "credentials_file" => "/tmp/beamcore-missing-google-adc.json"
+      }
+    }
+
+    assert {:error, %Error{kind: :missing_config, message: message}} =
+             Auth.validate_config(config)
+
+    assert message =~ "Google ADC credentials file was not found"
   end
 
   test "supports OAuth2 provider with scope and request id header" do
@@ -248,5 +307,27 @@ defmodule Beamcore.Provider.AuthTest do
       "client_id" => "client",
       "client_secret" => "secret"
     }
+  end
+
+  defp google_adc_credentials_file do
+    path =
+      Path.join(
+        System.tmp_dir!(),
+        "beamcore_google_adc_#{System.unique_integer([:positive])}.json"
+      )
+
+    File.write!(
+      path,
+      Jason.encode!(%{
+        "type" => "authorized_user",
+        "client_id" => "google-client",
+        "client_secret" => "google-secret",
+        "refresh_token" => "refresh-token",
+        "token_uri" => "https://oauth2.googleapis.com/token"
+      })
+    )
+
+    on_exit(fn -> File.rm(path) end)
+    path
   end
 end
