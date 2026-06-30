@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Melange do
     running: %Style{fg: {:rgb, 230, 180, 90}},
     queued: %Style{fg: {:rgb, 170, 140, 180}},
     done: %Style{fg: {:rgb, 153, 187, 116}},
-    checkpoint: %Style{fg: {:rgb, 120, 170, 180}},
+    memory: %Style{fg: {:rgb, 120, 170, 180}},
     error: %Style{fg: {:rgb, 204, 102, 102}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 204, 197, 179}},
     cursor: %Style{fg: {:rgb, 48, 46, 42}, bg: {:rgb, 204, 153, 102}},

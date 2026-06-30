@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Gruvbox do
     running: %Style{fg: {:rgb, 254, 128, 25}},
     queued: %Style{fg: {:rgb, 211, 134, 155}},
     done: %Style{fg: {:rgb, 184, 187, 38}},
-    checkpoint: %Style{fg: {:rgb, 131, 165, 152}},
+    memory: %Style{fg: {:rgb, 131, 165, 152}},
     error: %Style{fg: {:rgb, 251, 73, 52}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 235, 219, 178}},
     cursor: %Style{fg: {:rgb, 40, 40, 40}, bg: {:rgb, 250, 189, 47}},

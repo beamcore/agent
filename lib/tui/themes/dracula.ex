@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Dracula do
     running: %Style{fg: {:rgb, 241, 250, 140}},
     queued: %Style{fg: {:rgb, 189, 147, 249}},
     done: %Style{fg: {:rgb, 80, 250, 123}},
-    checkpoint: %Style{fg: {:rgb, 139, 233, 253}},
+    memory: %Style{fg: {:rgb, 139, 233, 253}},
     error: %Style{fg: {:rgb, 255, 85, 85}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 248, 248, 242}},
     cursor: %Style{fg: {:rgb, 40, 42, 54}, bg: {:rgb, 139, 233, 253}},

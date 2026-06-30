@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Volcanic do
     running: %Style{fg: {:rgb, 255, 200, 60}},
     queued: %Style{fg: {:rgb, 200, 100, 40}},
     done: %Style{fg: {:rgb, 100, 200, 100}},
-    checkpoint: %Style{fg: {:rgb, 200, 100, 40}},
+    memory: %Style{fg: {:rgb, 200, 100, 40}},
     error: %Style{fg: {:rgb, 255, 40, 0}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 220, 190, 170}},
     cursor: %Style{fg: {:rgb, 25, 12, 8}, bg: {:rgb, 255, 80, 0}},

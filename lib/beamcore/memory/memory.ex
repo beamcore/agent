@@ -2,9 +2,8 @@ defmodule Beamcore.Memory do
   @moduledoc """
   Persistent project memory for AI agents.
 
-  Memory is intentionally outside filesystem snapshots/checkpoints. The model may
-  read and write memories through this module, while checkpoint/timeline/restore
-  remain runtime-only mechanisms.
+  Memory is intentionally outside filesystem snapshots. The model may
+  read and write memories through this module directly.
 
   Model-friendly calls:
 

@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Kanagawa do
     running: %Style{fg: {:rgb, 228, 180, 99}},
     queued: %Style{fg: {:rgb, 185, 144, 196}},
     done: %Style{fg: {:rgb, 152, 187, 108}},
-    checkpoint: %Style{fg: {:rgb, 126, 167, 196}},
+    memory: %Style{fg: {:rgb, 126, 167, 196}},
     error: %Style{fg: {:rgb, 195, 64, 67}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 220, 215, 186}},
     cursor: %Style{fg: {:rgb, 28, 27, 25}, bg: {:rgb, 126, 167, 196}},

@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.RosePine do
     running: %Style{fg: {:rgb, 246, 193, 119}},
     queued: %Style{fg: {:rgb, 196, 167, 231}},
     done: %Style{fg: {:rgb, 49, 207, 139}},
-    checkpoint: %Style{fg: {:rgb, 156, 207, 216}},
+    memory: %Style{fg: {:rgb, 156, 207, 216}},
     error: %Style{fg: {:rgb, 235, 111, 146}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 224, 222, 244}},
     cursor: %Style{fg: {:rgb, 25, 23, 36}, bg: {:rgb, 235, 188, 186}},

@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Ayu do
     running: %Style{fg: {:rgb, 255, 196, 59}},
     queued: %Style{fg: {:rgb, 193, 132, 231}},
     done: %Style{fg: {:rgb, 73, 200, 149}},
-    checkpoint: %Style{fg: {:rgb, 87, 181, 232}},
+    memory: %Style{fg: {:rgb, 87, 181, 232}},
     error: %Style{fg: {:rgb, 255, 92, 87}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 182, 188, 197}},
     cursor: %Style{fg: {:rgb, 31, 36, 46}, bg: {:rgb, 87, 181, 232}},

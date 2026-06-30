@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Cherry do
     running: %Style{fg: {:rgb, 255, 150, 180}},
     queued: %Style{fg: {:rgb, 200, 80, 120}},
     done: %Style{fg: {:rgb, 100, 220, 150}},
-    checkpoint: %Style{fg: {:rgb, 200, 80, 120}},
+    memory: %Style{fg: {:rgb, 200, 80, 120}},
     error: %Style{fg: {:rgb, 255, 40, 40}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 230, 200, 210}},
     cursor: %Style{fg: {:rgb, 25, 15, 20}, bg: {:rgb, 255, 60, 100}},

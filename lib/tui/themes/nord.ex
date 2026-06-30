@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Nord do
     running: %Style{fg: {:rgb, 235, 203, 139}},
     queued: %Style{fg: {:rgb, 180, 142, 173}},
     done: %Style{fg: {:rgb, 163, 190, 140}},
-    checkpoint: %Style{fg: {:rgb, 136, 192, 208}},
+    memory: %Style{fg: {:rgb, 136, 192, 208}},
     error: %Style{fg: {:rgb, 191, 97, 106}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 216, 222, 233}},
     cursor: %Style{fg: {:rgb, 46, 52, 64}, bg: {:rgb, 136, 192, 208}},

@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Palenight do
     running: %Style{fg: {:rgb, 255, 203, 107}},
     queued: %Style{fg: {:rgb, 199, 146, 234}},
     done: %Style{fg: {:rgb, 195, 232, 141}},
-    checkpoint: %Style{fg: {:rgb, 130, 170, 255}},
+    memory: %Style{fg: {:rgb, 130, 170, 255}},
     error: %Style{fg: {:rgb, 224, 108, 117}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 166, 172, 205}},
     cursor: %Style{fg: {:rgb, 35, 38, 52}, bg: {:rgb, 130, 170, 255}},
