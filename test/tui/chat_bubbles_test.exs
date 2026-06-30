@@ -67,4 +67,18 @@ defmodule Beamcore.TUI.Components.Chat.BubblesTest do
 
     assert Enum.all?(lines, fn %Line{spans: [rail | _]} -> rail.content =~ "▏" end)
   end
+
+  test "code is highlighted by the native truecolor highlighter" do
+    lines = markdown("```python\ndef add(x):\n    return x + 1\n```")
+
+    return_line =
+      Enum.find(lines, fn %Line{spans: spans} ->
+        Enum.map_join(spans, & &1.content) =~ "return"
+      end)
+
+    # The native syntect highlighter emits truecolor spans; the old Elixir-only
+    # path used the theme's named syntax colors.
+    assert return_line
+    assert Enum.any?(return_line.spans, fn span -> match?({:rgb, _, _, _}, span.style.fg) end)
+  end
 end
