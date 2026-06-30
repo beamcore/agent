@@ -278,24 +278,22 @@ defmodule Beamcore.TUI.ProviderFormTest do
     assert providers.selected == 0
   end
 
-  test "existing F3 global shortcuts still work" do
+  test "existing dashboard global shortcuts still work" do
     state = %MultiScreenState{
-      active_screen: :f3,
-      f1_state: %{screen_type: :agent, render_dirty?: false},
-      f2_state: %{screen_type: :chat, render_dirty?: false},
-      f3_state: TuiSystem.new(:agent)
+      active_mode: :dashboard,
+      chat_state: %{screen_type: :agent, render_dirty?: false},
+      dashboard_state: TuiSystem.new(:agent)
     }
 
     {:noreply, updated} = Beamcore.TUI.handle_event(key("f1"), state)
-    assert updated.active_screen == :f1
+    assert updated.active_mode == :chat
   end
 
-  test "F3 tick starts mesh refresh asynchronously without blocking render loop" do
+  test "dashboard tick starts mesh refresh asynchronously without blocking render loop" do
     state = %MultiScreenState{
-      active_screen: :f3,
-      f1_state: %{screen_type: :agent, render_dirty?: false},
-      f2_state: %{screen_type: :chat, render_dirty?: false},
-      f3_state: TuiSystem.new(:agent)
+      active_mode: :dashboard,
+      chat_state: %{screen_type: :agent, render_dirty?: false},
+      dashboard_state: TuiSystem.new(:agent)
     }
 
     {elapsed_us, {:noreply, updated}} = :timer.tc(fn -> MessageRouter.route_tick(state) end)
@@ -303,26 +301,25 @@ defmodule Beamcore.TUI.ProviderFormTest do
     # This guards against accidentally running mesh collection synchronously in
     # the render tick while allowing normal CI scheduler variance around Task.start/1.
     assert elapsed_us < 250_000
-    assert is_reference(updated.f3_state.mesh_refresh_ref)
+    assert is_reference(updated.dashboard_state.mesh_refresh_ref)
   end
 
-  test "mesh snapshot result updates F3 state without stale refs" do
+  test "mesh snapshot result updates the dashboard state without stale refs" do
     ref = make_ref()
     system = %{TuiSystem.new(:agent) | mesh_refresh_ref: ref}
 
     state = %MultiScreenState{
-      active_screen: :f3,
-      f1_state: %{screen_type: :agent, render_dirty?: false},
-      f2_state: %{screen_type: :chat, render_dirty?: false},
-      f3_state: system
+      active_mode: :dashboard,
+      chat_state: %{screen_type: :agent, render_dirty?: false},
+      dashboard_state: system
     }
 
     snapshot = Beamcore.TUI.Components.System.Mesh.local_snapshot()
 
     {:noreply, updated} = MessageRouter.route_system_mesh_snapshot(ref, snapshot, state)
 
-    assert updated.f3_state.mesh_snapshot == snapshot
-    assert updated.f3_state.mesh_refresh_ref == nil
+    assert updated.dashboard_state.mesh_snapshot == snapshot
+    assert updated.dashboard_state.mesh_refresh_ref == nil
   end
 
   test "provider form resize keeps focused input visible" do
@@ -336,18 +333,17 @@ defmodule Beamcore.TUI.ProviderFormTest do
     system = %{system | providers: %{system.providers | form: form}}
 
     state = %MultiScreenState{
-      active_screen: :f3,
-      f1_state: %State{textarea: ExRatatui.textarea_new()},
-      f2_state: %State{textarea: ExRatatui.textarea_new()},
-      f3_state: system
+      active_mode: :dashboard,
+      chat_state: %State{textarea: ExRatatui.textarea_new()},
+      dashboard_state: system
     }
 
     {:noreply, resized, [render?: false]} =
       Beamcore.TUI.handle_event(%ExRatatui.Event.Resize{width: 80, height: 16}, state)
 
-    lines = TuiSystem.render_text(resized.f3_state, 76, 15) |> rendered_text()
+    lines = TuiSystem.render_text(resized.dashboard_state, 76, 15) |> rendered_text()
 
-    assert resized.f3_state.providers.form.field == :auth_strategy
+    assert resized.dashboard_state.providers.form.field == :auth_strategy
     assert lines =~ "auth strategy"
   end
 

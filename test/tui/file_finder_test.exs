@@ -115,17 +115,15 @@ defmodule Beamcore.TUI.FileFinderTest do
 
     test "file cache completion does not render when no file finder is active" do
       state = %MultiScreenState{
-        active_screen: :f1,
-        f1_state: %State{textarea: ExRatatui.textarea_new(), file_finder_loading?: true},
-        f2_state: %State{textarea: ExRatatui.textarea_new(), file_finder_loading?: true}
+        active_mode: :chat,
+        chat_state: %State{textarea: ExRatatui.textarea_new(), file_finder_loading?: true}
       }
 
       assert {:noreply, updated, [render?: false]} =
                MessageRouter.route_file_finder_cache(["lib/tui.ex"], state)
 
-      assert updated.f1_state.file_finder_cache == ["lib/tui.ex"]
-      refute updated.f1_state.file_finder_loading?
-      refute updated.f2_state.file_finder_loading?
+      assert updated.chat_state.file_finder_cache == ["lib/tui.ex"]
+      refute updated.chat_state.file_finder_loading?
     end
 
     test "file cache completion updates active file finder results and renders" do
@@ -133,18 +131,14 @@ defmodule Beamcore.TUI.FileFinderTest do
         %State{textarea: ExRatatui.textarea_new(), file_finder_loading?: true}
         |> State.activate_file_finder("tui", [])
 
-      state = %MultiScreenState{
-        active_screen: :f1,
-        f1_state: active,
-        f2_state: %State{textarea: ExRatatui.textarea_new()}
-      }
+      state = %MultiScreenState{active_mode: :chat, chat_state: active}
 
       assert {:noreply, updated} =
                MessageRouter.route_file_finder_cache(["lib/tui.ex", "README.md"], state)
 
-      assert updated.f1_state.file_finder_cache == ["lib/tui.ex", "README.md"]
-      assert updated.f1_state.file_finder_results == ["lib/tui.ex"]
-      refute updated.f1_state.file_finder_loading?
+      assert updated.chat_state.file_finder_cache == ["lib/tui.ex", "README.md"]
+      assert updated.chat_state.file_finder_results == ["lib/tui.ex"]
+      refute updated.chat_state.file_finder_loading?
     end
   end
 end

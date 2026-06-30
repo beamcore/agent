@@ -14,12 +14,13 @@ defmodule Beamcore.TUI do
     Layout,
     MessageRouter,
     MultiScreenState,
-    Render,
+    Shell,
     State,
     TerminalOptions,
     Trace
   }
 
+  alias Beamcore.TUI.Components.System, as: TuiSystem
   alias Beamcore.TUI.Events.KeyEvents
   alias ExRatatui.Layout.Rect
 
@@ -88,16 +89,13 @@ defmodule Beamcore.TUI do
   def mount(opts) do
     init_screen_providers()
 
-    f1_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
-    f2_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :chat))
-
-    f3_state = Beamcore.TUI.Components.System.new(:agent)
+    chat_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
+    dashboard_state = TuiSystem.new(:agent)
 
     state = %MultiScreenState{
-      active_screen: :f1,
-      f1_state: f1_state,
-      f2_state: f2_state,
-      f3_state: f3_state,
+      active_mode: :chat,
+      chat_state: chat_state,
+      dashboard_state: dashboard_state,
       started_at: System.monotonic_time(:millisecond)
     }
 
@@ -109,16 +107,11 @@ defmodule Beamcore.TUI do
     set_viewports(state, w, h)
   end
 
+  # The mode bar occupies the top row, so the chat body has one fewer row.
   defp set_viewports(state, width, height) do
-    area = %Rect{x: 0, y: 0, width: width, height: height}
-    h1 = Layout.chat_viewport_height(area, state.f1_state.screen_type)
-    h2 = Layout.chat_viewport_height(area, state.f2_state.screen_type)
-
-    %{
-      state
-      | f1_state: State.set_chat_viewport_height(state.f1_state, h1),
-        f2_state: State.set_chat_viewport_height(state.f2_state, h2)
-    }
+    area = %Rect{x: 0, y: 0, width: width, height: max(height - 1, 1)}
+    h = Layout.chat_viewport_height(area, state.chat_state.screen_type)
+    %{state | chat_state: State.set_chat_viewport_height(state.chat_state, h)}
   end
 
   @impl true
@@ -126,15 +119,15 @@ defmodule Beamcore.TUI do
     started_us = System.monotonic_time(:microsecond)
 
     Trace.event(:render_start, %{
-      active_screen: Map.get(state, :active_screen),
+      active_mode: Map.get(state, :active_mode),
       tick_ref?: is_reference(Map.get(state, :tick_ref))
     })
 
     try do
-      widgets = state |> MultiScreenState.get_active() |> Render.render(frame)
+      widgets = Shell.render(state, frame)
 
       Trace.event(:render_finish, %{
-        active_screen: Map.get(state, :active_screen),
+        active_mode: Map.get(state, :active_mode),
         duration_us: System.monotonic_time(:microsecond) - started_us,
         widget_count: length(widgets)
       })
@@ -170,7 +163,7 @@ defmodule Beamcore.TUI do
       Trace.event(:event_ignored, %{
         message_type: Trace.message_type(event),
         event: inspect(event),
-        active_screen: Map.get(state, :active_screen)
+        active_mode: Map.get(state, :active_mode)
       })
 
       {:noreply, state, render?: false}
@@ -188,7 +181,7 @@ defmodule Beamcore.TUI do
     Trace.event(:event_received, %{
       message_type: Trace.message_type(event),
       event: inspect(event),
-      active_screen: Map.get(state, :active_screen),
+      active_mode: Map.get(state, :active_mode),
       tick_ref?: is_reference(Map.get(state, :tick_ref))
     })
 
@@ -196,24 +189,22 @@ defmodule Beamcore.TUI do
       result =
         case event do
           %ExRatatui.Event.Key{code: "f1"} ->
-            MessageRouter.switch_or_delegate(event, state, :f1)
+            MessageRouter.switch_or_delegate(event, state, :chat)
 
           %ExRatatui.Event.Key{code: "f2"} ->
-            MessageRouter.switch_or_delegate(event, state, :f2)
+            MessageRouter.switch_or_delegate(event, state, :dashboard)
 
           %ExRatatui.Event.Key{code: "f3"} ->
-            try do
-              {:noreply, switch_to_f3(state)}
-            rescue
-              e ->
-                {:noreply, State.set_notice(state, "F3 error: #{Exception.message(e)}")}
-            end
+            MessageRouter.switch_or_delegate(event, state, :research)
+
+          %ExRatatui.Event.Key{code: "f4"} ->
+            MessageRouter.switch_or_delegate(event, state, :mesh)
 
           %ExRatatui.Event.Resize{width: w, height: h} ->
             {:noreply, schedule_resize_redraw(state, w, h), render?: false}
 
           _ ->
-            MessageRouter.delegate_event(event, state, state.active_screen)
+            delegate_to_active(event, state)
         end
 
       Trace.event(:event_routed, %{
@@ -243,7 +234,7 @@ defmodule Beamcore.TUI do
 
     %{
       type: :noreply,
-      active_screen: Map.get(state, :active_screen),
+      active_mode: Map.get(state, :active_mode),
       render?: Keyword.get(opts, :render?, true),
       dirty?: active_dirty?(state),
       tick_ref?: is_reference(Map.get(state, :tick_ref)),
@@ -287,7 +278,7 @@ defmodule Beamcore.TUI do
   def handle_info(msg, state) do
     Trace.event(:message_received, %{
       message_type: Trace.message_type(msg),
-      active_screen: Map.get(state, :active_screen),
+      active_mode: Map.get(state, :active_mode),
       tick_ref?: is_reference(Map.get(state, :tick_ref))
     })
 
@@ -315,11 +306,10 @@ defmodule Beamcore.TUI do
   end
 
   defp route_info({:refresh_session, screen_type}, state) do
-    screen = if screen_type == :chat, do: :f2, else: :f1
-    old = MessageRouter.screen_state(state, screen)
+    old = state.chat_state
     new_session = Beamcore.Agent.Chat.Session.new(nil, screen_type: screen_type)
-    new_screen = %{old | session: new_session, messages: []} |> State.mark_dirty()
-    {:noreply, MessageRouter.put_screen_state(state, screen, new_screen)}
+    new_chat = %{old | session: new_session, messages: []} |> State.mark_dirty()
+    {:noreply, %{state | chat_state: new_chat}}
   end
 
   defp route_info({:tick, ref}, %{tick_ref: ref} = state) do
@@ -362,16 +352,12 @@ defmodule Beamcore.TUI do
 
   defp route_info(_msg, state), do: {:noreply, state}
 
-  defp switch_to_f3(state) do
-    for = if state.active_screen == :f2, do: :chat, else: :agent
-
-    f3 =
-      if state.f3_state && state.f3_state.configure_for == for,
-        do: state.f3_state,
-        else: Beamcore.TUI.Components.System.new(for)
-
-    %{state | active_screen: :f3, f3_state: f3}
-    |> maybe_schedule_tick()
+  defp delegate_to_active(event, state) do
+    if MultiScreenState.get_active(state) == nil do
+      {:noreply, state, render?: false}
+    else
+      MessageRouter.delegate_event(event, state, state.active_mode)
+    end
   end
 
   defp mark_active_dirty(%{render_dirty?: _} = screen), do: State.mark_dirty(screen)
@@ -401,11 +387,9 @@ defmodule Beamcore.TUI do
     end
   end
 
-  defp tick_needed?(%{active_screen: :f3}), do: true
+  defp tick_needed?(%{active_mode: :dashboard}), do: true
 
-  defp tick_needed?(state) do
-    state.f1_state |> MessageRouter.animating?() or state.f2_state |> MessageRouter.animating?()
-  end
+  defp tick_needed?(state), do: MessageRouter.animating?(state.chat_state)
 
   defp maybe_schedule_tick_result({:noreply, state}),
     do: {:noreply, maybe_schedule_tick(state)}
@@ -456,27 +440,20 @@ defmodule Beamcore.TUI do
   end
 
   defp collect_sessions(state) do
-    [state.f1_state, state.f2_state]
+    [state.chat_state]
     |> Enum.reject(&is_nil/1)
     |> Enum.map(fn s -> s.session end)
     |> Enum.reject(&is_nil/1)
   end
 
   defp count_messages(state) do
-    [state.f1_state, state.f2_state]
+    [state.chat_state]
     |> Enum.reject(&is_nil/1)
     |> Enum.reduce(0, fn s, acc -> acc + length(s.messages || []) end)
   end
 
   defp active_session_name(state) do
-    screen =
-      case state.active_screen do
-        :f1 -> state.f1_state
-        :f2 -> state.f2_state
-        _ -> state.f1_state
-      end
-
-    case screen do
+    case state.chat_state do
       %{session: %{session_id: id}} when is_binary(id) -> id
       _ -> "unknown"
     end

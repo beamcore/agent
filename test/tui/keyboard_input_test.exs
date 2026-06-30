@@ -163,25 +163,23 @@ defmodule Beamcore.TUI.KeyboardInputTest do
 
   test "top-level TUI suppresses render for release events before dispatch" do
     multi = %MultiScreenState{
-      active_screen: :f1,
-      f1_state: state(),
-      f2_state: state(),
-      f3_state: Components.System.new(:agent)
+      active_mode: :chat,
+      chat_state: state(),
+      dashboard_state: Components.System.new(:agent)
     }
 
-    assert {:noreply, ^multi, [render?: false]} = TUI.handle_event(key("f3", "release"), multi)
+    assert {:noreply, ^multi, [render?: false]} = TUI.handle_event(key("f2", "release"), multi)
   end
 
-  test "F3 press still switches to the system screen" do
+  test "F2 press switches to the dashboard" do
     multi = %MultiScreenState{
-      active_screen: :f1,
-      f1_state: state(),
-      f2_state: state(),
-      f3_state: Components.System.new(:agent)
+      active_mode: :chat,
+      chat_state: state(),
+      dashboard_state: Components.System.new(:agent)
     }
 
-    {:noreply, updated} = TUI.handle_event(key("f3", "press"), multi)
-    assert updated.active_screen == :f3
+    {:noreply, updated} = TUI.handle_event(key("f2", "press"), multi)
+    assert updated.active_mode == :dashboard
   end
 
   test "F3 provider form accepts valid non-release kinds and ignores release" do

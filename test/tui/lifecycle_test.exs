@@ -74,10 +74,16 @@ defmodule Beamcore.TUI.LifecycleTest do
     assert rect.height == 24
   end
 
-  test "F3 render survives tiny resize frames" do
+  test "dashboard render survives tiny resize frames" do
+    multi = %Beamcore.TUI.MultiScreenState{
+      active_mode: :dashboard,
+      chat_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      dashboard_state: TuiSystem.new(:agent)
+    }
+
     frame = %Frame{width: 1, height: 1}
 
-    assert [{_widget, rect} | _] = TUI.render(TuiSystem.new(:agent), frame)
+    assert [{_widget, rect} | _] = TUI.render(multi, frame)
     assert rect.width == 1
     assert rect.height == 1
   end
@@ -108,10 +114,9 @@ defmodule Beamcore.TUI.LifecycleTest do
 
   test "resize schedules a debounced redraw instead of rendering immediately" do
     state = %Beamcore.TUI.MultiScreenState{
-      active_screen: :f3,
-      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f3_state: TuiSystem.new(:agent)
+      active_mode: :dashboard,
+      chat_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      dashboard_state: TuiSystem.new(:agent)
     }
 
     assert {:noreply, resized, [render?: false]} =
@@ -126,40 +131,37 @@ defmodule Beamcore.TUI.LifecycleTest do
 
   test "idle real TUI state does not run a permanent tick loop" do
     state = %Beamcore.TUI.MultiScreenState{
-      active_screen: :f1,
-      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f3_state: TuiSystem.new(:agent)
+      active_mode: :chat,
+      chat_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      dashboard_state: TuiSystem.new(:agent)
     }
 
     {:noreply, updated} =
       TUI.handle_event(%ExRatatui.Event.Key{code: "a", kind: "press", modifiers: []}, state)
 
     assert updated.tick_ref == nil
-    assert ExRatatui.textarea_get_value(updated.f1_state.textarea) == "a"
+    assert ExRatatui.textarea_get_value(updated.chat_state.textarea) == "a"
   end
 
-  test "F3 arms a bounded self-rearming tick for mesh refresh" do
+  test "the dashboard arms a bounded self-rearming tick for mesh refresh" do
     state = %Beamcore.TUI.MultiScreenState{
-      active_screen: :f1,
-      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f3_state: TuiSystem.new(:agent)
+      active_mode: :chat,
+      chat_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      dashboard_state: TuiSystem.new(:agent)
     }
 
     {:noreply, updated} =
-      TUI.handle_event(%ExRatatui.Event.Key{code: "f3", kind: "press", modifiers: []}, state)
+      TUI.handle_event(%ExRatatui.Event.Key{code: "f2", kind: "press", modifiers: []}, state)
 
-    assert updated.active_screen == :f3
+    assert updated.active_mode == :dashboard
     assert is_reference(updated.tick_ref)
   end
 
   test "stale tick messages are ignored without rendering" do
     state = %Beamcore.TUI.MultiScreenState{
-      active_screen: :f1,
-      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
-      f3_state: TuiSystem.new(:agent),
+      active_mode: :chat,
+      chat_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      dashboard_state: TuiSystem.new(:agent),
       tick_ref: make_ref()
     }
 

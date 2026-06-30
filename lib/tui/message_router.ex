@@ -6,74 +6,88 @@ defmodule Beamcore.TUI.MessageRouter do
 
   @animated_statuses [:thinking, :tool_running, :local_search, :rate_limited]
 
-  def switch_or_delegate(event, state, screen) do
-    if state.active_screen == screen do
-      delegate_event(event, state, screen)
-    else
-      new_state = %{state | active_screen: screen}
-      new_state = MultiScreenState.update_active(new_state, &mark_dirty/1)
-      {:noreply, new_state}
+  def switch_or_delegate(event, state, mode) do
+    cond do
+      state.active_mode != mode ->
+        switched =
+          %{state | active_mode: mode}
+          |> MultiScreenState.update_active(&mark_dirty/1)
+
+        {:noreply, switched}
+
+      MultiScreenState.get_active(state) == nil ->
+        {:noreply, state, render?: false}
+
+      true ->
+        delegate_event(event, state, mode)
     end
   end
 
-  defdelegate delegate_event(event, state, screen), to: __MODULE__.Delegate, as: :call
+  defdelegate delegate_event(event, state, mode), to: __MODULE__.Delegate, as: :call
 
-  def screen_state(state, :f1), do: state.f1_state
-  def screen_state(state, :f2), do: state.f2_state
-  def screen_state(state, :f3), do: state.f3_state
+  def screen_state(state, :chat), do: state.chat_state
+  def screen_state(state, :dashboard), do: state.dashboard_state
 
-  def put_screen_state(state, :f1, s), do: %{state | f1_state: s}
-  def put_screen_state(state, :f2, s), do: %{state | f2_state: s}
-  def put_screen_state(state, :f3, s), do: %{state | f3_state: s}
+  def put_screen_state(state, :chat, s), do: %{state | chat_state: s}
+  def put_screen_state(state, :dashboard, s), do: %{state | dashboard_state: s}
 
   def animating?(%{status: status}), do: status in @animated_statuses
   def animating?(_state), do: false
 
   def route_tick(state) do
-    if animating?(MultiScreenState.get_active(state)) do
-      now = System.monotonic_time(:millisecond)
+    cond do
+      animating?(MultiScreenState.get_active(state)) ->
+        now = System.monotonic_time(:millisecond)
+        {:noreply, %{state | chat_state: State.tick(state.chat_state, now)}}
 
-      {:noreply,
-       %{
-         state
-         | f1_state: State.tick(state.f1_state, now),
-           f2_state: State.tick(state.f2_state, now)
-       }}
-    else
-      if state.active_screen == :f3 do
-        {:noreply, %{state | f3_state: TuiSystem.maybe_refresh_mesh(state.f3_state)}}
-      else
+      state.active_mode == :dashboard ->
+        {:noreply,
+         %{state | dashboard_state: TuiSystem.maybe_refresh_mesh(state.dashboard_state)}}
+
+      true ->
         {:noreply, state, render?: false}
-      end
     end
   end
 
   def route_system_mesh_snapshot(ref, snapshot, state) do
-    {:noreply, %{state | f3_state: TuiSystem.finish_mesh_refresh(state.f3_state, ref, snapshot)}}
+    {:noreply,
+     %{
+       state
+       | dashboard_state: TuiSystem.finish_mesh_refresh(state.dashboard_state, ref, snapshot)
+     }}
   end
 
   def route_provider_saved(ref, result, state) do
-    {:noreply, %{state | f3_state: TuiSystem.finish_provider_save(state.f3_state, ref, result)}}
+    {:noreply,
+     %{
+       state
+       | dashboard_state: TuiSystem.finish_provider_save(state.dashboard_state, ref, result)
+     }}
   end
 
   def route_provider_action_done(ref, action, result, state) do
     {:noreply,
-     %{state | f3_state: TuiSystem.finish_provider_action(state.f3_state, ref, action, result)}}
+     %{
+       state
+       | dashboard_state:
+           TuiSystem.finish_provider_action(state.dashboard_state, ref, action, result)
+     }}
   end
 
   def route_runtime_event(worker_pid, event, state) do
     cond do
       worker_pid == self() ->
-        active_screen = state.active_screen
-        active_state = MultiScreenState.get_active(state)
-        new_active = Events.handle_runtime_event(event, active_state)
-        {:noreply, put_screen_state(state, active_screen, new_active)}
+        case MultiScreenState.get_active(state) do
+          nil ->
+            {:noreply, state}
 
-      state.f1_state.worker == worker_pid ->
-        {:noreply, %{state | f1_state: Events.handle_runtime_event(event, state.f1_state)}}
+          active ->
+            {:noreply,
+             MultiScreenState.put_active(state, Events.handle_runtime_event(event, active))}
+        end
 
-      state.f2_state.worker == worker_pid ->
-        {:noreply, %{state | f2_state: Events.handle_runtime_event(event, state.f2_state)}}
+      state.chat_state.worker == worker_pid ->
+        {:noreply, %{state | chat_state: Events.handle_runtime_event(event, state.chat_state)}}
 
       true ->
         Beamcore.AppLog.warn("TUI dropped runtime event from unknown worker",
@@ -85,15 +99,10 @@ defmodule Beamcore.TUI.MessageRouter do
   end
 
   def route_agent_done(worker_pid, session, state) do
-    cond do
-      state.f1_state.worker == worker_pid ->
-        {:noreply, %{state | f1_state: Events.finish_worker(state.f1_state, session)}}
-
-      state.f2_state.worker == worker_pid ->
-        {:noreply, %{state | f2_state: Events.finish_worker(state.f2_state, session)}}
-
-      true ->
-        {:noreply, state}
+    if state.chat_state.worker == worker_pid do
+      {:noreply, %{state | chat_state: Events.finish_worker(state.chat_state, session)}}
+    else
+      {:noreply, state}
     end
   end
 
@@ -101,22 +110,17 @@ defmodule Beamcore.TUI.MessageRouter do
     Beamcore.AppLog.exception(:error, error, stacktrace, boundary: :agent_worker)
     user_error = Beamcore.AppLog.user_message()
 
-    cond do
-      state.f1_state.worker == worker_pid ->
-        {:noreply, %{state | f1_state: Events.fail_worker(state.f1_state, user_error)}}
-
-      state.f2_state.worker == worker_pid ->
-        {:noreply, %{state | f2_state: Events.fail_worker(state.f2_state, user_error)}}
-
-      true ->
-        formatted = Exception.format(:error, error, stacktrace)
-        Beamcore.AppLog.warn("TUI received error from unknown worker", error: formatted)
-        {:noreply, state}
+    if state.chat_state.worker == worker_pid do
+      {:noreply, %{state | chat_state: Events.fail_worker(state.chat_state, user_error)}}
+    else
+      formatted = Exception.format(:error, error, stacktrace)
+      Beamcore.AppLog.warn("TUI received error from unknown worker", error: formatted)
+      {:noreply, state}
     end
   end
 
   def route_file_finder_cache(files, state) do
-    active_before? = state.f1_state.file_finder_active? or state.f2_state.file_finder_active?
+    active_before? = state.chat_state.file_finder_active?
 
     set_cache = fn s ->
       cache = s.file_finder_cache || files
@@ -134,11 +138,7 @@ defmodule Beamcore.TUI.MessageRouter do
       end
     end
 
-    updated = %{
-      state
-      | f1_state: set_cache.(state.f1_state),
-        f2_state: set_cache.(state.f2_state)
-    }
+    updated = %{state | chat_state: set_cache.(state.chat_state)}
 
     if active_before? do
       {:noreply, updated}
