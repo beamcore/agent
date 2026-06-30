@@ -7,104 +7,17 @@ defmodule Beamcore.TUI.Components.StatusBar do
   alias ExRatatui.Widgets.Paragraph
   alias Number.SI
 
+  # Always-visible quit/help hints. Mode switching now lives in the top mode
+  # bar, so the status line no longer carries the F1/F2/F3 switcher.
+  @hints "^C quit · ? help"
+
   def widget(%{screen_type: :system}, width) when is_integer(width) do
-    mascot = Mascot.frame(:idle, 0, true)
-    switcher_text = "F1 Agent  F2 Chat  F3 System"
-    right_text = "System overview"
-    left_len = String.length(mascot) + 3 + String.length(switcher_text) + 3
-    right_len = String.length(right_text)
-    max_right_len = max(0, width - left_len - 2)
-
-    right_text =
-      if right_len > max_right_len,
-        do: String.slice(right_text, 0, max(0, max_right_len - 3)) <> "...",
-        else: right_text
-
-    right_len = String.length(right_text)
-    padding_len = max(0, width - left_len - right_len - 2)
-    padding = String.duplicate(" ", padding_len)
-
-    spans = [
-      %Span{content: mascot, style: Theme.style(:status_hot)},
-      %Span{content: " · ", style: Theme.style(:status)},
-      %Span{content: "F1 Agent", style: Theme.style(:status)},
-      %Span{content: "  ", style: Theme.style(:status)},
-      %Span{content: "F2 Chat", style: Theme.style(:status)},
-      %Span{content: "  ", style: Theme.style(:status)},
-      %Span{content: "F3 System", style: Theme.style(:status_hot)},
-      %Span{content: " · ", style: Theme.style(:status)},
-      %Span{content: padding, style: Theme.style(:status)},
-      %Span{content: right_text, style: Theme.style(:status)}
-    ]
-
-    %Paragraph{text: [%Line{spans: spans}], style: Theme.style(:status)}
+    line(Mascot.frame(:idle, 0, true), "System overview", width)
   end
 
   def widget(state, width) when is_integer(width) do
-    usage = State.usage(state.session)
     mascot = Mascot.frame(state.status, state.spinner_step, state.unicode?)
-    provider = state.provider || "provider"
-    model = state.model || State.model(state.session)
-    provider_model = "#{provider}/#{model}"
-
-    tokens =
-      "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
-
-    right_text =
-      case State.ctrl_c_hint(state.ctrl_c_pending) do
-        nil -> State.wait_status_text(state) || "#{provider_model} · tok #{tokens}"
-        hint -> hint
-      end
-
-    switcher_text = "F1 Agent  F2 Chat  F3 System"
-    left_len = String.length(mascot) + 3 + String.length(switcher_text) + 3
-    right_len = String.length(right_text)
-
-    # Ensure right_text fits in the remaining space.
-    max_right_len = max(0, width - left_len - 2)
-
-    right_text =
-      if right_len > max_right_len do
-        String.slice(right_text, 0, max(0, max_right_len - 3)) <> "..."
-      else
-        right_text
-      end
-
-    right_len = String.length(right_text)
-    padding_len = max(0, width - left_len - right_len - 2)
-    padding = String.duplicate(" ", padding_len)
-    active = state.screen_type
-
-    spans = [
-      %Span{content: mascot, style: Theme.style(:status_hot)},
-      %Span{content: " · ", style: Theme.style(:status)},
-      %Span{
-        content: "F1 Agent",
-        style: if(active == :agent, do: Theme.style(:status_hot), else: Theme.style(:status))
-      },
-      %Span{content: "  ", style: Theme.style(:status)},
-      %Span{
-        content: "F2 Chat",
-        style: if(active == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))
-      },
-      %Span{content: "  ", style: Theme.style(:status)},
-      %Span{
-        content: "F3 System",
-        style:
-          if(active == :system,
-            do: Theme.style(:status_hot),
-            else: Theme.style(:status)
-          )
-      },
-      %Span{content: " · ", style: Theme.style(:status)},
-      %Span{content: padding, style: Theme.style(:status)},
-      %Span{content: right_text, style: Theme.style(:status)}
-    ]
-
-    %Paragraph{
-      text: [%Line{spans: spans}],
-      style: Theme.style(:status)
-    }
+    line(mascot, info_text(state), width)
   end
 
   def widget(state, mode) when is_atom(mode) do
@@ -116,5 +29,51 @@ defmodule Beamcore.TUI.Components.StatusBar do
       end
 
     widget(state, width)
+  end
+
+  defp info_text(state) do
+    case State.ctrl_c_hint(state.ctrl_c_pending) do
+      nil -> State.wait_status_text(state) || provider_text(state)
+      hint -> hint
+    end
+  end
+
+  defp provider_text(state) do
+    usage = State.usage(state.session)
+    provider = state.provider || "provider"
+    model = state.model || State.model(state.session)
+
+    tokens =
+      "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
+
+    "#{provider}/#{model} · tok #{tokens}"
+  end
+
+  defp line(mascot, info, width) do
+    fixed = String.length(mascot) + 3 + String.length(@hints) + 2
+    info = truncate(info, max(0, width - fixed))
+
+    pad =
+      max(0, width - String.length(mascot) - 3 - String.length(info) - String.length(@hints) - 2)
+
+    spans = [
+      %Span{content: mascot, style: Theme.style(:status_hot)},
+      %Span{content: " · ", style: Theme.style(:status)},
+      %Span{content: info, style: Theme.style(:status)},
+      %Span{content: String.duplicate(" ", pad), style: Theme.style(:status)},
+      %Span{content: @hints, style: Theme.style(:status)}
+    ]
+
+    %Paragraph{text: [%Line{spans: spans}], style: Theme.style(:status)}
+  end
+
+  defp truncate(_text, limit) when limit <= 0, do: ""
+
+  defp truncate(text, limit) do
+    if String.length(text) <= limit do
+      text
+    else
+      String.slice(text, 0, max(0, limit - 3)) <> "..."
+    end
   end
 end

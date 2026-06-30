@@ -5,39 +5,12 @@ defmodule Beamcore.TUI.StatusBarTest do
   alias Beamcore.TUI.Components.StatusBar
   alias Beamcore.TUI.State
 
-  test "status bar exposes F1/F2 switcher" do
-    session = %Session{
-      roles: %Beamcore.Provider.Selection{
-        primary: %{provider: "openai", model: "test-model", enabled: true}
-      },
-      total_prompt_tokens: 0,
-      total_completion_tokens: 0,
-      total_tokens: 0,
-      last_prompt_tokens: 0
-    }
-
-    widget =
-      StatusBar.widget(
-        %State{
-          screen_type: :agent,
-          session: session,
-          status: :idle,
-          spinner_step: 0,
-          unicode?: true,
-          ctrl_c_pending: false,
-          notice: nil
-        },
-        120
-      )
-
-    text = widget.text |> hd() |> Map.fetch!(:spans) |> Enum.map_join(& &1.content)
-
-    assert text =~ "F1 Agent"
-    assert text =~ "F2 Chat"
+  defp text(widget) do
+    widget.text |> hd() |> Map.fetch!(:spans) |> Enum.map_join(& &1.content)
   end
 
-  test "status bar shows retry countdown while waiting" do
-    session = %Session{
+  defp session do
+    %Session{
       roles: %Beamcore.Provider.Selection{
         primary: %{provider: "openai", model: "test-model", enabled: true}
       },
@@ -46,53 +19,71 @@ defmodule Beamcore.TUI.StatusBarTest do
       total_tokens: 0,
       last_prompt_tokens: 0
     }
+  end
 
-    state =
+  defp base_state(overrides \\ []) do
+    Map.merge(
       %State{
         screen_type: :agent,
-        session: session,
-        status: :thinking,
+        session: session(),
+        status: :idle,
         spinner_step: 0,
         unicode?: true,
         ctrl_c_pending: false,
         notice: nil
-      }
+      },
+      Map.new(overrides)
+    )
+  end
+
+  test "status bar always shows the quit and help hints" do
+    text = StatusBar.widget(base_state(), 120) |> text()
+
+    assert text =~ "^C quit"
+    assert text =~ "? help"
+  end
+
+  test "status bar no longer renders the F1/F2/F3 switcher (it moved to the mode bar)" do
+    text = StatusBar.widget(base_state(), 120) |> text()
+
+    refute text =~ "F1 Agent"
+    refute text =~ "F2 Chat"
+    refute text =~ "F3 System"
+  end
+
+  test "status bar shows retry countdown while waiting" do
+    state =
+      base_state(status: :thinking)
       |> State.set_wait_status(%{
         reason: :rate_limit,
         wait_ms: 12_000,
         now_ms: System.monotonic_time(:millisecond)
       })
 
-    widget = StatusBar.widget(state, 120)
-    text = widget.text |> hd() |> Map.fetch!(:spans) |> Enum.map_join(& &1.content)
+    text = StatusBar.widget(state, 120) |> text()
 
     assert text =~ "Rate limited"
     assert text =~ "retrying in"
   end
 
   test "status bar uses cached provider metadata without config lookups" do
-    widget =
-      StatusBar.widget(
-        %State{
-          screen_type: :agent,
-          session: nil,
-          provider: "cached-provider",
-          model: "cached-model",
-          status: :idle,
-          spinner_step: 0,
-          unicode?: true,
-          ctrl_c_pending: false,
-          notice: nil
-        },
-        120
-      )
+    state =
+      base_state(session: nil, provider: "cached-provider", model: "cached-model")
 
-    text = widget.text |> hd() |> Map.fetch!(:spans) |> Enum.map_join(& &1.content)
+    text = StatusBar.widget(state, 120) |> text()
 
     assert text =~ "cached-provider/cached-model"
 
     source = File.read!(Path.expand("../../lib/tui/components/status_bar.ex", __DIR__))
     refute source =~ "Beamcore.Config"
     refute source =~ "State.provider"
+  end
+
+  test "system screen status bar also shows the hints and no switcher" do
+    text = StatusBar.widget(%{screen_type: :system}, 120) |> text()
+
+    assert text =~ "^C quit"
+    assert text =~ "? help"
+    refute text =~ "F1 Agent"
   end
 end
