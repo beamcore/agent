@@ -42,4 +42,29 @@ defmodule Beamcore.TUI.Components.Chat.BubblesTest do
 
     assert height == length(lines)
   end
+
+  defp markdown(content) do
+    [{%Paragraph{text: lines}, _height}, _spacer] =
+      Bubbles.bubble("Agent", content, Theme.style(:accent), Theme.style(:base), 40, :markdown)
+
+    lines
+  end
+
+  test "the assistant bubble carries the accent gutter rail with an agent header" do
+    role = Theme.style(:accent)
+    lines = markdown("hello world")
+
+    assert Enum.all?(lines, fn %Line{spans: [rail | _]} ->
+             rail.content =~ "▏" and rail.style == role
+           end)
+
+    header = Enum.map_join(hd(lines).spans, & &1.content)
+    assert header =~ "agent"
+  end
+
+  test "code lines inside the assistant bubble are railed too" do
+    lines = markdown("intro\n```elixir\nIO.puts(1)\n```")
+
+    assert Enum.all?(lines, fn %Line{spans: [rail | _]} -> rail.content =~ "▏" end)
+  end
 end

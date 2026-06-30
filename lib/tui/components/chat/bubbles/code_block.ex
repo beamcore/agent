@@ -16,6 +16,8 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles.CodeBlock do
 
   def expanded_card(
         prefix,
+        label,
+        rail_style,
         text,
         body_width,
         body_style,
@@ -23,7 +25,8 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles.CodeBlock do
         viewport_lines \\ nil
       ) do
     segments = MarkdownParser.parse(text)
-    indent = "  "
+    # The gutter rail now provides the left margin, so content is not indented.
+    indent = ""
 
     {lines, _acc} =
       segments
@@ -78,8 +81,11 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles.CodeBlock do
           {rendered, {block_idx + 1, cum_height + length(rendered)}}
       end)
 
-    prefix_line = %Line{spans: [%Span{content: prefix <> " ", style: body_style}]}
-    all_lines = [prefix_line | lines]
+    rail = %Span{content: "▏ ", style: rail_style}
+    header_text = "#{prefix} #{String.downcase(to_string(label))}"
+    header = %Line{spans: [rail, %Span{content: header_text, style: rail_style}]}
+    railed = Enum.map(lines, fn %Line{spans: spans} -> %Line{spans: [rail | spans]} end)
+    all_lines = [header | railed]
 
     [
       {%Paragraph{text: all_lines, style: body_style, wrap: false}, length(all_lines)},

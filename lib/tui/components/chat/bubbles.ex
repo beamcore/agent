@@ -17,7 +17,16 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
 
     case kind do
       :markdown ->
-        markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines)
+        markdown_bubble(
+          prefix,
+          label,
+          content,
+          label_style,
+          body_style,
+          body_width,
+          collapsed,
+          viewport_lines
+        )
 
       :plain ->
         plain_bubble(prefix, label, content, label_style, body_style, body_width)
@@ -30,9 +39,20 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
   def eeva_preview_bubble(code, wrap_width, collapsed \\ MapSet.new(), viewport \\ nil),
     do: CodeBlock.eeva_preview_bubble(code, wrap_width, collapsed, viewport)
 
-  defp markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines) do
+  defp markdown_bubble(
+         prefix,
+         label,
+         content,
+         rail_style,
+         body_style,
+         body_width,
+         collapsed,
+         viewport_lines
+       ) do
     CodeBlock.expanded_card(
       prefix,
+      label,
+      rail_style,
       to_string(content),
       body_width,
       body_style,
@@ -60,7 +80,7 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
   end
 
   defp label_prefix("You"), do: "›"
-  defp label_prefix("Agent"), do: "*"
+  defp label_prefix("Agent"), do: "✦"
   defp label_prefix("Tool"), do: "\u00BB"
   defp label_prefix("Modify File"), do: "\u00BB"
   defp label_prefix("Error"), do: "!"
