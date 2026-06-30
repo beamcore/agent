@@ -4,9 +4,12 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
   alias Beamcore.TUI.Components.Chat.Bubbles.CodeBlock
   alias Beamcore.TUI.Components.Chat.DiffRenderer
   alias Beamcore.TUI.Theme
+  alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
 
-  def bubble(label, content, _label_style, body_style, wrap_width, kind, opts \\ []) do
+  @rail "▏ "
+
+  def bubble(label, content, label_style, body_style, wrap_width, kind, opts \\ []) do
     body_width = max(wrap_width - 2, 10)
     collapsed = Keyword.get(opts, :collapsed_blocks, MapSet.new())
     viewport_lines = Keyword.get(opts, :viewport_lines)
@@ -17,7 +20,7 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
         markdown_bubble(prefix, content, body_style, body_width, collapsed, viewport_lines)
 
       :plain ->
-        plain_bubble(prefix, content, body_style, body_width)
+        plain_bubble(prefix, label, content, label_style, body_style, body_width)
     end
   end
 
@@ -38,22 +41,25 @@ defmodule Beamcore.TUI.Components.Chat.Bubbles do
     )
   end
 
-  defp plain_bubble(prefix, text, body_style, body_width) do
-    wrapped = Beamcore.TUI.Wrap.lines(text, body_width)
+  defp plain_bubble(prefix, label, text, rail_style, body_style, body_width) do
+    rail = %Span{content: @rail, style: rail_style}
+    header_text = "#{prefix} #{String.downcase(to_string(label))}"
+    header = %Line{spans: [rail, %Span{content: header_text, style: rail_style}]}
 
-    card =
-      case wrapped do
-        [] -> prefix <> " "
-        [first | rest] -> Enum.join(["#{prefix} #{first}" | Enum.map(rest, &"  #{&1}")], "\n")
-      end
+    body_lines =
+      text
+      |> Beamcore.TUI.Wrap.lines(body_width)
+      |> Enum.map(fn line -> %Line{spans: [rail, %Span{content: line, style: body_style}]} end)
+
+    lines = [header | body_lines]
 
     [
-      {%Paragraph{text: card, style: body_style, wrap: false}, line_count(card)},
+      {%Paragraph{text: lines, style: body_style, wrap: false}, length(lines)},
       {%Paragraph{text: "", style: Theme.style(:subtle)}, 1}
     ]
   end
 
-  defp label_prefix("You"), do: ">"
+  defp label_prefix("You"), do: "›"
   defp label_prefix("Agent"), do: "*"
   defp label_prefix("Tool"), do: "\u00BB"
   defp label_prefix("Modify File"), do: "\u00BB"
