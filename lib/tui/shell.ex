@@ -7,7 +7,7 @@ defmodule Beamcore.TUI.Shell do
   shifted down to sit beneath the bar.
   """
 
-  alias Beamcore.TUI.Components.{ComingSoon, ModeBar, StatusBar}
+  alias Beamcore.TUI.Components.{ComingSoon, Help, ModeBar, StatusBar}
   alias Beamcore.TUI.{Mode, MultiScreenState, Render}
   alias ExRatatui.Frame
   alias ExRatatui.Layout.Rect
@@ -24,7 +24,15 @@ defmodule Beamcore.TUI.Shell do
     body = multi |> body_widgets(body_frame) |> offset_y(@top_height)
 
     [{ModeBar.tabs(multi.active_mode), top} | body]
+    |> maybe_help(multi, %Rect{x: 0, y: 0, width: width, height: height})
   end
+
+  # Coming-soon and dashboard modes have no composer, so the shell owns their
+  # help overlay. Chat renders its own help from the chat state.
+  defp maybe_help(widgets, %MultiScreenState{show_help: true} = multi, area),
+    do: widgets ++ [{Help.widget(multi.active_mode), area}]
+
+  defp maybe_help(widgets, _multi, _area), do: widgets
 
   defp body_widgets(%MultiScreenState{active_mode: :chat} = multi, frame),
     do: Render.render(multi.chat_state, frame)

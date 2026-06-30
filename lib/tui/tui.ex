@@ -200,6 +200,12 @@ defmodule Beamcore.TUI do
           %ExRatatui.Event.Key{code: "f4"} ->
             MessageRouter.switch_or_delegate(event, state, :mesh)
 
+          %ExRatatui.Event.Key{code: "?"} ->
+            toggle_help(event, state)
+
+          %ExRatatui.Event.Key{code: code} when code in ["esc", "q"] and state.show_help ->
+            {:noreply, %{state | show_help: false}}
+
           %ExRatatui.Event.Resize{width: w, height: h} ->
             {:noreply, schedule_resize_redraw(state, w, h), render?: false}
 
@@ -358,6 +364,22 @@ defmodule Beamcore.TUI do
     else
       MessageRouter.delegate_event(event, state, state.active_mode)
     end
+  end
+
+  # In chat, `?` opens help only on an empty composer; otherwise it is typed.
+  # Modes without a composer toggle a shell-level help overlay.
+  defp toggle_help(event, %{active_mode: :chat} = state) do
+    if composer_empty?(state.chat_state) do
+      {:noreply, MultiScreenState.update_active(state, &%{&1 | show_help: !&1.show_help})}
+    else
+      delegate_to_active(event, state)
+    end
+  end
+
+  defp toggle_help(_event, state), do: {:noreply, %{state | show_help: !state.show_help}}
+
+  defp composer_empty?(chat_state) do
+    Beamcore.TUI.Events.TextInput.value(chat_state) == ""
   end
 
   defp mark_active_dirty(%{render_dirty?: _} = screen), do: State.mark_dirty(screen)

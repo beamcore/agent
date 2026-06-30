@@ -4,7 +4,7 @@ defmodule Beamcore.TUI.ShellTest do
   alias Beamcore.TUI.Components.System, as: TuiSystem
   alias Beamcore.TUI.{MultiScreenState, Shell, State}
   alias ExRatatui.Frame
-  alias ExRatatui.Widgets.{Paragraph, Tabs, Textarea}
+  alias ExRatatui.Widgets.{Paragraph, Popup, Tabs, Textarea}
 
   defp frame, do: %Frame{width: 80, height: 24}
 
@@ -34,6 +34,13 @@ defmodule Beamcore.TUI.ShellTest do
 
     assert Enum.any?(body, fn {w, _} -> match?(%Textarea{}, w) end)
     assert Enum.all?(body, fn {_w, rect} -> rect.y >= 1 end)
+  end
+
+  test "overlays the help popup when shell help is open" do
+    multi = %{multi(:dashboard) | show_help: true}
+    widgets = Shell.render(multi, frame())
+
+    assert Enum.any?(widgets, fn {w, _} -> match?(%Popup{block: %{title: "Help"}}, w) end)
   end
 
   test "renders a coming-soon placeholder body for unbuilt modes" do
