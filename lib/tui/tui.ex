@@ -26,6 +26,9 @@ defmodule Beamcore.TUI do
 
   @dialyzer {:nowarn_function, [start: 0, start: 1]}
 
+  @splash_hold_ms 1_500
+  @splash_tick_ms 80
+
   def start(opts \\ []) do
     old_logger_level = silence_logger()
     opts = TerminalOptions.apply(opts)
@@ -92,15 +95,25 @@ defmodule Beamcore.TUI do
     chat_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
     dashboard_state = TuiSystem.new(:agent)
 
+    now = System.monotonic_time(:millisecond)
+
     state = %MultiScreenState{
       active_mode: :chat,
       chat_state: chat_state,
       dashboard_state: dashboard_state,
-      started_at: System.monotonic_time(:millisecond)
+      splash?: true,
+      splash_step: 0,
+      splash_started_at: now,
+      started_at: now
     }
 
+    schedule_splash_tick()
     {:ok, set_viewports(state)}
   end
+
+  defp schedule_splash_tick, do: Process.send_after(self(), :splash_tick, @splash_tick_ms)
+
+  defp dismiss_splash(state), do: %{state | splash?: false}
 
   defp set_viewports(state) do
     {w, h} = ExRatatui.terminal_size()
@@ -154,6 +167,10 @@ defmodule Beamcore.TUI do
   end
 
   @impl true
+  def handle_event(%ExRatatui.Event.Key{}, %{splash?: true} = state) do
+    {:noreply, dismiss_splash(state)}
+  end
+
   def handle_event(%ExRatatui.Event.Key{} = event, state) do
     if KeyEvents.actionable?(event) do
       event
@@ -297,6 +314,19 @@ defmodule Beamcore.TUI do
 
     maybe_schedule_tick_result(result)
   end
+
+  defp route_info(:splash_tick, %{splash?: true} = state) do
+    elapsed = System.monotonic_time(:millisecond) - state.splash_started_at
+
+    if elapsed >= @splash_hold_ms do
+      {:noreply, dismiss_splash(state)}
+    else
+      schedule_splash_tick()
+      {:noreply, %{state | splash_step: state.splash_step + 1}}
+    end
+  end
+
+  defp route_info(:splash_tick, state), do: {:noreply, state, render?: false}
 
   defp route_info(:load_file_finder_cache, state) do
     parent = self()

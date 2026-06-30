@@ -12,6 +12,9 @@ defmodule Beamcore.TUI.MultiScreenState do
             chat_state: nil,
             dashboard_state: nil,
             show_help: false,
+            splash?: false,
+            splash_step: 0,
+            splash_started_at: nil,
             resize_redraw_ref: nil,
             tick_ref: nil,
             started_at: nil

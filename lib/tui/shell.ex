@@ -7,7 +7,7 @@ defmodule Beamcore.TUI.Shell do
   shifted down to sit beneath the bar.
   """
 
-  alias Beamcore.TUI.Components.{ComingSoon, Help, ModeBar, StatusBar}
+  alias Beamcore.TUI.Components.{ComingSoon, Help, ModeBar, Splash, StatusBar}
   alias Beamcore.TUI.{Mode, MultiScreenState, Render}
   alias ExRatatui.Frame
   alias ExRatatui.Layout.Rect
@@ -15,6 +15,10 @@ defmodule Beamcore.TUI.Shell do
   @top_height 1
 
   @doc "Composes the full scene for the active mode."
+  def render(%MultiScreenState{splash?: true} = multi, frame) do
+    Splash.widgets(frame, multi.splash_step, splash_unicode?(multi))
+  end
+
   def render(%MultiScreenState{} = multi, frame) do
     width = max(frame.width, 1)
     height = max(frame.height, 1)
@@ -54,4 +58,7 @@ defmodule Beamcore.TUI.Shell do
   defp offset_y(widgets, dy) do
     Enum.map(widgets, fn {widget, %Rect{} = rect} -> {widget, %{rect | y: rect.y + dy}} end)
   end
+
+  defp splash_unicode?(%MultiScreenState{chat_state: %{unicode?: unicode?}}), do: unicode?
+  defp splash_unicode?(_multi), do: true
 end
