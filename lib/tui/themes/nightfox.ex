@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Nightfox do
     running: %Style{fg: {:rgb, 230, 180, 99}},
     queued: %Style{fg: {:rgb, 180, 142, 214}},
     done: %Style{fg: {:rgb, 127, 200, 132}},
-    checkpoint: %Style{fg: {:rgb, 113, 189, 222}},
+    memory: %Style{fg: {:rgb, 113, 189, 222}},
     error: %Style{fg: {:rgb, 214, 95, 108}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 192, 199, 213}},
     cursor: %Style{fg: {:rgb, 36, 39, 48}, bg: {:rgb, 113, 189, 222}},

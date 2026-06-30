@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Lavender do
     running: %Style{fg: {:rgb, 220, 180, 255}},
     queued: %Style{fg: {:rgb, 160, 120, 220}},
     done: %Style{fg: {:rgb, 130, 230, 180}},
-    checkpoint: %Style{fg: {:rgb, 160, 120, 220}},
+    memory: %Style{fg: {:rgb, 160, 120, 220}},
     error: %Style{fg: {:rgb, 255, 80, 120}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 210, 200, 230}},
     cursor: %Style{fg: {:rgb, 20, 16, 30}, bg: {:rgb, 180, 130, 255}},

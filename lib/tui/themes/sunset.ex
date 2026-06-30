@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Sunset do
     running: %Style{fg: {:rgb, 255, 200, 80}},
     queued: %Style{fg: {:rgb, 200, 120, 80}},
     done: %Style{fg: {:rgb, 120, 200, 100}},
-    checkpoint: %Style{fg: {:rgb, 200, 120, 80}},
+    memory: %Style{fg: {:rgb, 200, 120, 80}},
     error: %Style{fg: {:rgb, 255, 60, 40}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 230, 200, 180}},
     cursor: %Style{fg: {:rgb, 30, 20, 25}, bg: {:rgb, 255, 140, 50}},

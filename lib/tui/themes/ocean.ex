@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Ocean do
     running: %Style{fg: {:rgb, 100, 220, 255}},
     queued: %Style{fg: {:rgb, 0, 140, 180}},
     done: %Style{fg: {:rgb, 0, 200, 150}},
-    checkpoint: %Style{fg: {:rgb, 0, 140, 180}},
+    memory: %Style{fg: {:rgb, 0, 140, 180}},
     error: %Style{fg: {:rgb, 255, 80, 80}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 190, 210, 230}},
     cursor: %Style{fg: {:rgb, 12, 20, 30}, bg: {:rgb, 0, 180, 220}},

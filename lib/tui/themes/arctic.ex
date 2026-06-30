@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Arctic do
     running: %Style{fg: {:rgb, 200, 230, 255}},
     queued: %Style{fg: {:rgb, 100, 180, 240}},
     done: %Style{fg: {:rgb, 100, 240, 200}},
-    checkpoint: %Style{fg: {:rgb, 100, 180, 240}},
+    memory: %Style{fg: {:rgb, 100, 180, 240}},
     error: %Style{fg: {:rgb, 255, 100, 100}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 220, 230, 245}},
     cursor: %Style{fg: {:rgb, 18, 22, 32}, bg: {:rgb, 180, 220, 255}},

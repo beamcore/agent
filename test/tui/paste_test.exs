@@ -20,7 +20,6 @@ defmodule Beamcore.TUI.PasteTest do
     session =
       Beamcore.Provider.Registry.client()
       |> Session.new(session_id: session_id, screen_type: :chat)
-      |> Map.put(:checkpoint_file, Path.join(tmp_dir, "session.checkpoints.json"))
 
     state = %State{
       textarea: ExRatatui.textarea_new(),

@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Molokai do
     running: %Style{fg: {:rgb, 253, 151, 31}},
     queued: %Style{fg: {:rgb, 174, 129, 255}},
     done: %Style{fg: {:rgb, 166, 226, 46}},
-    checkpoint: %Style{fg: {:rgb, 102, 217, 239}},
+    memory: %Style{fg: {:rgb, 102, 217, 239}},
     error: %Style{fg: {:rgb, 249, 38, 114}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 248, 248, 242}},
     cursor: %Style{fg: {:rgb, 30, 30, 30}, bg: {:rgb, 248, 248, 242}},

@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Catppuccin do
     running: %Style{fg: {:rgb, 249, 226, 175}},
     queued: %Style{fg: {:rgb, 203, 166, 247}},
     done: %Style{fg: {:rgb, 166, 227, 161}},
-    checkpoint: %Style{fg: {:rgb, 137, 180, 250}},
+    memory: %Style{fg: {:rgb, 137, 180, 250}},
     error: %Style{fg: {:rgb, 243, 139, 168}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 205, 214, 244}},
     cursor: %Style{fg: {:rgb, 30, 30, 46}, bg: {:rgb, 137, 180, 250}},
