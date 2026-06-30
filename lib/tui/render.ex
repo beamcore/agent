@@ -59,11 +59,31 @@ defmodule Beamcore.TUI.Render do
   defp narrow(state, areas), do: standard_widgets(state, areas)
 
   defp standard_widgets(state, areas) do
+    content = %{areas.chat | width: max(areas.chat.width - 1, 1)}
+    chat = cached_chat_widget(state, content)
+
     [
-      {cached_chat_widget(state, areas.chat), areas.chat},
+      {chat, content},
       {Input.widget(state), areas.input},
       {StatusBar.widget(state, areas.status.width), areas.status}
-    ]
+    ] ++ scrollbar_widgets(chat, areas.chat, content)
+  end
+
+  defp scrollbar_widgets(chat, chat_area, content) do
+    case Chat.scrollbar(chat, content) do
+      nil ->
+        []
+
+      scrollbar ->
+        rect = %Rect{
+          x: chat_area.x + content.width,
+          y: chat_area.y,
+          width: 1,
+          height: chat_area.height
+        }
+
+        [{scrollbar, rect}]
+    end
   end
 
   defp cached_chat_widget(state, %Rect{} = area) do

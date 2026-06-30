@@ -5,7 +5,7 @@ defmodule Beamcore.TUI.Components.Chat do
   alias Beamcore.TUI.Components.EmptyState
   alias Beamcore.TUI.{Theme, Wrap}
   alias ExRatatui.Layout.Rect
-  alias ExRatatui.Widgets.{Block, Paragraph, WidgetList}
+  alias ExRatatui.Widgets.{Block, Paragraph, Scrollbar, WidgetList}
 
   # --- Per-message bubble cache (Process dictionary) ---
   # Survives across renders so scrolling reuses previously-rendered bubbles.
@@ -56,6 +56,29 @@ defmodule Beamcore.TUI.Components.Chat do
         padding: {0, 0, 0, 0}
       }
     }
+  end
+
+  @doc """
+  Right-edge scrollbar bound to the transcript, or nil when the content fits.
+
+  Mirrors the `WidgetList` scroll model: `position` is the list's scroll offset
+  and `content_length` is the scrollable range (content beyond the viewport).
+  """
+  def scrollbar(%WidgetList{items: items, scroll_offset: offset}, %Rect{height: height}) do
+    content_height = Enum.reduce(items, 0, fn {_widget, h}, acc -> acc + h end)
+    viewport = max(height - 2, 1)
+    max_scroll = max(content_height - viewport, 0)
+
+    if max_scroll > 0 do
+      %Scrollbar{
+        orientation: :vertical_right,
+        content_length: max_scroll,
+        position: offset,
+        viewport_content_length: viewport,
+        thumb_style: Theme.style(:accent),
+        track_style: Theme.style(:subtle)
+      }
+    end
   end
 
   def render_message_lines(label, content, width) do
