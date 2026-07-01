@@ -169,6 +169,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         total_completion_tokens: 0,
         total_tokens: 0
     }
+
     Beamcore.Agent.Chat.Session.rewrite_log(final)
   end
 
