@@ -114,8 +114,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     case api_result do
       {:ok, %{message: message, raw_response: raw_response}} ->
-        Session.log(session, raw_response)
-
         {cleaned_content, reasoning} = API.extract_reasoning(message)
 
         if reasoning && reasoning != "", do: emit(opts, {:thinking, reasoning})
@@ -134,6 +132,7 @@ defmodule Beamcore.Agent.Chat.Loop do
         emit(opts, {:session, session})
 
         message = normalize_tool_calls(message)
+        Session.log(session, message)
         new_messages = messages ++ [message]
 
         if has_tool_calls?(message) do
