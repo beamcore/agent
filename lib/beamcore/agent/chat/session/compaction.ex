@@ -97,19 +97,8 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
           rollover_messages =
             MessageCleaner.clean([combined_system] ++ recent)
 
-          final_session = %{new_session | messages: rollover_messages}
-
-          Beamcore.Agent.Chat.Session.log(final_session, %{
-            event: "compaction",
-            compaction_number: final_session.compaction_count,
-            messages_before: length(messages),
-            messages_after: length(rollover_messages),
-            older_summarized: length(older),
-            recent_kept: length(recent),
-            timestamp: DateTime.utc_now() |> DateTime.to_iso8601()
-          })
-
-          final_session
+          final = %{new_session | messages: rollover_messages}
+          Beamcore.Agent.Chat.Session.rewrite_log(final)
 
         {:error, _reason} ->
           fallback_compaction(session, system_msgs, recent)
@@ -171,7 +160,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         MessageCleaner.clean(recent)
       end
 
-    %{
+    final = %{
       session
       | messages: fallback_messages,
         compaction_count: session.compaction_count + 1,
@@ -180,6 +169,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         total_completion_tokens: 0,
         total_tokens: 0
     }
+    Beamcore.Agent.Chat.Session.rewrite_log(final)
   end
 
   defp build_compact_system(session, summary, compaction_count) do

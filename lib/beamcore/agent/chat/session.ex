@@ -98,6 +98,17 @@ defmodule Beamcore.Agent.Chat.Session do
       mode_settings: mode_settings
     }
 
+    # Write metadata header so restore can recover provider/model info
+    meta = %{
+      _meta: true,
+      session_id: session_id,
+      provider: session.mode_settings.provider,
+      model: session.mode_settings.model,
+      created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+      workspace: workspace_root
+    }
+    log(session, meta)
+
     Enum.reduce(messages, session, fn msg, acc ->
       log(acc, msg)
     end)
@@ -133,6 +144,34 @@ defmodule Beamcore.Agent.Chat.Session do
     File.write!(session.log_file, json <> "\n", [:append])
     session
   end
+
+  @doc """
+  Rewrites the session log file from scratch.
+
+  Truncates the existing log and writes only the current state:
+  a fresh _meta header followed by every in-memory message.
+  Used after compaction so the on-disk file always matches the
+  in-memory session exactly.
+  """
+  def rewrite_log(session) do
+    meta = %{
+      _meta: true,
+      session_id: session.session_id,
+      provider: session.mode_settings.provider,
+      model: session.mode_settings.model,
+      created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+      workspace: session.workspace_root,
+      compaction_count: session.compaction_count
+    }
+
+    lines =
+      [meta | session.messages]
+      |> Enum.map(&Jason.encode!/1)
+
+    File.write!(session.log_file, Enum.join(lines, "\n") <> "\n")
+    session
+  end
+
 
   # --- Usage ---
 
