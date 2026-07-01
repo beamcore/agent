@@ -2,9 +2,8 @@ defmodule Beamcore.TUI.Components.System.Stats do
   @moduledoc false
 
   alias Beamcore.TUI.Components.System.{Section, Store}
-  alias Beamcore.TUI.Theme
+  alias Beamcore.TUI.{NumberFormat, Theme}
   alias ExRatatui.Text.{Line, Span}
-  alias Number.SI
 
   @bar_max 20
   @bar_full "█"
@@ -92,7 +91,7 @@ defmodule Beamcore.TUI.Components.System.Stats do
 
   defp fmt(nil), do: "0"
   defp fmt(0), do: "0"
-  defp fmt(n) when is_integer(n), do: SI.number_to_si(n, precision: 1, trim: true)
+  defp fmt(n) when is_integer(n), do: NumberFormat.compact(n)
   defp fmt(n), do: to_string(n)
 
   defp fmt_time(nil), do: "—"

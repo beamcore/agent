@@ -3,7 +3,9 @@ defmodule Beamcore.TUI.KeyboardInputTest do
 
   alias Beamcore.TUI.Components
   alias Beamcore.TUI.Events
+  alias Beamcore.TUI.Events.Commands
   alias Beamcore.TUI.Events.KeyEvents
+  alias Beamcore.TUI.Events.TextInput
   alias Beamcore.TUI
   alias Beamcore.TUI.{MultiScreenState, State}
 
@@ -148,6 +150,19 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     refute updated.show_help
     refute updated.show_commands
     refute updated.show_theme_picker
+  end
+
+  test "memory slash commands are offered by TUI completion" do
+    updated =
+      state()
+      |> TextInput.set_value("/memory")
+      |> Commands.refresh_commands()
+
+    assert updated.show_commands
+    assert Enum.any?(updated.command_matches, &(&1.name == "memory list"))
+    assert Enum.any?(updated.command_matches, &(&1.name == "memory search "))
+    assert Enum.any?(updated.command_matches, &(&1.name == "memory forget "))
+    assert Enum.any?(updated.command_matches, &(&1.name == "memory clear"))
   end
 
   test "function keys F1 through F12 have explicit actionable-kind coverage" do

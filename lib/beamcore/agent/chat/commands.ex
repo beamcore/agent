@@ -18,6 +18,8 @@ defmodule Beamcore.Agent.Chat.Commands do
       "env" -> handle_env(session, output)
       "api" -> handle_api(["list"], session, output)
       "api " <> args -> handle_api(String.split(args, " ", trim: true), session, output)
+      "memory" -> handle_memory(["list"], session, output)
+      "memory " <> args -> handle_memory(String.split(args, " ", trim: true), session, output)
       "help" -> handle_help(session, output)
       _ -> handle_unknown(command, session, output)
     end
@@ -200,6 +202,63 @@ defmodule Beamcore.Agent.Chat.Commands do
     end
   end
 
+  defp handle_memory(args, session, output) do
+    case args do
+      ["list"] ->
+        Beamcore.Memory.overview()
+        |> format_memory_overview()
+        |> output.()
+
+        session
+
+      ["list", type] ->
+        type
+        |> Beamcore.Memory.list()
+        |> format_memory_entries("Memory #{type}")
+        |> output.()
+
+        session
+
+      ["search" | query_parts] ->
+        query = Enum.join(query_parts, " ")
+
+        if query == "" do
+          output.("Usage: /memory search <query>")
+        else
+          query
+          |> Beamcore.Memory.search()
+          |> format_memory_results("Memory search: #{query}")
+          |> output.()
+        end
+
+        session
+
+      ["forget", type, key] ->
+        :ok = Beamcore.Memory.forget(type, key)
+        output.("Forgot memory #{type}/#{key}.")
+        session
+
+      ["forget", key] ->
+        :ok = Beamcore.Memory.forget(key)
+        output.("Forgot memory key #{key}.")
+        session
+
+      ["clear"] ->
+        :ok = Beamcore.Memory.clear()
+        output.("Cleared all memory entries.")
+        session
+
+      _ ->
+        output.("Invalid /memory command. Usage:")
+        output.("  /memory list [<type>]")
+        output.("  /memory search <query>")
+        output.("  /memory forget <key>")
+        output.("  /memory forget <type> <key>")
+        output.("  /memory clear")
+        session
+    end
+  end
+
   defp handle_help(session, output) do
     output.("""
     Available commands:
@@ -209,12 +268,59 @@ defmodule Beamcore.Agent.Chat.Commands do
       /api use <provider> - Switch active API provider
       /api add <provider> <token> [<base_url>] [<default_model>] - Add/update provider config
       /api delete <provider> - Delete a provider config
+      /memory list [<type>] - List memory counts or entries for a type
+      /memory search <query> - Search memory
+      /memory forget <key> - Delete memory entries with a key
+      /memory clear - Clear all memory entries
       /env  - Print env variables with secrets redacted
       /help - Show this help message
     """)
 
     session
   end
+
+  defp format_memory_overview(%{total: 0}), do: "Memory is empty."
+
+  defp format_memory_overview(%{total: total, types: types}) do
+    rows =
+      types
+      |> Enum.map_join("\n", fn %{type: type, count: count, sample_keys: sample_keys} ->
+        samples =
+          case sample_keys do
+            [] -> ""
+            keys -> " (" <> Enum.join(keys, ", ") <> ")"
+          end
+
+        "  #{type}: #{count}#{samples}"
+      end)
+
+    "Memory overview:\nTotal: #{total}\n#{rows}"
+  end
+
+  defp format_memory_entries([], title), do: "#{title}: no entries."
+
+  defp format_memory_entries(entries, title) do
+    rows =
+      entries
+      |> Enum.map_join("\n", fn {key, value} -> "  #{key}: #{format_memory_value(value)}" end)
+
+    "#{title}:\n#{rows}"
+  end
+
+  defp format_memory_results([], title), do: "#{title}: no matches."
+
+  defp format_memory_results(results, title) do
+    rows =
+      results
+      |> Enum.map_join("\n", fn %{type: type, key: key, value: value} ->
+        "  #{type}/#{key}: #{format_memory_value(value)}"
+      end)
+
+    "#{title}:\n#{rows}"
+  end
+
+  defp format_memory_value(value) when is_binary(value), do: value
+  defp format_memory_value(value), do: inspect(value, limit: 20, printable_limit: 1_000)
 
   defp handle_unknown(command, session, output) do
     output.("Error: Unknown command: /#{command}")
