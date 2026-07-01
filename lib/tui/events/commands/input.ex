@@ -185,9 +185,10 @@ defmodule Beamcore.TUI.Events.Commands.Input do
 
   defp maybe_record_command_history(state, value), do: record_history(state, value)
 
+  # Discovery lives in the `?` help popup, so the suggestion list carries only
+  # functional commands — no `/help`, and a single `/quit` (not exit/q aliases).
   defp commands do
     [
-      %SlashCommands.Command{name: "help", description: "Show commands and keybindings"},
       %SlashCommands.Command{name: "env", description: "Print full env variables"},
       %SlashCommands.Command{name: "api list", description: "List all configured API providers"},
       %SlashCommands.Command{name: "api use ", description: "Switch active API provider"},
@@ -212,8 +213,6 @@ defmodule Beamcore.TUI.Events.Commands.Input do
         description: "Pause the session; type a message to resume"
       },
       %SlashCommands.Command{name: "quit", description: "Exit"},
-      %SlashCommands.Command{name: "exit", description: "Exit"},
-      %SlashCommands.Command{name: "q", description: "Exit"},
       %SlashCommands.Command{name: "theme", description: "Switch UI themes"}
     ]
   end

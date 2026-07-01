@@ -60,7 +60,8 @@ defmodule Beamcore.TUI.Components.Help do
     /attach <name>   Attach Eeva to a project node (live runtime)
     /detach          Detach; run Eeva locally again
     /new             Start a fresh session
-    /quit /exit /q   Exit
+    /stop            Pause the session; type a message to resume
+    /quit            Exit
 
     Keys
     Enter            Insert newline

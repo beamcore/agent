@@ -22,7 +22,7 @@ defmodule Beamcore.TUI.Components.EmptyState do
 
       ──────────────────────────────────
 
-      /help · /commands · @file · tools
+      ? help · / commands · @file · tools
 
       ──────────────────────────────────
 
