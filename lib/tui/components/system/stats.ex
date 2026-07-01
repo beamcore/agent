@@ -1,7 +1,7 @@
 defmodule Beamcore.TUI.Components.System.Stats do
   @moduledoc false
 
-  alias Beamcore.TUI.Components.System.{Section, Store}
+  alias Beamcore.TUI.Components.System.Store
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
   alias Number.SI
@@ -10,14 +10,8 @@ defmodule Beamcore.TUI.Components.System.Stats do
   @bar_full "█"
   @bar_empty "░"
 
-  def render(width) do
-    render(snapshot(), width)
-  end
-
-  def render(stats, width) when is_map(stats) do
-    content = build_content(stats, width)
-    Section.section("Token Usage", content, width, icon: "◈")
-  end
+  @doc "The token-usage content lines (no section frame), for the dashboard panel."
+  def content(stats, width) when is_map(stats), do: build_content(stats, width)
 
   def snapshot, do: Store.load()
 

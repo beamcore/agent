@@ -2,10 +2,7 @@ defmodule Beamcore.TUI.Components.System do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Providers
-  alias Beamcore.TUI.Components.System.{Attach, Mesh, Section, Stats}
-  alias Beamcore.TUI.Theme
-  alias ExRatatui.Text.{Line, Span}
-  alias ExRatatui.Widgets.Paragraph
+  alias Beamcore.TUI.Components.System.{Mesh, Stats}
 
   defstruct screen_type: :system,
             configure_for: :agent,
@@ -22,68 +19,6 @@ defmodule Beamcore.TUI.Components.System do
       mesh_snapshot: Mesh.local_snapshot(),
       stats_snapshot: Stats.snapshot()
     }
-  end
-
-  def render_text(system, width, _height \\ nil) do
-    width = max(width, 1)
-    accent = Theme.style(:accent)
-    subtle = Theme.style(:subtle)
-    flourish = String.duplicate("· ", max(div(width - 24, 2), 0))
-
-    # ── Page header ──
-    header = [
-      %Line{spans: [%Span{content: ""}]},
-      %Line{
-        spans: [
-          %Span{content: " ◆ Beamcore Agent  ", style: accent},
-          %Span{content: flourish, style: subtle}
-        ]
-      },
-      %Line{spans: [%Span{content: ""}]}
-    ]
-
-    # ── Keyboard hints ──
-    hints = [
-      %Line{spans: [%Span{content: ""}]},
-      %Line{
-        spans: [
-          %Span{content: "  ── ", style: subtle},
-          %Span{content: "enter", style: accent},
-          %Span{content: " activate  ", style: Theme.style(:muted)},
-          %Span{content: "a", style: accent},
-          %Span{content: " add  ", style: Theme.style(:muted)},
-          %Span{content: "d", style: accent},
-          %Span{content: " delete  ", style: Theme.style(:muted)},
-          %Span{content: "F1", style: accent},
-          %Span{content: " back", style: Theme.style(:muted)}
-        ]
-      }
-    ]
-
-    # ── Build each section ──
-    stats_section = Stats.render(system.stats_snapshot || %{}, width)
-    provider_lines = Providers.render_items(system.providers)
-    provider_section = Section.section("Providers", provider_lines, width)
-    mesh_lines = Mesh.render(system.mesh_snapshot || Mesh.local_snapshot(), width)
-    mesh_section = Section.section("Mesh", mesh_lines, width)
-    attach_section = Section.section("Eeva Runtime", Attach.lines(), width, icon: "▸")
-
-    header ++
-      stats_section ++
-      provider_section ++
-      hints ++
-      attach_section ++
-      mesh_section
-  end
-
-  def widget(system, area) do
-    lines = render_text(system, area.width - 4)
-    height = max(length(lines), 1)
-
-    [
-      {%Paragraph{text: lines, wrap: false}, height},
-      {%Paragraph{text: [%Span{content: ""}], style: Theme.style(:base)}, 1}
-    ]
   end
 
   def mark_dirty(system), do: system

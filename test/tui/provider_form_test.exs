@@ -3,6 +3,7 @@ defmodule Beamcore.TUI.ProviderFormTest do
 
   import ExUnit.CaptureIO
 
+  alias Beamcore.TUI.Components.Dashboard
   alias Beamcore.TUI.Components.Providers
   alias Beamcore.TUI.Components.Providers.Form
   alias Beamcore.TUI.Components.System, as: TuiSystem
@@ -341,7 +342,13 @@ defmodule Beamcore.TUI.ProviderFormTest do
     {:noreply, resized, [render?: false]} =
       Beamcore.TUI.handle_event(%ExRatatui.Event.Resize{width: 80, height: 16}, state)
 
-    lines = TuiSystem.render_text(resized.dashboard_state, 76, 15) |> rendered_text()
+    lines =
+      Dashboard.panels(
+        resized.dashboard_state,
+        %ExRatatui.Layout.Rect{x: 0, y: 0, width: 76, height: 15}
+      )
+      |> Enum.flat_map(fn {%{text: text}, _rect} -> text end)
+      |> rendered_text()
 
     assert resized.dashboard_state.providers.form.field == :auth_strategy
     assert lines =~ "auth strategy"

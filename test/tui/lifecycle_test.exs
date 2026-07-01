@@ -88,7 +88,7 @@ defmodule Beamcore.TUI.LifecycleTest do
     assert rect.height == 1
   end
 
-  test "F3 render uses cached stats and mesh snapshots" do
+  test "dashboard render uses cached stats and mesh snapshots" do
     system = %{
       TuiSystem.new(:agent)
       | mesh_snapshot: Beamcore.TUI.Components.System.Mesh.local_snapshot(),
@@ -102,14 +102,22 @@ defmodule Beamcore.TUI.LifecycleTest do
         }
     }
 
+    panels =
+      Beamcore.TUI.Components.Dashboard.panels(
+        system,
+        %ExRatatui.Layout.Rect{x: 0, y: 0, width: 100, height: 24}
+      )
+
+    titles = Enum.map(panels, fn {%{block: %{title: title}}, _rect} -> title end)
+
     text =
-      system
-      |> TuiSystem.render_text(100, 24)
+      panels
+      |> Enum.flat_map(fn {%{text: text}, _rect} -> text end)
       |> Enum.flat_map(& &1.spans)
       |> Enum.map_join("", & &1.content)
 
+    assert "Mesh" in titles
     assert text =~ "provider-a"
-    assert text =~ "Mesh"
   end
 
   test "resize schedules a debounced redraw instead of rendering immediately" do

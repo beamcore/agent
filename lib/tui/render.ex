@@ -3,7 +3,7 @@ defmodule Beamcore.TUI.Render do
   Render composition for the primary TUI.
   """
 
-  alias Beamcore.TUI.Components.{Chat, Help, Input, System, StatusBar}
+  alias Beamcore.TUI.Components.{Chat, Dashboard, Help, Input, StatusBar}
   alias Beamcore.TUI.{Layout, Theme}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, List, Paragraph, Popup, SlashCommands}
@@ -16,12 +16,9 @@ defmodule Beamcore.TUI.Render do
     content_h = max(area.height - status_h, 1)
     content = %{area | height: content_h}
     status = %{area | y: content_h, height: status_h}
-    lines = System.render_text(state, max(content.width - 4, 1), content.height)
 
-    [
-      {%Paragraph{text: lines, style: Theme.style(:base), wrap: false}, content},
-      {StatusBar.widget(state, status.width), status}
-    ]
+    Dashboard.panels(state, content) ++
+      [{StatusBar.widget(state, status.width), status}]
   end
 
   def render(state, frame) do
