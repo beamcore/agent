@@ -84,7 +84,6 @@ defmodule Beamcore.TUI.State do
   defdelegate new(terminal, textarea, opts \\ []), to: Factory
   defdelegate from_restored(session, opts \\ []), to: Factory
 
-
   def add_message(state, role, content) when is_binary(content) do
     content = String.trim(content)
 

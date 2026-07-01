@@ -107,6 +107,7 @@ defmodule Beamcore.Agent.Chat.Session do
       created_at: DateTime.utc_now() |> DateTime.to_iso8601(),
       workspace: workspace_root
     }
+
     log(session, meta)
 
     Enum.reduce(messages, session, fn msg, acc ->
@@ -171,7 +172,6 @@ defmodule Beamcore.Agent.Chat.Session do
     File.write!(session.log_file, Enum.join(lines, "\n") <> "\n")
     session
   end
-
 
   # --- Usage ---
 

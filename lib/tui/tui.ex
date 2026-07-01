@@ -100,6 +100,7 @@ defmodule Beamcore.TUI do
         session_name ->
           # Restore from log file
           session = Beamcore.Agent.Chat.Session.Restore.build(session_name)
+
           {
             State.from_restored(session, screen_type: :agent, textarea: ExRatatui.textarea_new()),
             State.from_restored(session, screen_type: :chat, textarea: ExRatatui.textarea_new())
