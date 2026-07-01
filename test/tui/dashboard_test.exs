@@ -35,7 +35,10 @@ defmodule Beamcore.TUI.Components.DashboardTest do
 
   defp panel_text(panels) do
     panels
-    |> Enum.flat_map(fn {%{text: text}, _rect} -> text end)
+    |> Enum.flat_map(fn
+      {%{text: text}, _rect} -> text
+      {_widget, _rect} -> []
+    end)
     |> Enum.flat_map(& &1.spans)
     |> Enum.map_join(" ", & &1.content)
   end

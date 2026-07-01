@@ -16,6 +16,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
   alias ExRatatui.Layout, as: RatLayout
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, Paragraph}
+  alias ExRatatui.Widgets.Block.Title
 
   @narrow_width 88
 
@@ -65,7 +66,27 @@ defmodule Beamcore.TUI.Components.Dashboard do
   end
 
   defp providers_panel(system, _rect) do
-    panel("Providers", Providers.render_items(system.providers))
+    p = system.providers
+
+    if p.adding? do
+      %Paragraph{
+        text: Providers.form_lines(p),
+        style: Theme.style(:base),
+        wrap: false,
+        block: panel_block("Providers", [])
+      }
+    else
+      %{Providers.table(p) | block: panel_block("Providers", [providers_hint()])}
+    end
+  end
+
+  defp providers_hint do
+    %Title{
+      content: " enter activate · a add · d delete ",
+      position: :bottom,
+      alignment: :right,
+      style: Theme.style(:muted)
+    }
   end
 
   defp mesh_panel(system, rect) do
@@ -82,14 +103,19 @@ defmodule Beamcore.TUI.Components.Dashboard do
       text: lines,
       style: Theme.style(:base),
       wrap: false,
-      block: %Block{
-        title: title,
-        borders: [:all],
-        border_type: :rounded,
-        border_style: Theme.style(:border),
-        title_style: Theme.style(:accent),
-        padding: {1, 1, 0, 0}
-      }
+      block: panel_block(title, [])
+    }
+  end
+
+  defp panel_block(title, extra_titles) do
+    %Block{
+      title: title,
+      titles: extra_titles,
+      borders: [:all],
+      border_type: :rounded,
+      border_style: Theme.style(:border),
+      title_style: Theme.style(:accent),
+      padding: {1, 1, 0, 0}
     }
   end
 

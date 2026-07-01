@@ -4,7 +4,8 @@ defmodule Beamcore.TUI.Components.Providers do
   alias Beamcore.TUI.Components.Providers.{Form, Store}
   alias Beamcore.TUI.Events.KeyEvents
   alias Beamcore.TUI.Theme
-  alias ExRatatui.Text.{Line, Span}
+  alias ExRatatui.Text.Span
+  alias ExRatatui.Widgets.Table
 
   defstruct screen_type: :providers,
             render_dirty?: true,
@@ -28,8 +29,30 @@ defmodule Beamcore.TUI.Components.Providers do
   def mark_dirty(p), do: %{p | render_dirty?: true}
   def clear_dirty(p), do: %{p | render_dirty?: false}
 
-  def render_items(p, height \\ nil) when is_struct(p, __MODULE__),
-    do: render_list_items(p, height)
+  @doc "The provider list as a native selectable `Table` (browsing mode)."
+  def table(p) when is_struct(p, __MODULE__) do
+    %Table{
+      header: header_cells(),
+      rows: provider_rows(p),
+      widths: [
+        {:length, 1},
+        {:length, 16},
+        {:length, 18},
+        {:fill, 1},
+        {:length, 3}
+      ],
+      column_spacing: 1,
+      selected: selection(p),
+      highlight_style: Theme.style(:accent),
+      highlight_symbol: "▸ ",
+      style: Theme.style(:base)
+    }
+  end
+
+  @doc "The add/edit provider form as content lines (adding mode)."
+  def form_lines(p, height \\ nil) when is_struct(p, __MODULE__) do
+    Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base), height)
+  end
 
   def handle_event(%ExRatatui.Event.Mouse{}, p), do: {:noreply, p}
 
@@ -69,76 +92,62 @@ defmodule Beamcore.TUI.Components.Providers do
 
   defp paste_event?(_), do: false
 
-  defp render_list_items(p, height) do
-    if p.adding?,
-      do:
-        Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base), height),
-      else: table_header() ++ render_rows(p)
+  defp header_cells do
+    muted = Theme.style(:muted)
+
+    for label <- ["", "name", "model", "url", "key"] do
+      %Span{content: label, style: muted}
+    end
   end
 
-  defp table_header do
-    subtle = Theme.style(:subtle)
+  defp selection(%{providers: []}), do: nil
+
+  defp selection(%{providers: providers, selected: selected}) do
+    selected |> max(0) |> min(length(providers) - 1)
+  end
+
+  defp provider_rows(%{providers: []}) do
     muted = Theme.style(:muted)
 
     [
-      %Line{
-        spans: [
-          %Span{content: "  ", style: muted},
-          %Span{content: pad("name", 16), style: muted},
-          %Span{content: pad("model", 20), style: muted},
-          %Span{content: pad("url", 24), style: muted},
-          %Span{content: "key", style: muted}
-        ]
-      },
-      %Line{
-        spans: [%Span{content: "  " <> String.duplicate("─", 68), style: subtle}]
-      }
+      [
+        %Span{content: "", style: muted},
+        %Span{content: "no providers configured", style: muted},
+        %Span{content: "", style: muted},
+        %Span{content: "", style: muted},
+        %Span{content: "", style: muted}
+      ]
     ]
   end
 
-  defp render_rows(p) do
-    accent = Theme.style(:accent)
-    muted = Theme.style(:muted)
-    base = Theme.style(:base)
-
-    if p.providers == [] do
-      [
-        %Line{
-          spans: [
-            %Span{content: "  no providers configured", style: muted}
-          ]
-        }
-      ]
-    else
-      p.providers
-      |> Enum.with_index()
-      |> Enum.flat_map(fn {{name, config}, idx} ->
-        sel? = idx == p.selected
-        act? = name == p.active_provider
-        cur = if sel?, do: "▸", else: " "
-        mark = if act?, do: "●", else: "○"
-        ns = if sel?, do: accent, else: base
-        ms = if act?, do: Theme.style(:done), else: muted
-        model = Map.get(config, "default_model") || "—"
-        url = Map.get(config, "base_url") || "—"
-        key = if Map.get(config, "api_key"), do: "✓", else: "✗"
-        ks = if key == "✓", do: Theme.style(:done), else: Theme.style(:error)
-
-        [
-          %Line{
-            spans: [
-              %Span{content: " #{cur}", style: accent},
-              %Span{content: mark, style: ms},
-              %Span{content: " #{pad(truncate(name, 14), 16)}", style: ns},
-              %Span{content: pad(truncate(model, 18), 20), style: muted},
-              %Span{content: pad(truncate(url, 22), 24), style: muted},
-              %Span{content: key, style: ks}
-            ]
-          }
-        ]
-      end)
-    end
+  defp provider_rows(%{providers: providers} = p) do
+    Enum.map(providers, fn {name, config} -> provider_row(name, config, p) end)
   end
+
+  defp provider_row(name, config, p) do
+    active? = name == p.active_provider
+    key? = not is_nil(Map.get(config, "api_key"))
+
+    [
+      %Span{content: if(active?, do: "●", else: "○"), style: mark_style(active?)},
+      %Span{content: truncate(name, 15), style: name_style(active?)},
+      %Span{
+        content: truncate(Map.get(config, "default_model") || "—", 17),
+        style: Theme.style(:muted)
+      },
+      %Span{content: Map.get(config, "base_url") || "—", style: Theme.style(:muted)},
+      %Span{content: if(key?, do: "✓", else: "✗"), style: key_style(key?)}
+    ]
+  end
+
+  defp mark_style(true), do: Theme.style(:done)
+  defp mark_style(false), do: Theme.style(:muted)
+
+  defp name_style(true), do: Theme.style(:accent)
+  defp name_style(false), do: Theme.style(:base)
+
+  defp key_style(true), do: Theme.style(:done)
+  defp key_style(false), do: Theme.style(:error)
 
   def handle_key("up", _mods, p), do: %{p | selected: max(p.selected - 1, 0)}
 
@@ -330,10 +339,5 @@ defmodule Beamcore.TUI.Components.Providers do
   defp truncate(text, max_len) do
     text = to_string(text)
     if String.length(text) <= max_len, do: text, else: String.slice(text, 0, max_len - 1) <> "…"
-  end
-
-  defp pad(text, width) do
-    text = to_string(text)
-    if String.length(text) >= width, do: text, else: String.pad_trailing(text, width)
   end
 end

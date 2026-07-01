@@ -112,7 +112,10 @@ defmodule Beamcore.TUI.LifecycleTest do
 
     text =
       panels
-      |> Enum.flat_map(fn {%{text: text}, _rect} -> text end)
+      |> Enum.flat_map(fn
+        {%{text: text}, _rect} -> text
+        {_widget, _rect} -> []
+      end)
       |> Enum.flat_map(& &1.spans)
       |> Enum.map_join("", & &1.content)
 
