@@ -109,18 +109,10 @@ defmodule Beamcore.TUI.LifecycleTest do
       )
 
     titles = Enum.map(panels, fn {%{block: %{title: title}}, _rect} -> title end)
-
-    text =
-      panels
-      |> Enum.flat_map(fn
-        {%{text: text}, _rect} -> text
-        {_widget, _rect} -> []
-      end)
-      |> Enum.flat_map(& &1.spans)
-      |> Enum.map_join("", & &1.content)
+    {usage, _rect} = Enum.at(panels, 0)
 
     assert "Mesh" in titles
-    assert text =~ "provider-a"
+    assert "provider-a" in Enum.map(usage.data, & &1.label)
   end
 
   test "resize schedules a debounced redraw instead of rendering immediately" do

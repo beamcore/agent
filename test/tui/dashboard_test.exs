@@ -33,16 +33,6 @@ defmodule Beamcore.TUI.Components.DashboardTest do
       r.y + r.height <= area.y + area.height
   end
 
-  defp panel_text(panels) do
-    panels
-    |> Enum.flat_map(fn
-      {%{text: text}, _rect} -> text
-      {_widget, _rect} -> []
-    end)
-    |> Enum.flat_map(& &1.spans)
-    |> Enum.map_join(" ", & &1.content)
-  end
-
   test "a wide area renders the four native-bordered panels in a grid" do
     area = %Rect{x: 0, y: 1, width: 120, height: 30}
     panels = Dashboard.panels(sample_system(), area)
@@ -86,11 +76,11 @@ defmodule Beamcore.TUI.Components.DashboardTest do
     assert Enum.all?(panels, &within_bounds?(&1, area))
   end
 
-  test "the token-usage panel surfaces recorded provider stats" do
+  test "the token-usage panel charts recorded provider stats" do
     area = %Rect{x: 0, y: 0, width: 120, height: 30}
-    text = Dashboard.panels(sample_system(), area) |> panel_text()
+    {usage, _rect} = Dashboard.panels(sample_system(), area) |> Enum.at(0)
 
-    assert text =~ "provider-a"
+    assert "provider-a" in Enum.map(usage.data, & &1.label)
   end
 
   test "renders every panel with empty data without crashing" do

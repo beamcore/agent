@@ -15,6 +15,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
   alias Beamcore.TUI.Theme
   alias ExRatatui.Layout, as: RatLayout
   alias ExRatatui.Layout.Rect
+  alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.{Block, Paragraph}
   alias ExRatatui.Widgets.Block.Title
 
@@ -61,8 +62,22 @@ defmodule Beamcore.TUI.Components.Dashboard do
     ]
   end
 
-  defp usage_panel(system, rect) do
-    panel("Token Usage", Stats.content(system.stats_snapshot || %{}, inner_width(rect)))
+  defp usage_panel(system, _rect) do
+    stats = system.stats_snapshot || %{}
+    block = panel_block("Token Usage", [])
+
+    if map_size(stats) == 0 do
+      %Paragraph{
+        text: [
+          %Line{spans: [%Span{content: "no usage recorded yet", style: Theme.style(:muted)}]}
+        ],
+        style: Theme.style(:base),
+        wrap: false,
+        block: block
+      }
+    else
+      %{Stats.bar_chart(stats) | block: block}
+    end
   end
 
   defp providers_panel(system, _rect) do
