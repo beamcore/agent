@@ -104,9 +104,17 @@ defmodule Beamcore.TUI.Components.Dashboard do
     }
   end
 
-  defp mesh_panel(system, rect) do
+  defp mesh_panel(system, _rect) do
     snapshot = system.mesh_snapshot || Mesh.local_snapshot()
-    panel("Mesh", Mesh.render(snapshot, inner_width(rect)))
+
+    caption = %Title{
+      content: " " <> Mesh.summary(snapshot) <> " ",
+      position: :bottom,
+      alignment: :right,
+      style: Theme.style(:muted)
+    }
+
+    %{Mesh.canvas(snapshot) | block: panel_block("Mesh", [caption])}
   end
 
   defp eeva_panel(_rect) do
@@ -133,7 +141,4 @@ defmodule Beamcore.TUI.Components.Dashboard do
       padding: {1, 1, 0, 0}
     }
   end
-
-  # Border (1 each side) plus horizontal padding (1 each side).
-  defp inner_width(%Rect{width: width}), do: max(width - 4, 1)
 end

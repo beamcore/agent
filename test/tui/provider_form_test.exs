@@ -347,7 +347,10 @@ defmodule Beamcore.TUI.ProviderFormTest do
         resized.dashboard_state,
         %ExRatatui.Layout.Rect{x: 0, y: 0, width: 76, height: 15}
       )
-      |> Enum.flat_map(fn {%{text: text}, _rect} -> text end)
+      |> Enum.flat_map(fn
+        {%{text: text}, _rect} -> text
+        {_widget, _rect} -> []
+      end)
       |> rendered_text()
 
     assert resized.dashboard_state.providers.form.field == :auth_strategy
