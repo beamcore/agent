@@ -2,10 +2,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Mascot
-  alias Beamcore.TUI.{State, Theme}
+  alias Beamcore.TUI.{NumberFormat, State, Theme}
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
-  alias Number.SI
 
   def widget(%{screen_type: :system}, width) when is_integer(width) do
     mascot = Mascot.frame(:idle, 0, true)
@@ -48,7 +47,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
     provider_model = "#{provider}/#{model}"
 
     tokens =
-      "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
+      "#{NumberFormat.compact(usage.last_prompt_tokens)}/#{NumberFormat.compact(usage.total_tokens)}"
 
     right_text =
       case State.ctrl_c_hint(state.ctrl_c_pending) do
