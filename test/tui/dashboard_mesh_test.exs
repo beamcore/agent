@@ -63,7 +63,10 @@ defmodule Beamcore.TUI.Components.DashboardMeshTest do
     test "is a native Canvas wrapped in the Mesh block with a stats caption" do
       system = %{TuiSystem.new(:agent) | mesh_snapshot: two_peer_snapshot()}
       area = %Rect{x: 0, y: 0, width: 120, height: 30}
-      {widget, _rect} = Dashboard.panels(system, area) |> Enum.at(2)
+
+      {widget, _rect} =
+        Dashboard.panels(system, area)
+        |> Enum.find(fn {w, _rect} -> match?(%Canvas{block: %Block{title: "Mesh"}}, w) end)
 
       assert %Canvas{block: %Block{title: "Mesh"}} = widget
 

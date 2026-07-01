@@ -10,7 +10,10 @@ defmodule Beamcore.TUI.Components.System do
             mesh_snapshot: nil,
             stats_snapshot: nil,
             mesh_refresh_ref: nil,
-            mesh_updated_at_ms: nil
+            mesh_updated_at_ms: nil,
+            # Snapshot of the chat's activity trace, injected by the shell at
+            # render time (the trace itself lives on the chat state).
+            activity: []
 
   def new(configure_for \\ :agent) do
     %__MODULE__{

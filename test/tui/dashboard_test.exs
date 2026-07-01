@@ -33,12 +33,14 @@ defmodule Beamcore.TUI.Components.DashboardTest do
       r.y + r.height <= area.y + area.height
   end
 
-  test "a wide area renders the four native-bordered panels in a grid" do
+  @panel_titles ["Token Usage", "Providers", "Activity", "Mesh", "Eeva Runtime"]
+
+  test "a wide area renders the five native-bordered panels in a grid" do
     area = %Rect{x: 0, y: 1, width: 120, height: 30}
     panels = Dashboard.panels(sample_system(), area)
 
-    assert length(panels) == 4
-    assert titles(panels) == ["Token Usage", "Providers", "Mesh", "Eeva Runtime"]
+    assert length(panels) == 5
+    assert titles(panels) == @panel_titles
 
     for {widget, _rect} <- panels do
       assert %Block{borders: [:all], border_type: :rounded} = widget.block
@@ -47,26 +49,32 @@ defmodule Beamcore.TUI.Components.DashboardTest do
     assert Enum.all?(panels, &within_bounds?(&1, area))
   end
 
-  test "a wide grid places two columns per row" do
+  test "a wide grid places two columns above and below a full-width activity band" do
     area = %Rect{x: 0, y: 0, width: 120, height: 30}
-    [usage, providers, mesh, eeva] = Dashboard.panels(sample_system(), area)
+    [usage, providers, activity, mesh, eeva] = Dashboard.panels(sample_system(), area)
 
     # top row shares a y, bottom row shares a lower y
     assert elem(usage, 1).y == elem(providers, 1).y
     assert elem(mesh, 1).y == elem(eeva, 1).y
     assert elem(mesh, 1).y > elem(usage, 1).y
 
-    # each row splits into a left and a right column
+    # each side row splits into a left and a right column
     assert elem(providers, 1).x > elem(usage, 1).x
     assert elem(eeva, 1).x > elem(mesh, 1).x
+
+    # the activity band sits between the rows and spans the full width
+    assert elem(activity, 1).x == area.x
+    assert elem(activity, 1).width == area.width
+    assert elem(activity, 1).y > elem(usage, 1).y
+    assert elem(mesh, 1).y > elem(activity, 1).y
   end
 
   test "a narrow area stacks the panels in a single full-width column" do
     area = %Rect{x: 0, y: 0, width: 60, height: 40}
     panels = Dashboard.panels(sample_system(), area)
 
-    assert length(panels) == 4
-    assert titles(panels) == ["Token Usage", "Providers", "Mesh", "Eeva Runtime"]
+    assert length(panels) == 5
+    assert titles(panels) == @panel_titles
 
     for {_widget, %Rect{} = r} <- panels do
       assert r.x == area.x
@@ -89,7 +97,7 @@ defmodule Beamcore.TUI.Components.DashboardTest do
 
     panels = Dashboard.panels(system, area)
 
-    assert length(panels) == 4
-    assert titles(panels) == ["Token Usage", "Providers", "Mesh", "Eeva Runtime"]
+    assert length(panels) == 5
+    assert titles(panels) == @panel_titles
   end
 end

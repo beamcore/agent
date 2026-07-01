@@ -41,8 +41,10 @@ defmodule Beamcore.TUI.Shell do
   defp body_widgets(%MultiScreenState{active_mode: :chat} = multi, frame),
     do: Render.render(multi.chat_state, frame)
 
-  defp body_widgets(%MultiScreenState{active_mode: :dashboard} = multi, frame),
-    do: Render.render(multi.dashboard_state, frame)
+  defp body_widgets(%MultiScreenState{active_mode: :dashboard} = multi, frame) do
+    dashboard = %{multi.dashboard_state | activity: activity_of(multi.chat_state)}
+    Render.render(dashboard, frame)
+  end
 
   defp body_widgets(%MultiScreenState{active_mode: mode} = multi, frame) do
     area = %Rect{x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1)}
@@ -61,4 +63,7 @@ defmodule Beamcore.TUI.Shell do
 
   defp splash_unicode?(%MultiScreenState{chat_state: %{unicode?: unicode?}}), do: unicode?
   defp splash_unicode?(_multi), do: true
+
+  defp activity_of(%{activity: activity}) when is_list(activity), do: activity
+  defp activity_of(_chat_state), do: []
 end
