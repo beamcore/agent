@@ -87,9 +87,13 @@ defmodule Beamcore.TUI.StatusBarTest do
     refute text =~ "F1 Agent"
   end
 
-  test "system screen status bar surfaces the Ctrl+C arm hint when armed" do
-    idle = StatusBar.widget(%{screen_type: :system, ctrl_c_pending: false}, 120) |> text()
-    assert idle =~ "System overview"
+  test "system screen status bar hints panel navigation, and the Ctrl+C arm when armed" do
+    providers = StatusBar.widget(%{screen_type: :system, active_panel: :providers}, 120) |> text()
+    assert providers =~ "Tab panel"
+    assert providers =~ "select"
+
+    activity = StatusBar.widget(%{screen_type: :system, active_panel: :activity}, 120) |> text()
+    assert activity =~ "scroll"
 
     armed = StatusBar.widget(%{screen_type: :system, ctrl_c_pending: :exit}, 120) |> text()
     assert armed =~ "Press Ctrl+C again to exit"

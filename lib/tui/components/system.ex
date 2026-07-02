@@ -12,11 +12,19 @@ defmodule Beamcore.TUI.Components.System do
             mesh_refresh_ref: nil,
             mesh_updated_at_ms: nil,
             # Snapshot of the chat's activity trace, injected by the shell at
-            # render time (the trace itself lives on the chat state).
+            # render time (the trace itself lives on the chat state) and kept in
+            # sync on the dashboard tick so key handling can clamp the scroll.
             activity: [],
+            # Which panel has keyboard focus: :providers (default) or :activity.
+            # Tab cycles it; the focused panel's border is highlighted.
+            active_panel: :providers,
+            # Top line offset for the Activity log when it is focused.
+            activity_offset: 0,
             # Shared Ctrl+C arm flag, injected by the shell at render time so the
             # status bar can surface the "press again" hint (it lives on chat).
             ctrl_c_pending: false
+
+  @activity_page 5
 
   def new(configure_for \\ :agent) do
     %__MODULE__{
@@ -29,10 +37,58 @@ defmodule Beamcore.TUI.Components.System do
 
   def mark_dirty(system), do: system
 
-  def handle_event(event, system) do
+  # While the add-provider form is open it owns every key (Tab moves between
+  # fields), so panel cycling is suspended until the form is dismissed.
+  def handle_event(%ExRatatui.Event.Key{} = event, %{providers: %{adding?: true}} = system) do
+    delegate_providers(event, system)
+  end
+
+  def handle_event(%ExRatatui.Event.Key{code: code}, system) when code in ["tab", "back_tab"] do
+    {:noreply, toggle_panel(system)}
+  end
+
+  # When Activity is focused it consumes the scroll keys; other keys are inert
+  # (providers actions like add/delete only fire while Providers is focused).
+  def handle_event(%ExRatatui.Event.Key{code: code}, %{active_panel: :activity} = system) do
+    case activity_scroll(code) do
+      nil -> {:noreply, system}
+      move -> {:noreply, scroll_activity(system, move)}
+    end
+  end
+
+  def handle_event(event, system), do: delegate_providers(event, system)
+
+  @doc "Clamps the Activity scroll offset to the current trace length."
+  def clamp_activity_offset(%__MODULE__{} = system) do
+    max_offset = max(length(system.activity) - 1, 0)
+    %{system | activity_offset: system.activity_offset |> max(0) |> min(max_offset)}
+  end
+
+  defp delegate_providers(event, system) do
     case Providers.handle_event(event, system.providers) do
       {:noreply, updated} -> {:noreply, %{system | providers: updated}}
     end
+  end
+
+  defp toggle_panel(%{active_panel: :providers} = system), do: %{system | active_panel: :activity}
+  defp toggle_panel(system), do: %{system | active_panel: :providers}
+
+  defp activity_scroll("up"), do: -1
+  defp activity_scroll("down"), do: 1
+  defp activity_scroll(code) when code in ["page_up", "pageup", "pgup"], do: -@activity_page
+  defp activity_scroll(code) when code in ["page_down", "pagedown", "pgdown"], do: @activity_page
+  defp activity_scroll("home"), do: :home
+  defp activity_scroll("end"), do: :end
+  defp activity_scroll(_code), do: nil
+
+  defp scroll_activity(system, :home), do: %{system | activity_offset: 0}
+
+  defp scroll_activity(system, :end),
+    do: %{system | activity_offset: max(length(system.activity) - 1, 0)}
+
+  defp scroll_activity(system, delta) when is_integer(delta) do
+    max_offset = max(length(system.activity) - 1, 0)
+    %{system | activity_offset: (system.activity_offset + delta) |> max(0) |> min(max_offset)}
   end
 
   def maybe_refresh_mesh(%{mesh_refresh_ref: ref} = system) when is_reference(ref), do: system

@@ -12,7 +12,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
   @hints "^C quit · ? help"
 
   def widget(%{screen_type: :system} = state, width) when is_integer(width) do
-    info = State.ctrl_c_hint(Map.get(state, :ctrl_c_pending)) || "System overview"
+    info = State.ctrl_c_hint(Map.get(state, :ctrl_c_pending)) || system_hint(state)
     line(Mascot.frame(:idle, 0, true), info, width)
   end
 
@@ -31,6 +31,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
 
     widget(state, width)
   end
+
+  defp system_hint(%{active_panel: :activity}), do: "Activity · Tab panel · ↑↓ PgUp/Dn scroll"
+  defp system_hint(_state), do: "Providers · Tab panel · ↑↓ select · a add"
 
   defp info_text(state) do
     case State.ctrl_c_hint(state.ctrl_c_pending) do

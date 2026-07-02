@@ -41,8 +41,12 @@ defmodule Beamcore.TUI.MessageRouter do
         {:noreply, %{state | chat_state: State.tick(state.chat_state, now)}}
 
       state.active_mode == :dashboard ->
-        {:noreply,
-         %{state | dashboard_state: TuiSystem.maybe_refresh_mesh(state.dashboard_state)}}
+        dashboard =
+          %{state.dashboard_state | activity: dashboard_activity(state.chat_state)}
+          |> TuiSystem.maybe_refresh_mesh()
+          |> TuiSystem.clamp_activity_offset()
+
+        {:noreply, %{state | dashboard_state: dashboard}}
 
       true ->
         {:noreply, state, render?: false}
@@ -146,6 +150,9 @@ defmodule Beamcore.TUI.MessageRouter do
       {:noreply, updated, render?: false}
     end
   end
+
+  defp dashboard_activity(%{activity: activity}) when is_list(activity), do: activity
+  defp dashboard_activity(_chat_state), do: []
 
   defp mark_dirty(%{render_dirty?: _} = s), do: State.mark_dirty(s)
   defp mark_dirty(s), do: s

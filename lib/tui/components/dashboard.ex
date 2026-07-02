@@ -96,7 +96,8 @@ defmodule Beamcore.TUI.Components.Dashboard do
   defp providers_widgets(system, rect) do
     p = system.providers
     inner_h = max(rect.height - 2, 1)
-    panel = {providers_panel(system, inner_h), rect}
+    active? = system.active_panel == :providers
+    panel = {providers_panel(system, inner_h, active?), rect}
 
     if p.adding? do
       %{position: pos, content_length: total} = Providers.form_scroll_state(p, inner_h)
@@ -106,7 +107,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
     end
   end
 
-  defp providers_panel(system, inner_h) do
+  defp providers_panel(system, inner_h, active?) do
     p = system.providers
 
     if p.adding? do
@@ -114,10 +115,10 @@ defmodule Beamcore.TUI.Components.Dashboard do
         text: Providers.form_lines(p, inner_h),
         style: Theme.style(:base),
         wrap: false,
-        block: panel_block("Providers", [])
+        block: panel_block("Providers", [], active?)
       }
     else
-      %{Providers.table(p) | block: panel_block("Providers", [providers_hint()])}
+      %{Providers.table(p) | block: panel_block("Providers", [providers_hint()], active?)}
     end
   end
 
@@ -130,19 +131,21 @@ defmodule Beamcore.TUI.Components.Dashboard do
     }
   end
 
-  # Activity is newest-first, so the latest rows are always shown; older ones
-  # spill past the fold and a right-edge scrollbar marks how much is hidden.
+  # Activity is newest-first. When focused it scrolls (Tab to focus, arrows to
+  # move); otherwise it sits at the top. A right-edge scrollbar tracks position.
   defp activity_widgets(system, rect) do
     inner_h = max(rect.height - 2, 1)
     visible = max(inner_h - 1, 1)
-    panel = {activity_panel(system, visible), rect}
     total = length(system.activity)
+    offset = system.activity_offset |> max(0) |> min(max(total - visible, 0))
+    active? = system.active_panel == :activity
 
-    [panel | scrollbar_widgets(rect, 0, total, visible)]
+    panel = {activity_panel(system, offset, visible, active?), rect}
+    [panel | scrollbar_widgets(rect, offset, total, visible)]
   end
 
-  defp activity_panel(system, visible) do
-    block = panel_block("Activity", [live_caption()])
+  defp activity_panel(system, offset, visible, active?) do
+    block = panel_block("Activity", [live_caption()], active?)
 
     case system.activity do
       [] ->
@@ -154,7 +157,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
         }
 
       activity ->
-        %{activity_table(activity, visible) | block: block}
+        %{activity_table(activity, offset, visible) | block: block}
     end
   end
 
@@ -162,10 +165,10 @@ defmodule Beamcore.TUI.Components.Dashboard do
     %Title{content: " live ", position: :bottom, alignment: :right, style: Theme.style(:accent)}
   end
 
-  defp activity_table(activity, visible) do
+  defp activity_table(activity, offset, visible) do
     %Table{
       header: activity_header(),
-      rows: activity |> Enum.take(visible) |> Enum.map(&activity_row/1),
+      rows: activity |> Enum.slice(offset, visible) |> Enum.map(&activity_row/1),
       widths: [{:length, 8}, {:length, 14}, {:min, 0}, {:length, 10}],
       column_spacing: 1,
       style: Theme.style(:base)
@@ -262,13 +265,13 @@ defmodule Beamcore.TUI.Components.Dashboard do
     end
   end
 
-  defp panel_block(title, extra_titles) do
+  defp panel_block(title, extra_titles, active? \\ false) do
     %Block{
       title: title,
       titles: extra_titles,
       borders: [:all],
       border_type: :rounded,
-      border_style: Theme.style(:border),
+      border_style: if(active?, do: Theme.style(:accent), else: Theme.style(:border)),
       title_style: Theme.style(:accent),
       padding: {1, 1, 0, 0}
     }
