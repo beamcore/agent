@@ -150,15 +150,29 @@ defmodule Beamcore.TUI.Events.Keyboard do
 
   defp handle_ctrl_c(state) do
     if Commands.input_blank?(state) do
-      desired = if worker_running?(state), do: :pause, else: :exit
-
-      if state.ctrl_c_pending == desired do
-        confirm_ctrl_c(desired, State.disarm_ctrl_c(state))
-      else
-        {:noreply, State.arm_ctrl_c(state, desired)}
-      end
+      arm_or_confirm_quit(state)
     else
       {:noreply, Commands.clear_input(state)}
+    end
+  end
+
+  @doc """
+  Ctrl+C for surfaces without a composer — the dashboard and coming-soon tabs.
+
+  There is no input to clear, so the first press always arms the quit (or a
+  pause while a turn is running) and the second confirms it: the same
+  arm/confirm the chat composer uses when it is empty. Operates on the chat
+  state, where the shell keeps the shared arm flag.
+  """
+  def ctrl_c_quit(state), do: arm_or_confirm_quit(state)
+
+  defp arm_or_confirm_quit(state) do
+    desired = if worker_running?(state), do: :pause, else: :exit
+
+    if state.ctrl_c_pending == desired do
+      confirm_ctrl_c(desired, State.disarm_ctrl_c(state))
+    else
+      {:noreply, State.arm_ctrl_c(state, desired)}
     end
   end
 

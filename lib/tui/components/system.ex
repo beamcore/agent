@@ -13,7 +13,10 @@ defmodule Beamcore.TUI.Components.System do
             mesh_updated_at_ms: nil,
             # Snapshot of the chat's activity trace, injected by the shell at
             # render time (the trace itself lives on the chat state).
-            activity: []
+            activity: [],
+            # Shared Ctrl+C arm flag, injected by the shell at render time so the
+            # status bar can surface the "press again" hint (it lives on chat).
+            ctrl_c_pending: false
 
   def new(configure_for \\ :agent) do
     %__MODULE__{

@@ -11,8 +11,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
   # bar, so the status line no longer carries the F1/F2/F3 switcher.
   @hints "^C quit · ? help"
 
-  def widget(%{screen_type: :system}, width) when is_integer(width) do
-    line(Mascot.frame(:idle, 0, true), "System overview", width)
+  def widget(%{screen_type: :system} = state, width) when is_integer(width) do
+    info = State.ctrl_c_hint(Map.get(state, :ctrl_c_pending)) || "System overview"
+    line(Mascot.frame(:idle, 0, true), info, width)
   end
 
   def widget(state, width) when is_integer(width) do

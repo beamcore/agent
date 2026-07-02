@@ -38,7 +38,7 @@ defmodule Beamcore.TUI.Components.Providers do
         {:length, 1},
         {:length, 16},
         {:length, 18},
-        {:fill, 1},
+        {:min, 0},
         {:length, 3}
       ],
       column_spacing: 1,

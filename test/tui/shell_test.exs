@@ -52,4 +52,28 @@ defmodule Beamcore.TUI.ShellTest do
     assert Enum.any?(texts, &(&1 =~ "Research"))
     assert Enum.any?(texts, &(&1 =~ "Coming soon"))
   end
+
+  # Building the widget tree is not enough: an unsupported constraint or widget
+  # only blows up inside ExRatatui.draw/2, which the runtime calls *after*
+  # render/2 returns. Draw every mode (and its help overlay) to a headless test
+  # terminal so a bad widget surfaces here instead of freezing a live TUI.
+  @modes [:chat, :dashboard, :research, :mesh]
+
+  for mode <- @modes do
+    test "draws the #{mode} mode without crashing" do
+      m = %{multi(unquote(mode)) | show_help: false}
+      assert :ok = draw(Shell.render(m, frame()))
+    end
+
+    test "draws the #{mode} mode with the help overlay without crashing" do
+      m = %{multi(unquote(mode)) | show_help: true}
+      assert :ok = draw(Shell.render(m, frame()))
+    end
+  end
+
+  defp draw(widgets) do
+    %Frame{width: w, height: h} = frame()
+    terminal = ExRatatui.init_test_terminal(w, h)
+    ExRatatui.draw(terminal, widgets)
+  end
 end

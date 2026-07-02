@@ -130,7 +130,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
     %Table{
       header: activity_header(),
       rows: activity |> Enum.take(@activity_rows) |> Enum.map(&activity_row/1),
-      widths: [{:length, 8}, {:length, 14}, {:fill, 1}, {:length, 10}],
+      widths: [{:length, 8}, {:length, 14}, {:min, 0}, {:length, 10}],
       column_spacing: 1,
       style: Theme.style(:base)
     }

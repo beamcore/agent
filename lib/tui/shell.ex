@@ -42,7 +42,12 @@ defmodule Beamcore.TUI.Shell do
     do: Render.render(multi.chat_state, frame)
 
   defp body_widgets(%MultiScreenState{active_mode: :dashboard} = multi, frame) do
-    dashboard = %{multi.dashboard_state | activity: activity_of(multi.chat_state)}
+    dashboard = %{
+      multi.dashboard_state
+      | activity: activity_of(multi.chat_state),
+        ctrl_c_pending: Map.get(multi.chat_state, :ctrl_c_pending, false)
+    }
+
     Render.render(dashboard, frame)
   end
 

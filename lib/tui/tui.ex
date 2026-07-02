@@ -21,7 +21,7 @@ defmodule Beamcore.TUI do
   }
 
   alias Beamcore.TUI.Components.System, as: TuiSystem
-  alias Beamcore.TUI.Events.KeyEvents
+  alias Beamcore.TUI.Events.{Keyboard, KeyEvents}
   alias ExRatatui.Layout.Rect
 
   @dialyzer {:nowarn_function, [start: 0, start: 1]}
@@ -195,6 +195,8 @@ defmodule Beamcore.TUI do
   end
 
   defp handle_actionable_event(event, state) do
+    state = maybe_global_disarm(event, state)
+
     Trace.event(:event_received, %{
       message_type: Trace.message_type(event),
       event: inspect(event),
@@ -219,6 +221,10 @@ defmodule Beamcore.TUI do
 
           %ExRatatui.Event.Key{code: "?"} ->
             toggle_help(event, state)
+
+          %ExRatatui.Event.Key{code: "c", modifiers: mods}
+          when state.active_mode != :chat ->
+            if ctrl?(mods), do: global_ctrl_c(state), else: delegate_to_active(event, state)
 
           %ExRatatui.Event.Key{code: code} when code in ["esc", "q"] and state.show_help ->
             {:noreply, %{state | show_help: false}}
@@ -395,6 +401,39 @@ defmodule Beamcore.TUI do
       MessageRouter.delegate_event(event, state, state.active_mode)
     end
   end
+
+  # Ctrl+C is global: chat owns its own composer-aware handler, but the
+  # dashboard and coming-soon tabs have no composer, so the shell arms and
+  # confirms the quit here. The arm flag lives on the chat state, so the
+  # status bar shown by those tabs surfaces the "press again" hint.
+  defp global_ctrl_c(state) do
+    case Keyboard.ctrl_c_quit(state.chat_state) do
+      {:noreply, chat} -> {:noreply, %{state | chat_state: chat}}
+      {:stop, chat} -> {:stop, %{state | chat_state: chat}}
+    end
+  end
+
+  # Any key other than Ctrl+C disarms a pending shell-level quit, mirroring how
+  # the chat composer disarms. Chat disarms itself downstream, so skip it here.
+  defp maybe_global_disarm(_event, %{active_mode: :chat} = state), do: state
+
+  defp maybe_global_disarm(%ExRatatui.Event.Key{code: "c", modifiers: mods}, state) do
+    if ctrl?(mods), do: state, else: disarm_global_ctrl_c(state)
+  end
+
+  defp maybe_global_disarm(%ExRatatui.Event.Key{}, state), do: disarm_global_ctrl_c(state)
+  defp maybe_global_disarm(_event, state), do: state
+
+  defp disarm_global_ctrl_c(%{chat_state: chat} = state) do
+    if Map.get(chat, :ctrl_c_pending, false) do
+      %{state | chat_state: State.disarm_ctrl_c(chat)}
+    else
+      state
+    end
+  end
+
+  defp ctrl?(nil), do: false
+  defp ctrl?(mods), do: "ctrl" in mods
 
   # In chat, `?` opens help only on an empty composer; otherwise it is typed.
   # Modes without a composer toggle a shell-level help overlay.
