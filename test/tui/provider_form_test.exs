@@ -104,6 +104,58 @@ defmodule Beamcore.TUI.ProviderFormTest do
     refute lines =~ "name *"
   end
 
+  describe "scroll_state/2" do
+    test "reports no overflow when the whole form fits" do
+      state = Form.scroll_state(Form.new(), 100)
+
+      assert state.position == 0
+      assert state.viewport == 100
+      assert state.content_length <= 100
+    end
+
+    test "reports overflow and a scrolled position for a deep focus in a short panel" do
+      form = Form.new()
+      form = Form.handle_key("down", [], form)
+      form = Form.handle_key("down", [], form)
+      form = Form.handle_key("down", [], form)
+      form = Form.handle_key("down", [], form)
+
+      state = Form.scroll_state(form, 7)
+
+      assert state.viewport == 7
+      assert state.content_length > 7
+      assert state.position > 0
+      # the visible window stays within the content bounds
+      assert state.position + state.viewport <= state.content_length
+    end
+
+    test "recomputes independently of the form's stored visible_rows" do
+      form = Form.new()
+      form = Form.handle_key("down", [], form)
+      form = Form.handle_key("down", [], form)
+      form = Form.handle_key("down", [], form)
+      form = Form.handle_key("down", [], form)
+
+      # A form left with a large stored window still reports the offset for the
+      # height it is actually rendered at, matching what render/5 windows to.
+      stale = %{form | visible_rows: 100, scroll_offset: 0}
+      state = Form.scroll_state(stale, 7)
+
+      line_count =
+        stale
+        |> Form.render(
+          Beamcore.TUI.Theme.style(:muted),
+          Beamcore.TUI.Theme.style(:accent),
+          Beamcore.TUI.Theme.style(:base),
+          7
+        )
+        |> length()
+
+      assert line_count <= 7
+      assert state.position > 0
+    end
+  end
+
   test "typing edits only the focused provider input" do
     form = Form.new()
     form = Form.handle_key("down", [], form)

@@ -48,6 +48,29 @@ defmodule Beamcore.TUI.Components.Providers.Form do
 
   def focusable_fields(form), do: Fields.focusable_fields(form)
 
+  @doc """
+  Scroll geometry for the form rendered into `visible_rows` rows.
+
+  Recomputes the focus-follows offset the same way `render/5` does, so a
+  scrollbar can be drawn alongside the form. Returns `%{position:,
+  content_length:, viewport:}` where `position` is the top line offset,
+  `content_length` the total line count, and `viewport` the visible rows.
+  """
+  def scroll_state(form, visible_rows) do
+    form =
+      form
+      |> Auth.auto_detect_mode()
+      |> set_visible_rows(visible_rows)
+      |> ensure_focus_valid()
+      |> ensure_focus_visible()
+
+    %{
+      position: form.scroll_offset,
+      content_length: total_line_count(form),
+      viewport: form.visible_rows
+    }
+  end
+
   def handle_key("tab", mods, form) do
     if shift?(mods), do: previous_field(form, wrap?: true), else: next_field(form, wrap?: true)
   end
@@ -216,15 +239,27 @@ defmodule Beamcore.TUI.Components.Providers.Form do
 
         offset =
           cond do
-            first < form.scroll_offset -> first
-            last >= form.scroll_offset + form.visible_rows -> last - form.visible_rows + 1
-            true -> form.scroll_offset
+            first < form.scroll_offset ->
+              first
+
+            last >= form.scroll_offset + form.visible_rows ->
+              anchor_below(first, last, form.visible_rows)
+
+            true ->
+              form.scroll_offset
           end
           |> max(0)
           |> min(max_offset)
 
         %{form | scroll_offset: offset}
     end
+  end
+
+  # Scroll a field into view when it sits below the window. If the field fits,
+  # bottom-anchor it (natural for tab-forward); if it is taller than the window,
+  # top-anchor so its label — which names the field — stays visible.
+  defp anchor_below(first, last, visible_rows) do
+    if last - first < visible_rows, do: last - visible_rows + 1, else: first
   end
 
   defp field_line_range(form, field_id) do

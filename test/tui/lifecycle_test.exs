@@ -108,7 +108,7 @@ defmodule Beamcore.TUI.LifecycleTest do
         %ExRatatui.Layout.Rect{x: 0, y: 0, width: 100, height: 24}
       )
 
-    titles = Enum.map(panels, fn {%{block: %{title: title}}, _rect} -> title end)
+    titles = for {%{block: %{title: title}}, _rect} <- panels, is_binary(title), do: title
     {usage, _rect} = Enum.at(panels, 0)
 
     assert "Mesh" in titles

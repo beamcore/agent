@@ -54,6 +54,11 @@ defmodule Beamcore.TUI.Components.Providers do
     Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base), height)
   end
 
+  @doc "Scroll geometry for the add-provider form at `visible_rows` rows."
+  def form_scroll_state(p, visible_rows) when is_struct(p, __MODULE__) do
+    Form.scroll_state(p.form, visible_rows)
+  end
+
   def handle_event(%ExRatatui.Event.Mouse{}, p), do: {:noreply, p}
 
   def handle_event(event, p) do
