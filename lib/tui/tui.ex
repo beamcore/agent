@@ -376,6 +376,13 @@ defmodule Beamcore.TUI do
 
   defp route_info({:resize_redraw, _ref}, state), do: {:noreply, state, render?: false}
 
+  defp route_info(:flush_stream_buffer, state) do
+    active = MultiScreenState.get_active(state)
+    active = State.flush_stream_buffer(active) |> Map.put(:stream_render_timer, nil)
+    screen = state.active_screen
+    {:noreply, MessageRouter.put_screen_state(state, screen, active)}
+  end
+
   defp route_info(_msg, state), do: {:noreply, state}
 
   defp switch_to_f3(state) do

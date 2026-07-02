@@ -4,7 +4,7 @@ defmodule Beamcore.TUI.MessageRouter do
   alias Beamcore.TUI.{Events, FileFinder, MultiScreenState, State}
   alias Beamcore.TUI.Components.System, as: TuiSystem
 
-  @animated_statuses [:thinking, :tool_running, :local_search, :rate_limited]
+  @animated_statuses [:thinking, :tool_running, :local_search, :rate_limited, :streaming]
 
   def switch_or_delegate(event, state, screen) do
     if state.active_screen == screen do

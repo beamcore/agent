@@ -46,6 +46,48 @@ defmodule Beamcore.Provider.Router do
      )}
   end
 
+  def stream(selection, request, opts \\ [])
+
+  def stream(%{provider: provider, model: model}, request, opts) do
+    with {:ok, provider_info} <- Registry.validate_selection(provider),
+         {:ok, adapter} <- adapter(provider_info),
+         :ok <- ensure_chat_capability(provider_info, model),
+         config <- provider_config(provider_info),
+         :ok <- adapter.validate_config(config) do
+      key = scheduler_key(provider_info, model, config)
+
+      Scheduler.wait(key,
+        interval: scheduler_interval(provider_info),
+        name: Keyword.get(opts, :scheduler, Scheduler),
+        wait_fun: Keyword.get(opts, :wait_fun)
+      )
+
+      request = Map.put(request, :model, model)
+      receiver = Keyword.fetch!(opts, :receiver)
+
+      case adapter.stream(request, receiver, config) do
+        {:error, %OpenaiEx.Error{kind: :rate_limit} = error} = result ->
+          apply_cooldown(key, error, opts)
+          result
+
+        {:error, %Error{kind: :rate_limit} = error} = result ->
+          apply_cooldown(key, error, opts)
+          result
+
+        result ->
+          result
+      end
+    end
+  end
+
+  def stream(_selection, _request, _opts) do
+    {:error,
+     Error.exception(
+       kind: :invalid_config,
+       message: "Provider selection must include provider and model."
+     )}
+  end
+
   defp adapter(%{adapter: module}) when is_atom(module) and not is_nil(module), do: {:ok, module}
 
   defp adapter(provider_info) do

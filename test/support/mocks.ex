@@ -1,5 +1,9 @@
 defmodule Beamcore.Agent.MockCompletions do
   def create(client, params) do
+    create(client, params, [])
+  end
+
+  def create(client, params, _opts) do
     case Process.get(:mock_completions_create) ||
            Application.get_env(:beamcore, :mock_completions_create) do
       nil ->

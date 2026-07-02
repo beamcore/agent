@@ -126,6 +126,32 @@ defmodule Beamcore.TUI.Events.Runtime do
     State.add_activity(state, "provider_usage", Map.put(usage, :summary, summary), :completed)
   end
 
+  def handle_event({:stream_delta, delta}, state) when is_binary(delta) do
+    # Detect new streaming round (first delta after idle or after previous stream_done)
+    state = if Map.get(state, :stream_phase) != :active do
+      state |> Map.put(:stream_phase, :active) |> Map.put(:stream_new_round, true)
+    else
+      state
+    end
+
+    state = State.buffer_stream_delta(state, delta)
+
+    if Map.get(state, :stream_render_timer) == nil do
+      timer = Process.send_after(self(), :flush_stream_buffer, 33)
+      %{state | stream_render_timer: timer} |> State.set_status(:streaming)
+    else
+      state
+    end
+  end
+
+  def handle_event({:stream_done, _content}, state) do
+    state
+    |> State.flush_stream_buffer()
+    |> State.finalize_streaming_message()
+    |> Map.put(:stream_render_timer, nil)
+    |> Map.put(:stream_phase, :done)
+  end
+
   def handle_event(_event, state), do: state
 
   def finish_worker(state, session), do: State.finish_worker(state, session)

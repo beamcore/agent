@@ -62,8 +62,50 @@ defmodule Beamcore.Provider.Adapters.OpenAICompatible do
   end
 
   @impl true
-  def stream(_request, _receiver, config) do
-    {:error, Error.exception(provider: provider_id(config), kind: :unsupported_capability)}
+  def stream(request, receiver, config) when is_pid(receiver) do
+    with {:ok, params} <- params(request),
+         {:ok, client} <- client(config) do
+      params = Map.put(params, :stream, true)
+      params = Map.put(params, :stream_options, %{include_usage: true})
+
+      spawn(fn ->
+        File.write!("/tmp/beamcore_stream.log", "spawned consumer process\n", [:append])
+        case @completions_module.create(client, params, stream: true) do
+          {:ok, %{body_stream: body_stream, task_pid: task_pid}} ->
+            File.write!("/tmp/beamcore_stream.log", "create ok, consuming stream\n", [:append])
+            try do
+              body_stream
+              |> Stream.flat_map(fn
+                events when is_list(events) -> events
+                other -> [other]
+              end)
+              |> Enum.each(fn
+                %{data: chunk} when is_map(chunk) ->
+                  send(receiver, {:stream_chunk, chunk})
+                _other ->
+                  :ok
+              end)
+
+              send(receiver, {:stream_done, task_pid})
+            rescue
+              e -> send(receiver, {:stream_error, e, task_pid})
+            catch
+              kind, reason ->
+                send(receiver, {:stream_error, {kind, reason}, task_pid})
+            end
+
+          {:error, reason} ->
+            File.write!("/tmp/beamcore_stream.log", "create FAILED: " <> inspect(reason) <> "\n", [:append])
+            send(receiver, {:stream_error, reason, nil})
+        end
+      end)
+
+      {:ok, make_ref()}
+    else
+      error ->
+        File.write!("/tmp/beamcore_stream.log", "stream with-clause error: " <> inspect(error) <> "\n", [:append])
+        error
+    end
   end
 
   @impl true

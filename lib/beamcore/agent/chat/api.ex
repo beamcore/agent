@@ -125,8 +125,45 @@ defmodule Beamcore.Agent.Chat.API do
   end
 
   @doc """
+  Execute a streaming API call. Returns {:ok, ref} on success.
+  Chunks arrive as messages to the receiver pid:
+    {:stream_chunk, chunk_map}
+    {:stream_done, task_pid}
+    {:stream_error, reason, task_pid}
+  """
+  def execute_stream(client, messages, tools, opts \\ []) do
+    cond do
+      !is_list(messages) || length(messages) == 0 ->
+        {:error, "Messages must be a non-empty list."}
+
+      tools && !is_list(tools) ->
+        {:error, "Tools must be a list."}
+
+      true ->
+        tools = tools || []
+        model = Keyword.get(opts, :model, default_model())
+        receiver = Keyword.get(opts, :receiver) || self()
+
+        request = build_request(model, messages, tools, opts)
+
+        case Keyword.get(opts, :selection) do
+          %{provider: _} = selection ->
+            Beamcore.Provider.Router.stream(
+              selection,
+              request,
+              Keyword.put(opts, :receiver, receiver)
+            )
+
+          _ ->
+            # Fallback: use non-streaming for direct client path
+            execute(client, messages, tools, opts)
+        end
+    end
+  end
+
+  @doc """
   Extracts reasoning content from a completions message map.
-  Supports both reasoning_content fields and <think>...</think> tags inside content.
+  Supports both reasoning_content fields and ...</think> tags inside content.
   """
   def extract_reasoning(nil), do: {"", nil}
   def extract_reasoning(message) when not is_map(message), do: {"", nil}

@@ -79,7 +79,9 @@ defmodule Beamcore.TUI.State do
             screen_type: :agent,
             show_theme_picker: false,
             providers_data: nil,
-            collapsed_blocks: %{}
+            collapsed_blocks: %{},
+            stream_buffer: "",
+            stream_render_timer: nil
 
   defdelegate new(terminal, textarea, opts \\ []), to: Factory
   defdelegate from_restored(session, opts \\ []), to: Factory
@@ -173,6 +175,56 @@ defmodule Beamcore.TUI.State do
   defdelegate toggle_code_block(state, msg_idx, block_idx), to: Collapse
   defdelegate toggle_all_collapsible(state), to: Collapse
 
+  @doc """
+  Append delta to the last assistant message (streaming), or create a new one.
+  """
+  def update_streaming_message(state, delta) when is_binary(delta) do
+    messages = state.messages
+
+    # Only continue appending if we're in the same streaming round
+    continuing? =
+      !Map.get(state, :stream_new_round, false) &&
+        match?(%{role: :assistant}, List.last(messages))
+
+    state = Map.put(state, :stream_new_round, false)
+
+    if continuing? do
+      existing = List.last(messages).content
+      updated_msg = %{role: :assistant, content: existing <> delta}
+      updated_messages = List.replace_at(messages, -1, updated_msg)
+      %{state | messages: updated_messages} |> auto_scroll_on_new_message() |> mark_dirty()
+    else
+      add_message(state, :assistant, delta)
+    end
+  end
+
+  @doc """
+  Buffer a stream delta for batched rendering.
+  """
+  def buffer_stream_delta(state, delta) do
+    buffer = (Map.get(state, :stream_buffer) || "") <> delta
+    %{state | stream_buffer: buffer}
+  end
+
+  @doc """
+  Flush the stream buffer into the actual message.
+  """
+  def flush_stream_buffer(state) do
+    case Map.get(state, :stream_buffer, "") do
+      "" ->
+        state
+
+      buffer ->
+        state
+        |> update_streaming_message(buffer)
+        |> Map.put(:stream_buffer, "")
+    end
+  end
+
+  @doc """
+  Mark the streaming message as complete.
+  """
+  def finalize_streaming_message(state), do: mark_dirty(state)
   defp auto_scroll_on_new_message(state), do: Scroll.auto_scroll_on_new_message(state)
 
   def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0}

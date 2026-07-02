@@ -11,6 +11,12 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   alias Beamcore.Agent.Tools.Dispatcher
 
+  defp log_debug(msg) do
+    File.write!("/tmp/beamcore_stream.log", "[" <> inspect(DateTime.utc_now()) <> "] " <> msg <> "\n", [:append])
+  rescue
+    _ -> :ok
+  end
+
   def send_message(session, content, pid, opts \\ []) do
     with {:ok, session} <- ensure_client(session, opts) do
       do_send_message(session, content, pid, opts)
@@ -74,23 +80,64 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     call_started = System.monotonic_time(:millisecond)
 
+    selection = Beamcore.Provider.Selection.primary(session.roles)
+    log_debug("[LOOP] process_messages, selection=#{inspect(selection)}")
+
     api_result =
-      API.execute(session.client, api_messages, tools,
-        selection: Beamcore.Provider.Selection.primary(session.roles),
-        model: model_name(session),
-        silent: Keyword.get(opts, :silent, false),
-        retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
-        temperature: Keyword.get(opts, :temperature),
-        max_tokens: metadata.max_output_tokens,
-        wait_fun: fn wait_ms ->
-          sleep_before_retry(
-            opts,
-            :cooldown,
-            wait_ms,
-            "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
-          )
+      if selection && match?(%{provider: _}, selection) do
+        log_debug("[LOOP] taking streaming path")
+        stream_opts = [
+          selection: selection,
+          model: model_name(session),
+          silent: Keyword.get(opts, :silent, false),
+          retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
+          temperature: Keyword.get(opts, :temperature),
+          max_tokens: metadata.max_output_tokens,
+          receiver: self(),
+          wait_fun: fn wait_ms ->
+            sleep_before_retry(
+              opts,
+              :cooldown,
+              wait_ms,
+              "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
+            )
+          end
+        ]
+
+        case API.execute_stream(session.client, api_messages, tools, stream_opts) do
+          {:ok, ref} when is_reference(ref) ->
+            log_debug("[LOOP] stream returned ref=#{inspect(ref)}")
+            Process.put(:streamed, true)
+            emit(opts, {:status, :streaming})
+            stream_receive_loop(opts, %{content: "", reasoning: "", tool_calls: %{}, raw_response: nil, finish_reason: nil, thinking_emitted: false})
+
+          # Non-streaming fallback (execute_stream fell back to execute)
+          {:ok, %{message: _, raw_response: _}} = result ->
+            log_debug("[LOOP] stream fell back to non-streaming")
+            result
+
+          {:error, reason} ->
+            {:error, reason}
         end
-      )
+      else
+        log_debug("[LOOP] no provider selection, using non-streaming API.execute")
+        API.execute(session.client, api_messages, tools,
+          selection: selection,
+          model: model_name(session),
+          silent: Keyword.get(opts, :silent, false),
+          retry_config: Keyword.get(opts, :retry_config) || retry_config(settings, opts),
+          temperature: Keyword.get(opts, :temperature),
+          max_tokens: metadata.max_output_tokens,
+          wait_fun: fn wait_ms ->
+            sleep_before_retry(
+              opts,
+              :cooldown,
+              wait_ms,
+              "Provider is cooling down. Retrying automatically in #{format_ms(wait_ms)}."
+            )
+          end
+        )
+      end
 
     call_elapsed = System.monotonic_time(:millisecond) - call_started
 
@@ -99,8 +146,160 @@ defmodule Beamcore.Agent.Chat.Loop do
       opts: opts,
       settings: settings,
       call_elapsed: call_elapsed,
-      depth: depth
+      depth: depth,
+      streamed: true
     })
+  end
+
+  # --- Streaming receive loop ---
+
+  defp stream_receive_loop(opts, acc) do
+    log_debug("[STREAM] loop waiting, acc.content_len=#{String.length(acc.content || "")}")
+
+    receive do
+      {:stream_chunk, chunk} ->
+        log_debug("[STREAM] got chunk: #{inspect(Map.keys(chunk))}")
+        acc = accumulate_chunk(chunk, acc)
+
+        # Emit content delta to TUI for real-time display
+        {content_delta, _reasoning_delta} = extract_delta_content(chunk)
+
+        # Emit thinking before first content delta so it appears above the response
+        acc = if content_delta && content_delta != "" && !acc.thinking_emitted && acc.reasoning && acc.reasoning != "" do
+          emit(opts, {:thinking, acc.reasoning})
+          %{acc | thinking_emitted: true}
+        else
+          acc
+        end
+
+        if content_delta && content_delta != "",
+          do: emit(opts, {:stream_delta, content_delta})
+
+        stream_receive_loop(opts, acc)
+
+      {:stream_done, _task_pid} ->
+        log_debug("[STREAM] done, total content length=#{String.length(acc.content || "")}")
+        if !acc.thinking_emitted && acc.reasoning && acc.reasoning != "",
+          do: emit(opts, {:thinking, acc.reasoning})
+        emit(opts, {:stream_done, acc.content})
+        assemble_stream_result(acc)
+
+      {:stream_error, reason, _task_pid} ->
+        log_debug("[STREAM] error: #{inspect(reason)}")
+        {:error, reason}
+
+      other ->
+        log_debug("[STREAM] unexpected message: #{inspect(other)}")
+        stream_receive_loop(opts, acc)
+    after
+      120_000 ->
+        log_debug("[STREAM] timeout")
+        {:error, :stream_timeout}
+    end
+  end
+
+  defp extract_delta_content(chunk) when is_map(chunk) do
+    choices = chunk["choices"] || []
+    case choices do
+      [%{"delta" => delta} | _] ->
+        content = delta["content"]
+        reasoning = delta["reasoning_content"]
+        {content, reasoning}
+      _ ->
+        {nil, nil}
+    end
+  end
+
+  defp extract_delta_content(_), do: {nil, nil}
+
+  defp accumulate_chunk(chunk, acc) when is_map(chunk) do
+    choices = chunk["choices"] || []
+
+    acc =
+      case choices do
+        [%{"delta" => delta} | _] ->
+          # Accumulate text content
+          content = acc.content <> (delta["content"] || "")
+
+          # Accumulate reasoning content
+          reasoning = (acc[:reasoning] || "") <> (delta["reasoning_content"] || "")
+
+          # Accumulate tool calls
+          tool_calls =
+            case delta["tool_calls"] do
+              tc_deltas when is_list(tc_deltas) ->
+                Enum.reduce(tc_deltas, acc.tool_calls, fn tc_delta, tcs ->
+                  idx = tc_delta["index"]
+                  existing = Map.get(tcs, idx, %{"index" => idx, "function" => %{"name" => "", "arguments" => ""}})
+
+                  updated =
+                    existing
+                    |> maybe_put("id", tc_delta["id"])
+                    |> update_in(["function"], fn fn_map ->
+                      fn_map
+                      |> maybe_put("name", get_in(tc_delta, ["function", "name"]))
+                      |> maybe_append("arguments", get_in(tc_delta, ["function", "arguments"]))
+                    end)
+
+                  Map.put(tcs, idx, updated)
+                end)
+
+              _ ->
+                acc.tool_calls
+            end
+
+          # Track finish reason
+          finish_reason =
+            case List.first(choices) do
+              %{"finish_reason" => fr} when fr != nil -> fr
+              _ -> acc[:finish_reason]
+            end
+
+          %{acc | content: content, reasoning: reasoning, tool_calls: tool_calls, finish_reason: finish_reason}
+
+        _ ->
+          acc
+      end
+
+    # Capture usage from the final chunk
+    case Map.get(chunk, "usage") do
+      usage when is_map(usage) -> %{acc | raw_response: chunk}
+      _ -> acc
+    end
+  end
+
+  defp accumulate_chunk(_chunk, acc), do: acc
+
+  defp assemble_stream_result(acc) do
+    tool_calls =
+      acc.tool_calls
+      |> Map.values()
+      |> Enum.sort_by(& &1["index"])
+
+    message =
+      if acc.content != "" do
+        %{"role" => "assistant", "content" => acc.content}
+      else
+        %{"role" => "assistant", "content" => ""}
+      end
+
+    message =
+      if tool_calls != [] do
+        Map.put(message, "tool_calls", tool_calls)
+      else
+        message
+      end
+
+    raw_response = acc.raw_response || %{"choices" => [%{"message" => message}]}
+    {:ok, %{message: message, raw_response: raw_response}}
+  end
+
+  defp maybe_put(map, _key, nil), do: map
+  defp maybe_put(map, key, value), do: Map.put(map, key, value)
+
+  defp maybe_append(map, _key, nil), do: map
+  defp maybe_append(map, key, value) do
+    Map.update(map, key, value, &(&1 <> value))
   end
 
   defp handle_api_result(api_result, session, messages, ctx) do
@@ -112,12 +311,14 @@ defmodule Beamcore.Agent.Chat.Loop do
       depth: depth
     } = ctx
 
+    streamed = Process.delete(:streamed) || false
+
     case api_result do
       {:ok, %{message: message, raw_response: raw_response}} ->
         {cleaned_content, reasoning} = API.extract_reasoning(message)
 
         if reasoning && reasoning != "", do: emit(opts, {:thinking, reasoning})
-        emit_assistant(opts, cleaned_content)
+        unless streamed, do: emit_assistant(opts, cleaned_content)
 
         usage = Beamcore.Provider.Usage.from_response(raw_response)
         emit(opts, {:provider_usage, Beamcore.Provider.Usage.to_safe_map(usage)})

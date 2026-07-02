@@ -257,7 +257,7 @@ defmodule Beamcore.Provider.Registry do
   def capabilities("openai", _model) do
     %Capabilities{
       chat: true,
-      streaming: false,
+      streaming: true,
       tool_calls: true,
       parallel_tool_calls: true,
       structured_output: true,
@@ -272,7 +272,7 @@ defmodule Beamcore.Provider.Registry do
   def capabilities(_provider_name, _model) do
     %Capabilities{
       chat: true,
-      streaming: false,
+      streaming: true,
       tool_calls: true,
       structured_output: true,
       latency_class: :unknown,
