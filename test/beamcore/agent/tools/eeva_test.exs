@@ -35,14 +35,14 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     assert spec.type == "function"
     assert spec.function.name == "eeva"
     assert spec.function.parameters.required == ["code"]
-    assert spec.function.description =~ "arbitrary Elixir"
+    assert spec.function.description =~ "Execute Elixir code"
     assert spec.function.parameters.properties.code.description =~ "System.cmd"
   end
 
   test "rejects missing code" do
     result = Eeva.execute(%{}) |> Jason.decode!()
     refute result["ok"]
-    assert result["summary"] =~ "No code provided"
+    assert result["summary"] =~ "No input received"
   end
 
   test "executes calculations and anonymous recursion" do
@@ -159,7 +159,7 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     Beamcore.Config.put(:eeva_timeout_ms, "50")
     result = Eeva.execute(%{"code" => "Process.sleep(5_000); :late"}) |> Jason.decode!()
     refute result["ok"]
-    assert result["summary"] =~ "timeout"
+    assert result["summary"] =~ "execution limit"
   end
 
   test "a timed-out eval restores the working directory instead of leaking it", %{root: root} do
@@ -224,8 +224,8 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     refute result["ok"]
     assert result["recoverable"]
     assert result["session_active"]
-    assert result["summary"] =~ "Tool call failed, but the session is still active"
-    assert result["next_step"] =~ "retry"
+    assert result["summary"] =~ "session remains active"
+    assert result["next_step"] =~ "Re-execute"
   end
 
   test "Beamcore helpers expose public functions dynamically" do
