@@ -105,11 +105,8 @@ else
 		'  exec "$$AGENT_BIN" eval "Application.ensure_all_started(:beamcore); Beamcore.Agent.chat()"' \
 		'fi' \
 		'exec "$$AGENT_BIN" "$$@"' > "$(LAUNCHER)"; \
-	chmod +x "$(LAUNCHER)"; \
+	chmod +x "$(LAUNCHER)";
 	echo "✓ Installed"
-	@echo ""
-	@$(MAKE) --no-print-directory init
-	@$(MAKE) --no-print-directory config-status
 endif
 
 ## uninstall: Remove installed app and launcher (preserves config)
