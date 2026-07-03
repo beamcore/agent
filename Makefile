@@ -94,6 +94,11 @@ else
 		'#!/bin/sh' \
 		'set -eu' \
 		'BEAMCORE_APP="$${BEAMCORE_INSTALL_DIR:-$(INSTALL_DIR)}"' \
+		'COOKIE_FILE="$$HOME/.erlang.cookie"' \
+		'if [ -f "$$COOKIE_FILE" ]; then' \
+		'  RELEASE_COOKIE="$$(cat "$$COOKIE_FILE")"' \
+		'  export RELEASE_COOKIE' \
+		'fi' \
 		'AGENT_BIN="$$BEAMCORE_APP/bin/beamcore"' \
 		'' \
 		'if [ ! -x "$$AGENT_BIN" ]; then' \
