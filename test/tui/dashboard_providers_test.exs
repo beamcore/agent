@@ -78,7 +78,7 @@ defmodule Beamcore.TUI.Components.DashboardProvidersTest do
       system = %{TuiSystem.new(:agent) | providers: providers_struct()}
       widget = providers_panel(system)
 
-      assert %Table{block: %Block{title: "Providers"}} = widget
+      assert %Table{block: %Block{title: "◆ Providers"}} = widget
 
       bottom_titles = Enum.filter(widget.block.titles, &(&1.position == :bottom))
       hint = bottom_titles |> Enum.map(& &1.content) |> Enum.join(" ")
@@ -91,7 +91,7 @@ defmodule Beamcore.TUI.Components.DashboardProvidersTest do
       adding = %{providers_struct() | adding?: true, form: Providers.Form.new()}
       system = %{TuiSystem.new(:agent) | providers: adding}
 
-      assert %Paragraph{block: %Block{title: "Providers"}} = providers_panel(system)
+      assert %Paragraph{block: %Block{title: "◆ Providers"}} = providers_panel(system)
     end
   end
 end

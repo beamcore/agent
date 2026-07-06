@@ -44,7 +44,7 @@ defmodule Beamcore.TUI.Components.Help do
     Navigation
     F1 Chat          Switch to the agent chat
     F2 Dashboard     Switch to the dashboard
-    F3 / F4          Coming soon
+    F3 Research      Coming soon
     ?                Open this help from anywhere
     Esc / q          Close this panel
     Ctrl+C           Clear the composer; when empty, press twice to pause (running) or exit (idle)

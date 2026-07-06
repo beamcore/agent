@@ -40,6 +40,7 @@ defmodule Beamcore.TUI.Theme do
   """
 
   alias ExRatatui.Style
+  alias ExRatatui.Text.Span
 
   @themes %{
     default: Beamcore.TUI.Themes.Default,
@@ -110,6 +111,24 @@ defmodule Beamcore.TUI.Theme do
   @spec border(atom()) :: Style.t()
   def border(:error), do: style(:error)
   def border(_status), do: style(:border)
+
+  @doc """
+  A filled "chip" style derived from the current theme's accent color.
+
+  The accent foreground becomes the chip background with black, bold text —
+  the same technique the sibling ex_ratatui TUIs use for active tabs and key
+  hints, but derived per-theme so no theme file needs its own chip token.
+  """
+  @spec chip_style() :: Style.t()
+  def chip_style do
+    %Style{bg: style(:accent).fg, fg: :black, modifiers: [:bold]}
+  end
+
+  @doc "A key hint rendered as a padded `chip_style/0` span, e.g. `\" ^C \"`."
+  @spec key_pill(String.t()) :: Span.t()
+  def key_pill(label) when is_binary(label) do
+    %Span{content: " #{label} ", style: chip_style()}
+  end
 
   defp current_theme_module do
     Map.get(@themes, current_theme(), Map.get(@themes, @default_theme))

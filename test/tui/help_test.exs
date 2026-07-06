@@ -10,7 +10,6 @@ defmodule Beamcore.TUI.Components.HelpTest do
     assert Help.blurb(:chat) =~ "agent"
     assert Help.blurb(:dashboard) =~ "usage"
     assert Help.blurb(:research) =~ "Coming soon"
-    assert Help.blurb(:mesh) =~ "Coming soon"
   end
 
   test "widget/1 headers the mode the reader is currently in" do

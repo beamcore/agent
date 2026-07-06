@@ -1,5 +1,8 @@
 defmodule Beamcore.TUI.ThemeTest do
-  use ExUnit.Case, async: true
+  # async: false — these tests mutate the global theme (Application env), which
+  # other suites read when comparing styles (chip/pill/tab). Running serially
+  # keeps those concurrent reads stable.
+  use ExUnit.Case, async: false
 
   alias Beamcore.TUI.{State, Theme}
   alias Beamcore.TUI.Events.Commands
@@ -45,6 +48,30 @@ defmodule Beamcore.TUI.ThemeTest do
     input = Theme.style(:input)
     assert input.fg == nil
     assert input.bg == nil
+  end
+
+  test "chip_style derives a filled chip from the theme accent color" do
+    Theme.set_theme(:default)
+    accent = Theme.style(:accent)
+    chip = Theme.chip_style()
+
+    assert chip.bg == accent.fg
+    assert chip.fg == :black
+    assert :bold in chip.modifiers
+  end
+
+  test "chip_style follows the active theme's accent" do
+    Theme.set_theme(:dracula)
+    assert Theme.chip_style().bg == Theme.style(:accent).fg
+  end
+
+  test "key_pill wraps a label in a padded chip span" do
+    Theme.set_theme(:default)
+    pill = Theme.key_pill("^C")
+
+    assert %ExRatatui.Text.Span{} = pill
+    assert pill.content == " ^C "
+    assert pill.style == Theme.chip_style()
   end
 
   test "all themes have all required style keys" do

@@ -114,8 +114,8 @@ defmodule Beamcore.TUI.DashboardFocusTest do
       system = %{TuiSystem.new(:agent) | active_panel: :activity, activity: activity(5)}
       widgets = Dashboard.panels(system, @area)
 
-      assert panel(widgets, "Activity").block.border_style == Theme.style(:accent)
-      assert panel(widgets, "Providers").block.border_style == Theme.style(:border)
+      assert panel(widgets, "◆ Activity").block.border_style == Theme.style(:accent)
+      assert panel(widgets, "◆ Providers").block.border_style == Theme.style(:border)
     end
 
     test "the Activity table renders the rows at the current scroll offset" do
@@ -126,7 +126,7 @@ defmodule Beamcore.TUI.DashboardFocusTest do
           activity_offset: 5
       }
 
-      table = panel(Dashboard.panels(system, @area), "Activity")
+      table = panel(Dashboard.panels(system, @area), "◆ Activity")
 
       # first visible detail cell is the 6th event (offset 5, zero-based)
       [_time, _kind, detail, _result] = hd(table.rows)

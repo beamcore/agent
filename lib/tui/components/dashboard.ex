@@ -3,11 +3,11 @@ defmodule Beamcore.TUI.Components.Dashboard do
   The Dashboard (F2) body: a stack of native-bordered panels.
 
   Replaces the former hand-drawn System page. Each panel is a native
-  `Block` (rounded border + title) wrapping its content. Wide terminals
-  show a two-column top row (Token Usage, Providers) above a full-width
-  Activity feed and a full-width Mesh canvas; narrow terminals collapse to
-  a single column. The permanently one-line Eeva runtime status rides a
-  borderless row above the status bar rather than owning a panel.
+  `Block` (rounded border + `◆`-accented title) wrapping its content. Wide
+  terminals show a two-column top row (Token Usage, Providers) above a
+  full-width Activity feed and a two-column bottom row (Mesh, Eeva Runtime);
+  narrow terminals collapse to a single stacked column with Eeva in its own
+  short box above the status bar.
 
   Panels whose content can outgrow their box — the add-provider form and
   the Activity feed — window to the panel height and draw a right-edge
@@ -38,29 +38,31 @@ defmodule Beamcore.TUI.Components.Dashboard do
   def panels(system, %Rect{width: width} = area) when width < @narrow_width do
     [usage, providers, activity, mesh, eeva] =
       RatLayout.split(area, :vertical, [
-        {:percentage, 24},
-        {:percentage, 24},
+        {:percentage, 22},
+        {:percentage, 22},
         {:fill, 1},
-        {:percentage, 24},
-        {:length, 1}
+        {:percentage, 22},
+        {:length, 4}
       ])
 
     build(system, usage, providers, activity, mesh, eeva)
   end
 
   def panels(system, %Rect{} = area) do
-    # Activity grows into the space reclaimed from the one-line Eeva strip;
-    # Mesh spans the full width and re-fits its canvas to whatever it is given.
-    [top, activity, mesh, eeva] =
+    # A two-column bottom row: the Mesh canvas re-fits to its half while Eeva
+    # rides its own box beside it, restoring the boxed runtime status.
+    [top, activity, bottom] =
       RatLayout.split(area, :vertical, [
         {:percentage, 34},
         {:fill, 1},
-        {:percentage, 30},
-        {:length, 1}
+        {:percentage, 30}
       ])
 
     [usage, providers] =
       RatLayout.split(top, :horizontal, [{:percentage, 50}, {:percentage, 50}])
+
+    [mesh, eeva] =
+      RatLayout.split(bottom, :horizontal, [{:percentage, 66}, {:percentage, 34}])
 
     build(system, usage, providers, activity, mesh, eeva)
   end
@@ -231,10 +233,17 @@ defmodule Beamcore.TUI.Components.Dashboard do
     %{Mesh.canvas(snapshot) | block: panel_block("Mesh", [caption])}
   end
 
-  # Eeva is a permanent one-liner ("local" or "attached ▸ node"), so it rides a
-  # single borderless row above the status bar instead of owning a quadrant.
+  # Eeva's runtime status ("local" or "attached ▸ node") in its own box, so it
+  # reads as a first-class panel rather than a stray line above the status bar.
   defp eeva_widgets(rect) do
-    [{%Paragraph{text: Attach.lines(), style: Theme.style(:base), wrap: false}, rect}]
+    panel = %Paragraph{
+      text: Attach.lines(),
+      style: Theme.style(:base),
+      wrap: false,
+      block: panel_block("Eeva Runtime", [])
+    }
+
+    [{panel, rect}]
   end
 
   # A right-edge scrollbar drawn on the panel's inner border column, or nothing
@@ -267,7 +276,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
 
   defp panel_block(title, extra_titles, active? \\ false) do
     %Block{
-      title: title,
+      title: "◆ " <> title,
       titles: extra_titles,
       borders: [:all],
       border_type: :rounded,

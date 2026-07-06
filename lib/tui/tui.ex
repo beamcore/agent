@@ -131,9 +131,10 @@ defmodule Beamcore.TUI do
     set_viewports(state, w, h)
   end
 
-  # The mode bar occupies the top row, so the chat body has one fewer row.
+  # The two-row footer (tab strip + status line) sits below the body, so the
+  # chat body has two fewer rows.
   defp set_viewports(state, width, height) do
-    area = %Rect{x: 0, y: 0, width: width, height: max(height - 1, 1)}
+    area = %Rect{x: 0, y: 0, width: width, height: max(height - 2, 1)}
     h = Layout.chat_viewport_height(area, state.chat_state.screen_type)
     %{state | chat_state: State.set_chat_viewport_height(state.chat_state, h)}
   end
@@ -226,9 +227,6 @@ defmodule Beamcore.TUI do
 
           %ExRatatui.Event.Key{code: "f3"} ->
             MessageRouter.switch_or_delegate(event, state, :research)
-
-          %ExRatatui.Event.Key{code: "f4"} ->
-            MessageRouter.switch_or_delegate(event, state, :mesh)
 
           %ExRatatui.Event.Key{code: "?"} ->
             toggle_help(event, state)

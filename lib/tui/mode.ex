@@ -35,8 +35,7 @@ defmodule Beamcore.TUI.Mode do
         key_label: "F3",
         name: "Research",
         status: :coming_soon
-      },
-      %__MODULE__{id: :mesh, fkey: "f4", key_label: "F4", name: "Mesh", status: :coming_soon}
+      }
     ]
   end
 
@@ -66,12 +65,19 @@ defmodule Beamcore.TUI.Mode do
   def coming_soon?(%__MODULE__{status: :coming_soon}), do: true
   def coming_soon?(%__MODULE__{}), do: false
 
-  @doc ~S(The mode bar label, e.g. `"F1 Chat"` or, when coming soon, `"F3 ···"`.)
-  @spec tab_title(t()) :: String.t()
-  def tab_title(%__MODULE__{key_label: key_label} = mode) do
-    "#{key_label} #{display_name(mode)}"
+  @doc ~S"""
+  The mode bar label, e.g. `"F1 Chat"` or, when coming soon, `"F3 ···"`.
+
+  A selected coming-soon tab reveals its real name (`"F3 Research"`) so the
+  reader can see which placeholder they are on; pass `active?: true` for that.
+  """
+  @spec tab_title(t(), boolean()) :: String.t()
+  def tab_title(mode, active? \\ false)
+
+  def tab_title(%__MODULE__{key_label: key_label} = mode, active?) do
+    "#{key_label} #{display_name(mode, active?)}"
   end
 
-  defp display_name(%__MODULE__{status: :coming_soon}), do: @placeholder_name
-  defp display_name(%__MODULE__{name: name}), do: name
+  defp display_name(%__MODULE__{status: :coming_soon}, false), do: @placeholder_name
+  defp display_name(%__MODULE__{name: name}, _active?), do: name
 end

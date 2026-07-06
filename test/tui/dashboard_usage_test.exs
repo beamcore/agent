@@ -43,14 +43,14 @@ defmodule Beamcore.TUI.Components.DashboardUsageTest do
     test "is a native BarChart wrapped in the Token Usage block when usage exists" do
       system = %{TuiSystem.new(:agent) | stats_snapshot: @stats}
 
-      assert %BarChart{block: %Block{title: "Token Usage"}} = usage_panel(system)
+      assert %BarChart{block: %Block{title: "◆ Token Usage"}} = usage_panel(system)
     end
 
     test "falls back to an empty-state paragraph when no usage is recorded" do
       system = %{TuiSystem.new(:agent) | stats_snapshot: %{}}
       widget = usage_panel(system)
 
-      assert %Paragraph{block: %Block{title: "Token Usage"}} = widget
+      assert %Paragraph{block: %Block{title: "◆ Token Usage"}} = widget
       text = widget.text |> Enum.flat_map(& &1.spans) |> Enum.map_join(" ", & &1.content)
       assert text =~ "no usage"
     end

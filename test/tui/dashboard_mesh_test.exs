@@ -66,9 +66,9 @@ defmodule Beamcore.TUI.Components.DashboardMeshTest do
 
       {widget, _rect} =
         Dashboard.panels(system, area)
-        |> Enum.find(fn {w, _rect} -> match?(%Canvas{block: %Block{title: "Mesh"}}, w) end)
+        |> Enum.find(fn {w, _rect} -> match?(%Canvas{block: %Block{title: "◆ Mesh"}}, w) end)
 
-      assert %Canvas{block: %Block{title: "Mesh"}} = widget
+      assert %Canvas{block: %Block{title: "◆ Mesh"}} = widget
 
       caption =
         widget.block.titles

@@ -54,13 +54,13 @@ defmodule Beamcore.TUI.CapabilityLayoutTest do
   end
 
   test "layout areas adapt by mode" do
-    assert %{mode: :wide, chat: %Rect{}, input: %Rect{}, status: %Rect{}} =
+    assert %{mode: :wide, chat: %Rect{}, input: %Rect{}} =
              Layout.areas(%Rect{x: 0, y: 0, width: 140, height: 36})
 
-    assert %{mode: :medium, chat: %Rect{}, input: %Rect{}, status: %Rect{}} =
+    assert %{mode: :medium, chat: %Rect{}, input: %Rect{}} =
              Layout.areas(%Rect{x: 0, y: 0, width: 100, height: 30})
 
-    assert %{mode: :narrow, chat: %Rect{}, input: %Rect{}, status: %Rect{}} =
+    assert %{mode: :narrow, chat: %Rect{}, input: %Rect{}} =
              Layout.areas(%Rect{x: 0, y: 0, width: 80, height: 24})
 
     assert %{mode: :tiny, screen: %Rect{}} =

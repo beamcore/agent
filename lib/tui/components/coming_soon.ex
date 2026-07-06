@@ -1,22 +1,31 @@
 defmodule Beamcore.TUI.Components.ComingSoon do
   @moduledoc """
-  Body rendered for a registered-but-not-yet-built mode (F3/F4).
+  Body rendered for a registered-but-not-yet-built mode (F3 Research).
 
-  A centered placeholder that reveals the mode's name so the shell can carry a
-  new surface before its feature exists.
+  Framed in the same rounded, accent-titled card as the chat so switching to a
+  placeholder feels continuous rather than empty — a centered note inside the
+  card reveals the mode's name.
   """
 
   alias Beamcore.TUI.{Mode, Theme}
-  alias ExRatatui.Widgets.Paragraph
+  alias ExRatatui.Widgets.{Block, Paragraph}
 
-  @doc "Centered placeholder body for a coming-soon mode."
+  @doc "Centered placeholder body for a coming-soon mode, framed like the chat."
   @spec widget(Mode.t()) :: Paragraph.t()
   def widget(%Mode{name: name}) do
     %Paragraph{
-      text: "#{name}\n\nComing soon",
+      text: "\n#{name}\n\nComing soon\n\nThis surface is reserved for an upcoming milestone.",
       style: Theme.style(:muted),
       alignment: :center,
-      wrap: true
+      wrap: true,
+      block: %Block{
+        title: "◆ #{name}",
+        borders: [:all],
+        border_type: :rounded,
+        border_style: Theme.style(:border),
+        title_style: Theme.style(:accent),
+        padding: {1, 1, 0, 0}
+      }
     }
   end
 end

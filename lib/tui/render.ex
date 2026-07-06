@@ -3,22 +3,18 @@ defmodule Beamcore.TUI.Render do
   Render composition for the primary TUI.
   """
 
-  alias Beamcore.TUI.Components.{Chat, Dashboard, Help, Input, StatusBar}
+  alias Beamcore.TUI.Components.{Chat, Dashboard, Help, Input}
   alias Beamcore.TUI.{Layout, Theme}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, List, Paragraph, Popup, SlashCommands}
 
   @chat_cache_key {__MODULE__, :chat_widget_cache}
 
+  # The shell owns the footer (tab strip + status line); a mode body only fills
+  # the area it is handed.
   def render(%{screen_type: :system} = state, frame) do
     area = %Rect{x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1)}
-    status_h = 1
-    content_h = max(area.height - status_h, 1)
-    content = %{area | height: content_h}
-    status = %{area | y: content_h, height: status_h}
-
-    Dashboard.panels(state, content) ++
-      [{StatusBar.widget(state, status.width), status}]
+    Dashboard.panels(state, area)
   end
 
   def render(state, frame) do
@@ -61,8 +57,7 @@ defmodule Beamcore.TUI.Render do
 
     [
       {chat, content},
-      {Input.widget(state), areas.input},
-      {StatusBar.widget(state, areas.status.width), areas.status}
+      {Input.widget(state), areas.input}
     ] ++ scrollbar_widgets(chat, areas.chat, content)
   end
 

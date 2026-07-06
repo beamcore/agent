@@ -24,7 +24,6 @@ defmodule Beamcore.TUI.MultiScreenStateTest do
 
   test "get_active returns nil for a coming-soon mode" do
     assert MultiScreenState.get_active(multi(:research)) == nil
-    assert MultiScreenState.get_active(multi(:mesh)) == nil
   end
 
   test "put_active writes back to the active mode's slot" do

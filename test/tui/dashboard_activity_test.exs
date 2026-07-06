@@ -35,7 +35,7 @@ defmodule Beamcore.TUI.Components.DashboardActivityTest do
 
   defp activity_panel(system) do
     {widget, _rect} =
-      Dashboard.panels(system, @area) |> Enum.find(fn {w, _} -> title(w) == "Activity" end)
+      Dashboard.panels(system, @area) |> Enum.find(fn {w, _} -> title(w) == "◆ Activity" end)
 
     widget
   end
@@ -49,7 +49,7 @@ defmodule Beamcore.TUI.Components.DashboardActivityTest do
     system = %{TuiSystem.new(:agent) | activity: activity()}
     table = activity_panel(system)
 
-    assert %Table{block: %Block{title: "Activity"}} = table
+    assert %Table{block: %Block{title: "◆ Activity"}} = table
     header = Enum.map(table.header, &cell/1)
     assert "kind" in header
     assert "result" in header
@@ -73,7 +73,7 @@ defmodule Beamcore.TUI.Components.DashboardActivityTest do
     system = %{TuiSystem.new(:agent) | activity: []}
     widget = activity_panel(system)
 
-    assert %Paragraph{block: %Block{title: "Activity"}} = widget
+    assert %Paragraph{block: %Block{title: "◆ Activity"}} = widget
     text = widget.text |> Enum.flat_map(& &1.spans) |> Enum.map_join(" ", & &1.content)
     assert text =~ "no activity"
   end
@@ -91,7 +91,7 @@ defmodule Beamcore.TUI.Components.DashboardActivityTest do
 
     activity_table =
       Enum.find_value(widgets, fn {w, _rect} ->
-        match?(%Table{block: %Block{title: "Activity"}}, w) && w
+        match?(%Table{block: %Block{title: "◆ Activity"}}, w) && w
       end)
 
     assert activity_table

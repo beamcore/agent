@@ -16,21 +16,10 @@ defmodule Beamcore.TUI.Layout do
       :tiny ->
         %{mode: :tiny, screen: area}
 
-      _ when screen_type == :chat ->
-        [chat, input, status] = shell(area, 0, input_height(area.height))
-        %{mode: :narrow, chat: chat, input: input, status: status}
-
-      :wide ->
-        [chat, input, status] = shell(area, 0, input_height(area.height))
-        %{mode: :wide, chat: chat, input: input, status: status}
-
-      :medium ->
-        [chat, input, status] = shell(area, 0, input_height(area.height))
-        %{mode: :medium, chat: chat, input: input, status: status}
-
-      :narrow ->
-        [chat, input, status] = shell(area, 0, input_height(area.height))
-        %{mode: :narrow, chat: chat, input: input, status: status}
+      resolved ->
+        [chat, input] = shell(area, 0, input_height(area.height))
+        mode = if screen_type == :chat, do: :narrow, else: resolved
+        %{mode: mode, chat: chat, input: input}
     end
   end
 
@@ -46,12 +35,12 @@ defmodule Beamcore.TUI.Layout do
       RatLayout.split(area, :vertical, [
         {:length, header_height},
         {:min, 8},
-        {:length, input_height},
-        {:length, 1}
+        {:length, input_height}
       ])
 
-    # When header_height is 0, the first element is a zero-height rect
-    # We want to skip it and return [body, input, status]
+    # When header_height is 0, the first element is a zero-height rect.
+    # We skip it and return [body, input]. The status line is no longer part
+    # of the body — the shell owns the footer (tab strip + status line).
     case parts do
       [header | rest] when header.height == 0 -> rest
       other -> other

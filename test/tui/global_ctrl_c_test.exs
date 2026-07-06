@@ -22,7 +22,7 @@ defmodule Beamcore.TUI.GlobalCtrlCTest do
     }
   end
 
-  for mode <- [:dashboard, :research, :mesh] do
+  for mode <- [:dashboard, :research] do
     test "Ctrl+C on the #{mode} tab arms exit, then quits" do
       armed = noreply_state(TUI.handle_event(ctrl_c(), multi(unquote(mode))))
       assert armed.chat_state.ctrl_c_pending == :exit

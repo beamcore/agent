@@ -13,8 +13,11 @@ defmodule Beamcore.TUI.Components.ComingSoonTest do
     assert widget.text =~ "Coming soon"
   end
 
-  test "works for the mesh placeholder too" do
-    widget = ComingSoon.widget(Mode.fetch!(:mesh))
-    assert widget.text =~ "Mesh"
+  test "frames the placeholder in the same accent-titled card as the chat" do
+    widget = ComingSoon.widget(Mode.fetch!(:research))
+
+    assert :all in widget.block.borders
+    assert widget.block.border_type == :rounded
+    assert widget.block.title == "◆ Research"
   end
 end

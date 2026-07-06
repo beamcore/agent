@@ -83,7 +83,13 @@ defmodule Beamcore.TUI.LifecycleTest do
 
     frame = %Frame{width: 1, height: 1}
 
-    assert [{_widget, rect} | _] = TUI.render(multi, frame)
+    widgets = TUI.render(multi, frame)
+    assert is_list(widgets) and widgets != []
+
+    # The tab strip still fits the (degenerate) frame without crashing.
+    {_tabs, rect} =
+      Enum.find(widgets, fn {w, _} -> match?(%ExRatatui.Widgets.Tabs{}, w) end)
+
     assert rect.width == 1
     assert rect.height == 1
   end
@@ -111,7 +117,7 @@ defmodule Beamcore.TUI.LifecycleTest do
     titles = for {%{block: %{title: title}}, _rect} <- panels, is_binary(title), do: title
     {usage, _rect} = Enum.at(panels, 0)
 
-    assert "Mesh" in titles
+    assert "◆ Mesh" in titles
     assert "provider-a" in Enum.map(usage.data, & &1.label)
   end
 

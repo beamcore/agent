@@ -3,9 +3,9 @@ defmodule Beamcore.TUI.MultiScreenState do
   Container for the shell's modes.
 
   Two modes are backed by real state — `:chat` (the agent chat) and
-  `:dashboard` (the System overview). Coming-soon modes (`:research`, `:mesh`)
-  have no backing state and render a placeholder body, so the shell can carry a
-  new surface before its feature exists.
+  `:dashboard` (the System overview). The coming-soon `:research` mode has no
+  backing state and renders a placeholder body, so the shell can carry a new
+  surface before its feature exists.
   """
 
   defstruct active_mode: :chat,

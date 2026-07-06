@@ -11,21 +11,26 @@ defmodule Beamcore.TUI.Components.ModeBarTest do
 
     assert %Tabs{} = tabs
     titles = Enum.map(tabs.titles, & &1.content)
-    assert titles == ["F1 Chat", "F2 Dashboard", "F3 ···", "F4 ···"]
+    assert titles == ["F1 Chat", "F2 Dashboard", "F3 ···"]
   end
 
   test "selects the active mode by index" do
     assert ModeBar.tabs(:chat).selected == 0
     assert ModeBar.tabs(:dashboard).selected == 1
-    assert ModeBar.tabs(:mesh).selected == 3
+    assert ModeBar.tabs(:research).selected == 2
   end
 
-  test "highlights the active tab with the status_hot token" do
-    assert ModeBar.tabs(:chat).highlight_style == Theme.style(:status_hot)
+  test "highlights the active tab with a filled accent chip" do
+    assert ModeBar.tabs(:chat).highlight_style == Theme.chip_style()
+  end
+
+  test "the selected coming-soon tab reveals its real name" do
+    titles = Enum.map(ModeBar.tabs(:research).titles, & &1.content)
+    assert titles == ["F1 Chat", "F2 Dashboard", "F3 Research"]
   end
 
   test "styles live modes with status and coming-soon modes with muted" do
-    [chat, _dashboard, research, _mesh] = ModeBar.tabs(:chat).titles
+    [chat, _dashboard, research] = ModeBar.tabs(:chat).titles
 
     assert %Span{content: "F1 Chat", style: chat_style} = chat
     assert chat_style == Theme.style(:status)

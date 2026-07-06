@@ -6,9 +6,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
 
-  # Always-visible quit/help hints. Mode switching now lives in the top mode
-  # bar, so the status line no longer carries the F1/F2/F3 switcher.
-  @hints "^C quit · ? help"
+  # Always-visible quit/help hints, rendered as accent "pills". Mode switching
+  # lives in the tab strip, so the status line no longer carries the switcher.
+  @key_hints [{"^C", "quit"}, {"?", "help"}]
 
   def widget(%{screen_type: :system} = state, width) when is_integer(width) do
     info = State.ctrl_c_hint(Map.get(state, :ctrl_c_pending)) || system_hint(state)
@@ -53,21 +53,35 @@ defmodule Beamcore.TUI.Components.StatusBar do
   end
 
   defp line(mascot, info, width) do
-    fixed = String.length(mascot) + 3 + String.length(@hints) + 2
-    info = truncate(info, max(0, width - fixed))
+    hints = hint_spans()
+    hints_len = spans_length(hints)
+    fixed = String.length(mascot) + 3 + hints_len
+    info = truncate(info, max(0, width - fixed - 1))
+    pad = max(0, width - String.length(mascot) - 3 - String.length(info) - hints_len)
 
-    pad =
-      max(0, width - String.length(mascot) - 3 - String.length(info) - String.length(@hints) - 2)
-
-    spans = [
-      %Span{content: mascot, style: Theme.style(:status_hot)},
-      %Span{content: " · ", style: Theme.style(:status)},
-      %Span{content: info, style: Theme.style(:status)},
-      %Span{content: String.duplicate(" ", pad), style: Theme.style(:status)},
-      %Span{content: @hints, style: Theme.style(:status)}
-    ]
+    spans =
+      [
+        %Span{content: mascot, style: Theme.style(:status_hot)},
+        %Span{content: " · ", style: Theme.style(:status)},
+        %Span{content: info, style: Theme.style(:status)},
+        %Span{content: String.duplicate(" ", pad), style: Theme.style(:status)}
+      ] ++ hints
 
     %Paragraph{text: [%Line{spans: spans}], style: Theme.style(:status)}
+  end
+
+  # Each hint is an accent key "pill" followed by a muted label, e.g. ⟨^C⟩ quit.
+  defp hint_spans do
+    @key_hints
+    |> Enum.map(fn {key, label} ->
+      [Theme.key_pill(key), %Span{content: " #{label}", style: Theme.style(:muted)}]
+    end)
+    |> Enum.intersperse([%Span{content: "  ", style: Theme.style(:status)}])
+    |> List.flatten()
+  end
+
+  defp spans_length(spans) do
+    Enum.reduce(spans, 0, fn %Span{content: content}, acc -> acc + String.length(content) end)
   end
 
   defp truncate(_text, limit) when limit <= 0, do: ""

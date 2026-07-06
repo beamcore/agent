@@ -52,11 +52,24 @@ defmodule Beamcore.TUI.Components.Chat do
       items: items,
       scroll_offset: scroll_offset(items, area, effective_scroll_offset),
       block: %Block{
-        borders: [],
-        padding: {0, 0, 0, 0}
+        title: chat_title(state),
+        borders: [:all],
+        border_type: :rounded,
+        border_style: Theme.style(:border),
+        title_style: Theme.style(:accent),
+        padding: {1, 1, 0, 0}
       }
     }
   end
+
+  # The card title carries the active provider/model, prefixed with the accent
+  # diamond that marks every framed surface in the shell.
+  defp chat_title(%{provider: provider, model: model})
+       when is_binary(provider) and is_binary(model),
+       do: "◆ #{provider}/#{model}"
+
+  defp chat_title(%{model: model}) when is_binary(model), do: "◆ #{model}"
+  defp chat_title(_state), do: "◆ Chat"
 
   @doc """
   Right-edge scrollbar bound to the transcript, or nil when the content fits.

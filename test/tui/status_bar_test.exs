@@ -39,8 +39,16 @@ defmodule Beamcore.TUI.StatusBarTest do
   test "status bar always shows the quit and help hints" do
     text = StatusBar.widget(base_state(), 120) |> text()
 
-    assert text =~ "^C quit"
-    assert text =~ "? help"
+    assert text =~ "^C"
+    assert text =~ "quit"
+    assert text =~ "help"
+  end
+
+  test "the quit key hint renders as an accent pill" do
+    alias Beamcore.TUI.Theme
+    spans = StatusBar.widget(base_state(), 120).text |> hd() |> Map.fetch!(:spans)
+
+    assert Enum.any?(spans, &(&1.content == " ^C " and &1.style == Theme.chip_style()))
   end
 
   test "status bar no longer renders the F1/F2/F3 switcher (it moved to the mode bar)" do
@@ -82,8 +90,9 @@ defmodule Beamcore.TUI.StatusBarTest do
   test "system screen status bar also shows the hints and no switcher" do
     text = StatusBar.widget(%{screen_type: :system}, 120) |> text()
 
-    assert text =~ "^C quit"
-    assert text =~ "? help"
+    assert text =~ "^C"
+    assert text =~ "quit"
+    assert text =~ "help"
     refute text =~ "F1 Agent"
   end
 
