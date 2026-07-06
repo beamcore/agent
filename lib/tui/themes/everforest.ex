@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Everforest do
     running: %Style{fg: {:rgb, 230, 180, 90}},
     queued: %Style{fg: {:rgb, 214, 153, 170}},
     done: %Style{fg: {:rgb, 167, 192, 128}},
-    checkpoint: %Style{fg: {:rgb, 127, 187, 179}},
+    memory: %Style{fg: {:rgb, 127, 187, 179}},
     error: %Style{fg: {:rgb, 230, 126, 128}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 211, 198, 170}},
     cursor: %Style{fg: {:rgb, 54, 56, 50}, bg: {:rgb, 167, 192, 128}},

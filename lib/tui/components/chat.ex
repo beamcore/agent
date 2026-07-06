@@ -172,8 +172,8 @@ defmodule Beamcore.TUI.Components.Chat do
     Bubbles.bubble(
       "Memory",
       content,
-      Theme.style(:checkpoint),
-      Theme.style(:checkpoint),
+      Theme.style(:memory),
+      Theme.style(:memory),
       wrap_width,
       :plain
     )
@@ -185,17 +185,6 @@ defmodule Beamcore.TUI.Components.Chat do
       content,
       Theme.style(:thinking),
       Theme.style(:thinking),
-      wrap_width,
-      :plain
-    )
-  end
-
-  defp render_message_bubble(:checkpoint, content, wrap_width, _collapsed, _state) do
-    Bubbles.bubble(
-      "Checkpoint",
-      content,
-      Theme.style(:checkpoint),
-      Theme.style(:checkpoint),
       wrap_width,
       :plain
     )

@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Zenburn do
     running: %Style{fg: {:rgb, 220, 170, 102}},
     queued: %Style{fg: {:rgb, 170, 170, 204}},
     done: %Style{fg: {:rgb, 170, 204, 136}},
-    checkpoint: %Style{fg: {:rgb, 136, 204, 204}},
+    memory: %Style{fg: {:rgb, 136, 204, 204}},
     error: %Style{fg: {:rgb, 204, 102, 102}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 220, 220, 204}},
     cursor: %Style{fg: {:rgb, 50, 50, 45}, bg: {:rgb, 204, 170, 136}},

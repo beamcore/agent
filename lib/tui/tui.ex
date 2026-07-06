@@ -92,7 +92,18 @@ defmodule Beamcore.TUI do
   def mount(opts) do
     init_screen_providers()
 
-    chat_state = State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
+    chat_state =
+      case Keyword.get(opts, :resume_session) do
+        nil ->
+          # Fresh session — current behavior
+          State.new(nil, ExRatatui.textarea_new(), Keyword.put(opts, :screen_type, :agent))
+
+        session_name ->
+          # Restore from log file
+          session = Beamcore.Agent.Chat.Session.Restore.build(session_name)
+          State.from_restored(session, screen_type: :agent, textarea: ExRatatui.textarea_new())
+      end
+
     dashboard_state = TuiSystem.new(:agent)
 
     now = System.monotonic_time(:millisecond)

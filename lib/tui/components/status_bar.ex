@@ -2,10 +2,9 @@ defmodule Beamcore.TUI.Components.StatusBar do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Mascot
-  alias Beamcore.TUI.{State, Theme}
+  alias Beamcore.TUI.{NumberFormat, State, Theme}
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
-  alias Number.SI
 
   # Always-visible quit/help hints. Mode switching now lives in the top mode
   # bar, so the status line no longer carries the F1/F2/F3 switcher.
@@ -48,7 +47,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
     model = state.model || State.model(state.session)
 
     tokens =
-      "#{SI.number_to_si(usage.last_prompt_tokens || 0, precision: 1, trim: true)}/#{SI.number_to_si(usage.total_tokens || 0, precision: 1, trim: true)}"
+      "#{NumberFormat.compact(usage.last_prompt_tokens)}/#{NumberFormat.compact(usage.total_tokens)}"
 
     "#{provider}/#{model} · tok #{tokens}"
   end

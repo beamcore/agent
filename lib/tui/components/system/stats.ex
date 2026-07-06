@@ -2,9 +2,8 @@ defmodule Beamcore.TUI.Components.System.Stats do
   @moduledoc false
 
   alias Beamcore.TUI.Components.System.Store
-  alias Beamcore.TUI.Theme
+  alias Beamcore.TUI.{NumberFormat, Theme}
   alias ExRatatui.Widgets.{Bar, BarChart}
-  alias Number.SI
 
   @doc "The per-provider token totals as a native horizontal `BarChart`."
   def bar_chart(stats) when is_map(stats) do
@@ -34,6 +33,6 @@ defmodule Beamcore.TUI.Components.System.Stats do
   defp bar_style(_total, _max), do: Theme.style(:done)
 
   defp fmt(0), do: "0"
-  defp fmt(n) when is_integer(n), do: SI.number_to_si(n, precision: 1, trim: true)
+  defp fmt(n) when is_integer(n), do: NumberFormat.compact(n)
   defp fmt(n), do: to_string(n)
 end

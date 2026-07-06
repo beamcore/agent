@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Matrix do
     running: %Style{fg: {:rgb, 200, 255, 200}},
     queued: %Style{fg: {:rgb, 0, 200, 50}},
     done: %Style{fg: {:rgb, 0, 255, 65}},
-    checkpoint: %Style{fg: {:rgb, 0, 200, 50}},
+    memory: %Style{fg: {:rgb, 0, 200, 50}},
     error: %Style{fg: {:rgb, 255, 0, 0}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 0, 255, 65}},
     cursor: %Style{fg: {:rgb, 0, 10, 0}, bg: {:rgb, 0, 255, 65}},

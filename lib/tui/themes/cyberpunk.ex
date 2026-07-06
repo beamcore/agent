@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Cyberpunk do
     running: %Style{fg: {:rgb, 255, 255, 0}},
     queued: %Style{fg: {:rgb, 0, 200, 255}},
     done: %Style{fg: {:rgb, 0, 255, 128}},
-    checkpoint: %Style{fg: {:rgb, 0, 200, 255}},
+    memory: %Style{fg: {:rgb, 0, 200, 255}},
     error: %Style{fg: {:rgb, 255, 50, 50}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 220, 220, 240}},
     cursor: %Style{fg: {:rgb, 15, 15, 30}, bg: {:rgb, 255, 110, 200}},

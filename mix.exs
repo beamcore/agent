@@ -62,7 +62,6 @@ defmodule Beamcore.Agent.MixProject do
     [
       {:html2markdown, "~> 0.3.1"},
       {:openai_ex, "~> 0.9.21"},
-      {:number, "~> 1.0"},
       {:jason, "~> 1.4"},
       {:req, "~> 0.6"},
       {:ex_ratatui, "~> 0.11.1"},

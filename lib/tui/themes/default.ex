@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Default do
     running: %Style{fg: :yellow},
     queued: %Style{fg: :blue},
     done: %Style{fg: :green},
-    checkpoint: %Style{fg: :cyan},
+    memory: %Style{fg: :cyan},
     error: %Style{fg: :red, modifiers: [:bold]},
     input: %Style{},
     cursor: %Style{fg: :black, bg: :cyan},

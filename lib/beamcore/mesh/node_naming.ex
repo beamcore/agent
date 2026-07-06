@@ -2,23 +2,22 @@ defmodule Beamcore.Mesh.NodeNaming do
   @moduledoc """
   Node naming helper for the Beamcore mesh.
 
-  The actual distributed name is set by the launcher (make chat) via
-  elixir --sname. This module verifies distribution is active and
-  provides helpers for name generation.
+  Sets the distributed node name at application boot if not already started
+  via --sname. Uses a short hash of hostname + pid for uniqueness.
   """
 
   @name_prefix "beamcore"
 
   @doc """
-  Verifies the node is distributed. Called from Application.start/2.
-  Returns :ok or raises if the node is not alive (which means --sname was not passed).
+  Ensures the node is distributed. If not, starts distribution with a
+  generated short name. Called from Application.start/2.
   """
   def ensure_distributed! do
     if Node.alive?() do
       :ok
     else
-      # Node was not started with --sname. This is not fatal for local-only use,
-      # but mesh features will be unavailable.
+      name = generate_name() |> String.to_atom()
+      {:ok, _} = Node.start(name, :shortnames)
       :ok
     end
   end

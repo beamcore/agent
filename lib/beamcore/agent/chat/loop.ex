@@ -114,8 +114,6 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     case api_result do
       {:ok, %{message: message, raw_response: raw_response}} ->
-        Session.log(session, raw_response)
-
         {cleaned_content, reasoning} = API.extract_reasoning(message)
 
         if reasoning && reasoning != "", do: emit(opts, {:thinking, reasoning})
@@ -134,34 +132,11 @@ defmodule Beamcore.Agent.Chat.Loop do
         emit(opts, {:session, session})
 
         message = normalize_tool_calls(message)
+        Session.log(session, message)
         new_messages = messages ++ [message]
 
         if has_tool_calls?(message) do
-          {tool_responses, session} =
-            Enum.map_reduce(message["tool_calls"], session, fn tool_call, session ->
-              name = tool_call["function"]["name"]
-              args = decode_tool_args(tool_call["function"]["arguments"])
-
-              emit(opts, {:tool_queued, name, args})
-              emit(opts, {:status, :tool_running})
-              emit(opts, {:tool_running, name, args})
-
-              content = Dispatcher.execute(name, args)
-
-              emit(opts, {:tool_finished, name, args, content})
-
-              emit(opts, {:session, session})
-
-              {
-                %{
-                  role: "tool",
-                  tool_call_id: tool_call["id"],
-                  name: name,
-                  content: content
-                },
-                session
-              }
-            end)
+          tool_responses = execute_tools_parallel(message["tool_calls"], opts)
 
           Enum.each(tool_responses, &Session.log(session, &1))
 
@@ -416,4 +391,92 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp decode_tool_args(_args), do: %{}
+
+  # --- Parallel tool execution ---
+
+  @tool_timeout_ms :timer.minutes(5)
+
+  defp execute_tools_parallel(tool_calls, opts) when length(tool_calls) <= 1 do
+    Enum.map(tool_calls, &execute_single_tool(&1, opts))
+  end
+
+  defp execute_tools_parallel(tool_calls, opts) do
+    event_handler = Process.get(:event_handler)
+
+    # Emit all queued events from main process (preserves TUI ordering)
+    Enum.each(tool_calls, fn tc ->
+      name = tc["function"]["name"]
+      args = decode_tool_args(tc["function"]["arguments"])
+      emit(opts, {:tool_queued, name, args})
+    end)
+
+    emit(opts, {:status, :tool_running})
+
+    # Fire all tool calls in parallel
+    tasks =
+      Enum.map(tool_calls, fn tool_call ->
+        Task.async(fn ->
+          # Copy event handler so Eeva's emit_preview works in worker processes
+          if event_handler, do: Process.put(:event_handler, event_handler)
+          execute_tool_call(tool_call)
+        end)
+      end)
+
+    # Collect results as they complete (preserves original ordering)
+    results = Task.yield_many(tasks, @tool_timeout_ms)
+
+    Enum.zip(tool_calls, results)
+    |> Enum.map(fn {tool_call, {task, result}} ->
+      name = tool_call["function"]["name"]
+      args = decode_tool_args(tool_call["function"]["arguments"])
+
+      content =
+        case result do
+          {:ok, tool_response} ->
+            tool_response
+
+          nil ->
+            Task.shutdown(task, :brutal_kill)
+            "Tool execution timed out after #{@tool_timeout_ms}ms"
+
+          {:exit, reason} ->
+            "Tool execution crashed: #{inspect(reason)}"
+        end
+
+      emit(opts, {:tool_finished, name, args, content})
+
+      %{
+        role: "tool",
+        tool_call_id: tool_call["id"],
+        name: name,
+        content: content
+      }
+    end)
+  end
+
+  defp execute_tool_call(tool_call) do
+    name = tool_call["function"]["name"]
+    args = decode_tool_args(tool_call["function"]["arguments"])
+    Dispatcher.execute(name, args)
+  end
+
+  defp execute_single_tool(tool_call, opts) do
+    name = tool_call["function"]["name"]
+    args = decode_tool_args(tool_call["function"]["arguments"])
+
+    emit(opts, {:tool_queued, name, args})
+    emit(opts, {:status, :tool_running})
+    emit(opts, {:tool_running, name, args})
+
+    content = Dispatcher.execute(name, args)
+
+    emit(opts, {:tool_finished, name, args, content})
+
+    %{
+      role: "tool",
+      tool_call_id: tool_call["id"],
+      name: name,
+      content: content
+    }
+  end
 end

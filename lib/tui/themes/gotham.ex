@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Gotham do
     running: %Style{fg: {:rgb, 214, 181, 90}},
     queued: %Style{fg: {:rgb, 155, 130, 185}},
     done: %Style{fg: {:rgb, 87, 214, 175}},
-    checkpoint: %Style{fg: {:rgb, 87, 214, 214}},
+    memory: %Style{fg: {:rgb, 87, 214, 214}},
     error: %Style{fg: {:rgb, 214, 90, 90}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 152, 187, 187}},
     cursor: %Style{fg: {:rgb, 22, 30, 33}, bg: {:rgb, 87, 214, 214}},

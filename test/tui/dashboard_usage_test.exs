@@ -28,8 +28,8 @@ defmodule Beamcore.TUI.Components.DashboardUsageTest do
     test "labels each bar with a human-formatted total" do
       [mistral, openai] = Stats.bar_chart(@stats).data
 
-      assert mistral.text_value == "81.1k"
-      assert openai.text_value == "1.2k"
+      assert mistral.text_value == "81.1K"
+      assert openai.text_value == "1.2K"
     end
   end
 

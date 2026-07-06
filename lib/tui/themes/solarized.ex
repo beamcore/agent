@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Solarized do
     running: %Style{fg: {:rgb, 181, 137, 0}},
     queued: %Style{fg: {:rgb, 108, 113, 196}},
     done: %Style{fg: {:rgb, 133, 153, 0}},
-    checkpoint: %Style{fg: {:rgb, 38, 139, 210}},
+    memory: %Style{fg: {:rgb, 38, 139, 210}},
     error: %Style{fg: {:rgb, 220, 50, 47}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 131, 148, 150}},
     cursor: %Style{fg: {:rgb, 0, 43, 54}, bg: {:rgb, 38, 139, 210}},

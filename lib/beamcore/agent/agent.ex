@@ -28,6 +28,8 @@ defmodule Beamcore.Agent do
   def main(["-h" | _]), do: print_help()
   def main(["--version" | _]), do: print_version()
   def main(["-v" | _]), do: print_version()
+  def main(["-s", session_name | _rest]), do: chat(resume_session: session_name)
+  def main(["--session", session_name | _rest]), do: chat(resume_session: session_name)
   def main(_args), do: chat()
 
   defp print_version do
@@ -39,6 +41,8 @@ defmodule Beamcore.Agent do
     IO.puts("")
     IO.puts("Usage:")
     IO.puts("  beamcore                Start the interactive TUI chat")
+    IO.puts("  beamcore -s NAME        Resume a previous session")
+    IO.puts("  beamcore --session NAME Resume a previous session")
     IO.puts("  beamcore --help         Show this help message")
     IO.puts("  beamcore --version      Show version")
     IO.puts("")

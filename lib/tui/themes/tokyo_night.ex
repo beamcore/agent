@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.TokyoNight do
     running: %Style{fg: {:rgb, 224, 175, 104}},
     queued: %Style{fg: {:rgb, 187, 154, 247}},
     done: %Style{fg: {:rgb, 158, 206, 106}},
-    checkpoint: %Style{fg: {:rgb, 122, 162, 247}},
+    memory: %Style{fg: {:rgb, 122, 162, 247}},
     error: %Style{fg: {:rgb, 247, 118, 142}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 192, 202, 245}},
     cursor: %Style{fg: {:rgb, 26, 27, 46}, bg: {:rgb, 122, 162, 247}},

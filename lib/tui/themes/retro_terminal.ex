@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.RetroTerminal do
     running: %Style{fg: {:rgb, 255, 240, 150}},
     queued: %Style{fg: {:rgb, 200, 180, 60}},
     done: %Style{fg: {:rgb, 120, 220, 80}},
-    checkpoint: %Style{fg: {:rgb, 200, 180, 60}},
+    memory: %Style{fg: {:rgb, 200, 180, 60}},
     error: %Style{fg: {:rgb, 255, 80, 40}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 200, 180, 120}},
     cursor: %Style{fg: {:rgb, 20, 18, 10}, bg: {:rgb, 255, 220, 80}},

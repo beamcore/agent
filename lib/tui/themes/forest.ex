@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.Forest do
     running: %Style{fg: {:rgb, 200, 240, 140}},
     queued: %Style{fg: {:rgb, 100, 180, 80}},
     done: %Style{fg: {:rgb, 60, 200, 120}},
-    checkpoint: %Style{fg: {:rgb, 100, 180, 80}},
+    memory: %Style{fg: {:rgb, 100, 180, 80}},
     error: %Style{fg: {:rgb, 220, 60, 40}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 190, 210, 180}},
     cursor: %Style{fg: {:rgb, 15, 22, 14}, bg: {:rgb, 80, 200, 80}},

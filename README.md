@@ -132,6 +132,10 @@ Once inside the TUI, you can use these slash commands:
 | `/api add <name> <key> [url] [model]` | Add a provider |
 | `/api use <name>` | Switch active provider |
 | `/api delete <name>` | Delete a provider |
+| `/memory list [type]` | List memory counts or entries |
+| `/memory search <query>` | Search memory |
+| `/memory forget <key>` | Delete memories with a key |
+| `/memory clear` | Clear memory |
 | `/env` | Show environment/providers |
 | `/attach [name]` | Attach Eeva to a project node |
 | `/detach` | Detach from remote node |

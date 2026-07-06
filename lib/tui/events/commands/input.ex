@@ -197,6 +197,11 @@ defmodule Beamcore.TUI.Events.Commands.Input do
         name: "api delete ",
         description: "Delete an API provider configuration"
       },
+      %SlashCommands.Command{name: "memory list", description: "List memory counts"},
+      %SlashCommands.Command{name: "memory list ", description: "List memory entries by type"},
+      %SlashCommands.Command{name: "memory search ", description: "Search memory"},
+      %SlashCommands.Command{name: "memory forget ", description: "Forget memory by key"},
+      %SlashCommands.Command{name: "memory clear", description: "Clear memory"},
       %SlashCommands.Command{name: "clear", description: "Clear visible chat messages"},
       %SlashCommands.Command{
         name: "compress",

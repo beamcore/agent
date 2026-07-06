@@ -17,7 +17,7 @@ defmodule Beamcore.TUI.Themes.OneDark do
     running: %Style{fg: {:rgb, 229, 192, 123}},
     queued: %Style{fg: {:rgb, 198, 120, 221}},
     done: %Style{fg: {:rgb, 152, 195, 121}},
-    checkpoint: %Style{fg: {:rgb, 86, 182, 194}},
+    memory: %Style{fg: {:rgb, 86, 182, 194}},
     error: %Style{fg: {:rgb, 224, 108, 117}, modifiers: [:bold]},
     input: %Style{fg: {:rgb, 171, 178, 191}},
     cursor: %Style{fg: {:rgb, 40, 44, 52}, bg: {:rgb, 97, 175, 239}},

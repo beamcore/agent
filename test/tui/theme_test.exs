@@ -63,7 +63,7 @@ defmodule Beamcore.TUI.ThemeTest do
       :running,
       :queued,
       :done,
-      :checkpoint,
+      :memory,
       :error,
       :input,
       :cursor,
