@@ -88,7 +88,7 @@ defmodule Beamcore.TUI.LifecycleTest do
     text = lines |> Enum.flat_map(& &1.spans) |> Enum.map_join("", & &1.content)
 
     assert text =~ "BEAMCORE CONTROL GRID"
-    assert text =~ "F3 // providers // runtime"
+    assert text =~ "F3 // providers // mcp"
     assert Enum.all?(Enum.take(lines, 5), fn line -> rendered_line_length(line) <= 32 end)
   end
 
@@ -209,6 +209,35 @@ defmodule Beamcore.TUI.LifecycleTest do
     assert text =~ "Mesh"
   end
 
+  test "F3 renders MCP rail and toggles the runtime flag" do
+    previous_enabled = Application.get_env(:beamcore, :mcp_enabled)
+    previous_config_enabled = Beamcore.Config.get(:mcp_enabled)
+
+    Application.put_env(:beamcore, :mcp_enabled, false)
+    Beamcore.Config.delete(:mcp_enabled)
+
+    on_exit(fn ->
+      restore_mcp_app_env(previous_enabled)
+      restore_mcp_config(previous_config_enabled)
+    end)
+
+    system = TuiSystem.new(:agent)
+    text = system |> TuiSystem.render_text(80, 80) |> rendered_text()
+
+    assert text =~ "MCP"
+    assert text =~ "standby"
+    assert text =~ "no server autostart"
+
+    {:noreply, enabled} =
+      TuiSystem.handle_event(
+        %ExRatatui.Event.Key{code: "m", kind: "press", modifiers: []},
+        system
+      )
+
+    assert enabled.mcp_snapshot.enabled?
+    assert Beamcore.MCP.Config.enabled?()
+  end
+
   test "resize schedules a debounced redraw instead of rendering immediately" do
     state = %Beamcore.TUI.MultiScreenState{
       active_screen: :f3,
@@ -294,9 +323,21 @@ defmodule Beamcore.TUI.LifecycleTest do
   defp restore_tui_terminal(nil), do: Application.delete_env(:beamcore, :tui_terminal)
   defp restore_tui_terminal(value), do: Application.put_env(:beamcore, :tui_terminal, value)
 
+  defp restore_mcp_app_env(nil), do: Application.delete_env(:beamcore, :mcp_enabled)
+  defp restore_mcp_app_env(value), do: Application.put_env(:beamcore, :mcp_enabled, value)
+
+  defp restore_mcp_config(nil), do: Beamcore.Config.delete(:mcp_enabled)
+  defp restore_mcp_config(value), do: Beamcore.Config.put(:mcp_enabled, value)
+
   defp rendered_line_length(line) do
     line.spans
     |> Enum.map(&String.length(&1.content || ""))
     |> Enum.sum()
+  end
+
+  defp rendered_text(lines) do
+    lines
+    |> Enum.flat_map(& &1.spans)
+    |> Enum.map_join("", & &1.content)
   end
 end
