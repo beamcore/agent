@@ -16,7 +16,7 @@ defmodule Beamcore.TUI.Shell do
 
   @doc "Composes the full scene for the active mode."
   def render(%MultiScreenState{splash?: true} = multi, frame) do
-    Splash.widgets(frame, multi.splash_step, splash_unicode?(multi))
+    Splash.widgets(frame, multi.splash_step, unicode?(multi))
   end
 
   def render(%MultiScreenState{} = multi, frame) do
@@ -36,7 +36,7 @@ defmodule Beamcore.TUI.Shell do
     status = %Rect{x: 0, y: max(height - 1, 0), width: width, height: 1}
 
     [
-      {ModeBar.tabs(multi.active_mode), tabs},
+      {ModeBar.tabs(multi.active_mode, unicode?(multi)), tabs},
       {StatusBar.widget(status_state(multi), width), status}
     ]
   end
@@ -47,7 +47,7 @@ defmodule Beamcore.TUI.Shell do
   # Coming-soon and dashboard modes have no composer, so the shell owns their
   # help overlay. Chat renders its own help from the chat state.
   defp maybe_help(widgets, %MultiScreenState{show_help: true} = multi, area),
-    do: widgets ++ [{Help.widget(multi.active_mode), area}]
+    do: widgets ++ [{Help.widget(multi.active_mode, unicode?(multi)), area}]
 
   defp maybe_help(widgets, _multi, _area), do: widgets
 
@@ -57,23 +57,24 @@ defmodule Beamcore.TUI.Shell do
   defp body_widgets(%MultiScreenState{active_mode: :dashboard} = multi, frame),
     do: Render.render(dashboard_view(multi), frame)
 
-  defp body_widgets(%MultiScreenState{active_mode: mode}, frame) do
+  defp body_widgets(%MultiScreenState{active_mode: mode} = multi, frame) do
     area = %Rect{x: 0, y: 0, width: max(frame.width, 1), height: max(frame.height, 1)}
-    [{ComingSoon.widget(Mode.fetch!(mode)), area}]
+    [{ComingSoon.widget(Mode.fetch!(mode), unicode?(multi)), area}]
   end
 
-  # The dashboard borrows the chat state's live activity trace and ctrl-c arm so
-  # its panels and status line reflect the running agent.
+  # The dashboard borrows the chat state's live activity trace, ctrl-c arm, and
+  # unicode capability so its panels and status line reflect the running agent.
   defp dashboard_view(%MultiScreenState{} = multi) do
     %{
       multi.dashboard_state
       | activity: activity_of(multi.chat_state),
-        ctrl_c_pending: Map.get(multi.chat_state, :ctrl_c_pending, false)
+        ctrl_c_pending: Map.get(multi.chat_state, :ctrl_c_pending, false),
+        unicode?: unicode?(multi)
     }
   end
 
-  defp splash_unicode?(%MultiScreenState{chat_state: %{unicode?: unicode?}}), do: unicode?
-  defp splash_unicode?(_multi), do: true
+  defp unicode?(%MultiScreenState{chat_state: %{unicode?: unicode?}}), do: unicode?
+  defp unicode?(_multi), do: true
 
   defp activity_of(%{activity: activity}) when is_list(activity), do: activity
   defp activity_of(_chat_state), do: []

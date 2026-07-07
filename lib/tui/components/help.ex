@@ -6,7 +6,7 @@ defmodule Beamcore.TUI.Components.Help do
   description of the mode the reader is currently in.
   """
 
-  alias Beamcore.TUI.{Mode, Theme}
+  alias Beamcore.TUI.{Glyphs, Mode, Theme}
   alias ExRatatui.Widgets.{Block, Paragraph, Popup}
 
   @doc "One-line description of what a mode is for."
@@ -19,15 +19,16 @@ defmodule Beamcore.TUI.Components.Help do
   def blurb(_coming_soon), do: "Coming soon."
 
   @doc "The help popup, headed by the active mode's description."
-  @spec widget(atom()) :: Popup.t()
-  def widget(active_id \\ Mode.default_id()) do
+  @spec widget(atom(), boolean()) :: Popup.t()
+  def widget(active_id \\ Mode.default_id(), unicode? \\ true) do
     %Popup{
-      content: %Paragraph{text: body(active_id), style: Theme.style(:panel), wrap: true},
+      content: %Paragraph{text: body(active_id, unicode?), style: Theme.style(:panel), wrap: true},
       block: %Block{
-        title: "Help",
+        title: "#{Glyphs.diamond(unicode?)} Help",
         borders: [:all],
-        border_type: :rounded,
+        border_type: Glyphs.border_type(unicode?),
         border_style: Theme.style(:border_hot),
+        title_style: Theme.style(:accent),
         padding: {1, 1, 0, 0}
       },
       percent_width: 64,
@@ -35,8 +36,9 @@ defmodule Beamcore.TUI.Components.Help do
     }
   end
 
-  defp body(active_id) do
-    header = "Now: #{Mode.tab_title(Mode.fetch!(active_id))} — #{blurb(active_id)}"
+  defp body(active_id, unicode?) do
+    header =
+      "Now: #{Mode.tab_title(Mode.fetch!(active_id), false, unicode?)} — #{blurb(active_id)}"
 
     """
     #{header}

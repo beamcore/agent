@@ -12,7 +12,7 @@ defmodule Beamcore.TUI.Components.StatusBar do
 
   def widget(%{screen_type: :system} = state, width) when is_integer(width) do
     info = State.ctrl_c_hint(Map.get(state, :ctrl_c_pending)) || system_hint(state)
-    line(Mascot.frame(:idle, 0, true), info, width)
+    line(Mascot.frame(:idle, 0, Map.get(state, :unicode?, true)), info, width)
   end
 
   def widget(state, width) when is_integer(width) do

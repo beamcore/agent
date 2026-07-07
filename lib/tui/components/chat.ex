@@ -3,7 +3,7 @@ defmodule Beamcore.TUI.Components.Chat do
 
   alias Beamcore.TUI.Components.Chat.{Bubbles, MessageWindow}
   alias Beamcore.TUI.Components.EmptyState
-  alias Beamcore.TUI.{Theme, Wrap}
+  alias Beamcore.TUI.{Glyphs, Theme, Wrap}
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Widgets.{Block, Paragraph, Scrollbar, WidgetList}
 
@@ -48,13 +48,15 @@ defmodule Beamcore.TUI.Components.Chat do
       |> message_items(wrap_width)
       |> append_bottom_spacer(Map.get(message_state, :bottom_spacer_height, 0))
 
+    unicode? = Map.get(state, :unicode?, true)
+
     %WidgetList{
       items: items,
       scroll_offset: scroll_offset(items, area, effective_scroll_offset),
       block: %Block{
-        title: chat_title(state),
+        title: chat_title(state, unicode?),
         borders: [:all],
-        border_type: :rounded,
+        border_type: Glyphs.border_type(unicode?),
         border_style: Theme.style(:border),
         title_style: Theme.style(:accent),
         padding: {1, 1, 0, 0}
@@ -64,12 +66,14 @@ defmodule Beamcore.TUI.Components.Chat do
 
   # The card title carries the active provider/model, prefixed with the accent
   # diamond that marks every framed surface in the shell.
-  defp chat_title(%{provider: provider, model: model})
-       when is_binary(provider) and is_binary(model),
-       do: "◆ #{provider}/#{model}"
+  defp chat_title(state, unicode?), do: "#{Glyphs.diamond(unicode?)} #{chat_label(state)}"
 
-  defp chat_title(%{model: model}) when is_binary(model), do: "◆ #{model}"
-  defp chat_title(_state), do: "◆ Chat"
+  defp chat_label(%{provider: provider, model: model})
+       when is_binary(provider) and is_binary(model),
+       do: "#{provider}/#{model}"
+
+  defp chat_label(%{model: model}) when is_binary(model), do: model
+  defp chat_label(_state), do: "Chat"
 
   @doc """
   Right-edge scrollbar bound to the transcript, or nil when the content fits.

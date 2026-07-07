@@ -20,4 +20,11 @@ defmodule Beamcore.TUI.Components.ComingSoonTest do
     assert widget.block.border_type == :rounded
     assert widget.block.title == "◆ Research"
   end
+
+  test "falls back to ASCII framing on non-unicode terminals" do
+    widget = ComingSoon.widget(Mode.fetch!(:research), false)
+
+    assert widget.block.border_type == :plain
+    assert widget.block.title == "* Research"
+  end
 end

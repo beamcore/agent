@@ -29,6 +29,11 @@ defmodule Beamcore.TUI.Components.ModeBarTest do
     assert titles == ["F1 Chat", "F2 Dashboard", "F3 Research"]
   end
 
+  test "falls back to an ASCII placeholder on non-unicode terminals" do
+    titles = Enum.map(ModeBar.tabs(:chat, false).titles, & &1.content)
+    assert titles == ["F1 Chat", "F2 Dashboard", "F3 ..."]
+  end
+
   test "styles live modes with status and coming-soon modes with muted" do
     [chat, _dashboard, research] = ModeBar.tabs(:chat).titles
 

@@ -22,7 +22,11 @@ defmodule Beamcore.TUI.Components.System do
             activity_offset: 0,
             # Shared Ctrl+C arm flag, injected by the shell at render time so the
             # status bar can surface the "press again" hint (it lives on chat).
-            ctrl_c_pending: false
+            ctrl_c_pending: false,
+            # Terminal unicode capability, injected by the shell at render time
+            # (it lives on the chat state) so the panels pick ASCII fallbacks on
+            # terminals that cannot render the framing glyphs.
+            unicode?: true
 
   @activity_page 5
 

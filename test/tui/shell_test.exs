@@ -49,7 +49,7 @@ defmodule Beamcore.TUI.ShellTest do
     multi = %{multi(:dashboard) | show_help: true}
     widgets = Shell.render(multi, frame())
 
-    assert Enum.any?(widgets, fn {w, _} -> match?(%Popup{block: %{title: "Help"}}, w) end)
+    assert Enum.any?(widgets, fn {w, _} -> match?(%Popup{block: %{title: "◆ Help"}}, w) end)
   end
 
   test "renders a coming-soon placeholder body for unbuilt modes" do

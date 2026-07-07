@@ -33,4 +33,12 @@ defmodule Beamcore.TUI.Components.ChatCardTest do
 
     assert block.title == "◆ Chat"
   end
+
+  test "falls back to ASCII framing on non-unicode terminals" do
+    %WidgetList{block: block} =
+      Chat.widget(state(provider: "openai", model: "gpt-4o", unicode?: false), area())
+
+    assert block.border_type == :plain
+    assert block.title == "* openai/gpt-4o"
+  end
 end

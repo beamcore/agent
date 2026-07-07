@@ -2,6 +2,7 @@ defmodule Beamcore.TUI.Components.HelpTest do
   use ExUnit.Case, async: true
 
   alias Beamcore.TUI.Components.Help
+  alias Beamcore.TUI.Theme
   alias ExRatatui.Widgets.Popup
 
   defp text(%Popup{content: %{text: t}}), do: t
@@ -25,8 +26,17 @@ defmodule Beamcore.TUI.Components.HelpTest do
     assert t =~ "Ctrl+C"
   end
 
-  test "widget/1 is a rounded popup titled Help" do
-    assert %Popup{block: %{title: "Help", border_type: :rounded}} = Help.widget(:chat)
+  test "widget/1 is a rounded popup with the shared accent-diamond title" do
+    assert %Popup{block: block} = Help.widget(:chat)
+    assert block.title == "◆ Help"
+    assert block.border_type == :rounded
+    assert block.title_style == Theme.style(:accent)
+  end
+
+  test "widget/2 falls back to ASCII framing on non-unicode terminals" do
+    assert %Popup{block: block} = Help.widget(:chat, false)
+    assert block.title == "* Help"
+    assert block.border_type == :plain
   end
 
   test "widget/0 defaults to the launch mode" do

@@ -52,4 +52,11 @@ defmodule Beamcore.TUI.ModeTest do
     # Ready modes read the same either way.
     assert Mode.tab_title(Mode.fetch!(:chat), true) == "F1 Chat"
   end
+
+  test "tab_title/3 uses an ASCII placeholder on non-unicode terminals" do
+    assert Mode.tab_title(Mode.fetch!(:research), false, false) == "F3 ..."
+    # An active placeholder reveals its real name regardless of unicode.
+    assert Mode.tab_title(Mode.fetch!(:research), true, false) == "F3 Research"
+    assert Mode.tab_title(Mode.fetch!(:chat), false, false) == "F1 Chat"
+  end
 end

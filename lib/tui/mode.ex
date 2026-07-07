@@ -21,7 +21,7 @@ defmodule Beamcore.TUI.Mode do
           status: status()
         }
 
-  @placeholder_name "···"
+  alias Beamcore.TUI.Glyphs
 
   @doc "All modes, in mode-bar / F-key order."
   @spec all() :: [t()]
@@ -70,14 +70,17 @@ defmodule Beamcore.TUI.Mode do
 
   A selected coming-soon tab reveals its real name (`"F3 Research"`) so the
   reader can see which placeholder they are on; pass `active?: true` for that.
+  The placeholder falls back to `"..."` on non-unicode terminals.
   """
-  @spec tab_title(t(), boolean()) :: String.t()
-  def tab_title(mode, active? \\ false)
+  @spec tab_title(t(), boolean(), boolean()) :: String.t()
+  def tab_title(mode, active? \\ false, unicode? \\ true)
 
-  def tab_title(%__MODULE__{key_label: key_label} = mode, active?) do
-    "#{key_label} #{display_name(mode, active?)}"
+  def tab_title(%__MODULE__{key_label: key_label} = mode, active?, unicode?) do
+    "#{key_label} #{display_name(mode, active?, unicode?)}"
   end
 
-  defp display_name(%__MODULE__{status: :coming_soon}, false), do: @placeholder_name
-  defp display_name(%__MODULE__{name: name}, _active?), do: name
+  defp display_name(%__MODULE__{status: :coming_soon}, false, unicode?),
+    do: Glyphs.placeholder(unicode?)
+
+  defp display_name(%__MODULE__{name: name}, _active?, _unicode?), do: name
 end

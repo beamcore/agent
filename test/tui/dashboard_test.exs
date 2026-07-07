@@ -81,6 +81,43 @@ defmodule Beamcore.TUI.Components.DashboardTest do
     assert mesh.y > activity.y
   end
 
+  test "a non-unicode terminal falls back to ASCII framing and status glyphs" do
+    activity = [
+      %{
+        timestamp_ms: 1_700_000_000_000,
+        name: "run",
+        summary: "did a thing",
+        status: :done,
+        label: "run"
+      }
+    ]
+
+    system = %{sample_system() | unicode?: false, activity: activity}
+    area = %Rect{x: 0, y: 0, width: 120, height: 30}
+    widgets = Dashboard.panels(system, area)
+
+    assert titles(widgets) == [
+             "* Token Usage",
+             "* Providers",
+             "* Activity",
+             "* Mesh",
+             "* Eeva Runtime"
+           ]
+
+    for {w, _rect} <- widgets, title(w) != nil do
+      assert w.block.border_type == :plain
+    end
+
+    table = Enum.find_value(widgets, fn {w, _} -> if title(w) == "* Activity", do: w end)
+    [row | _] = table.rows
+    assert List.last(row).content == "v done"
+
+    # The ASCII path must actually draw, not just shape the structs.
+    terminal = ExRatatui.init_test_terminal(120, 30)
+    on_exit(fn -> ExRatatui.Native.restore_terminal(terminal) end)
+    assert :ok = ExRatatui.draw(terminal, widgets)
+  end
+
   test "a narrow area stacks every panel in a single full-width column" do
     area = %Rect{x: 0, y: 0, width: 60, height: 40}
     widgets = Dashboard.panels(sample_system(), area)

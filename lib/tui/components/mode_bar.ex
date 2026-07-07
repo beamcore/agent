@@ -12,10 +12,10 @@ defmodule Beamcore.TUI.Components.ModeBar do
   alias ExRatatui.Widgets.Tabs
 
   @doc "Builds the mode bar tabs with `active_id` selected."
-  @spec tabs(atom()) :: Tabs.t()
-  def tabs(active_id) do
+  @spec tabs(atom(), boolean()) :: Tabs.t()
+  def tabs(active_id, unicode? \\ true) do
     %Tabs{
-      titles: Enum.map(Mode.all(), &title(&1, active_id)),
+      titles: Enum.map(Mode.all(), &title(&1, active_id, unicode?)),
       selected: Mode.index(active_id),
       style: Theme.style(:status),
       highlight_style: Theme.chip_style(),
@@ -23,8 +23,11 @@ defmodule Beamcore.TUI.Components.ModeBar do
     }
   end
 
-  defp title(mode, active_id) do
-    %Span{content: Mode.tab_title(mode, mode.id == active_id), style: title_style(mode)}
+  defp title(mode, active_id, unicode?) do
+    %Span{
+      content: Mode.tab_title(mode, mode.id == active_id, unicode?),
+      style: title_style(mode)
+    }
   end
 
   defp title_style(mode) do

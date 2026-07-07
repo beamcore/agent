@@ -19,7 +19,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
 
   alias Beamcore.TUI.Components.Providers
   alias Beamcore.TUI.Components.System.{Attach, Mesh, Stats}
-  alias Beamcore.TUI.Theme
+  alias Beamcore.TUI.{Glyphs, Theme}
   alias ExRatatui.Layout, as: RatLayout
   alias ExRatatui.Layout.Rect
   alias ExRatatui.Text.{Line, Span}
@@ -72,12 +72,12 @@ defmodule Beamcore.TUI.Components.Dashboard do
       providers_widgets(system, providers_rect) ++
       activity_widgets(system, activity_rect) ++
       [{mesh_panel(system, mesh_rect), mesh_rect}] ++
-      eeva_widgets(eeva_rect)
+      eeva_widgets(system.unicode?, eeva_rect)
   end
 
   defp usage_panel(system, _rect) do
     stats = system.stats_snapshot || %{}
-    block = panel_block("Token Usage", [])
+    block = panel_block("Token Usage", [], false, system.unicode?)
 
     if map_size(stats) == 0 do
       %Paragraph{
@@ -117,10 +117,13 @@ defmodule Beamcore.TUI.Components.Dashboard do
         text: Providers.form_lines(p, inner_h),
         style: Theme.style(:base),
         wrap: false,
-        block: panel_block("Providers", [], active?)
+        block: panel_block("Providers", [], active?, system.unicode?)
       }
     else
-      %{Providers.table(p) | block: panel_block("Providers", [providers_hint()], active?)}
+      %{
+        Providers.table(p)
+        | block: panel_block("Providers", [providers_hint()], active?, system.unicode?)
+      }
     end
   end
 
@@ -147,7 +150,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
   end
 
   defp activity_panel(system, offset, visible, active?) do
-    block = panel_block("Activity", [live_caption()], active?)
+    block = panel_block("Activity", [live_caption()], active?, system.unicode?)
 
     case system.activity do
       [] ->
@@ -159,7 +162,7 @@ defmodule Beamcore.TUI.Components.Dashboard do
         }
 
       activity ->
-        %{activity_table(activity, offset, visible) | block: block}
+        %{activity_table(activity, offset, visible, system.unicode?) | block: block}
     end
   end
 
@@ -167,10 +170,10 @@ defmodule Beamcore.TUI.Components.Dashboard do
     %Title{content: " live ", position: :bottom, alignment: :right, style: Theme.style(:accent)}
   end
 
-  defp activity_table(activity, offset, visible) do
+  defp activity_table(activity, offset, visible, unicode?) do
     %Table{
       header: activity_header(),
-      rows: activity |> Enum.slice(offset, visible) |> Enum.map(&activity_row/1),
+      rows: activity |> Enum.slice(offset, visible) |> Enum.map(&activity_row(&1, unicode?)),
       widths: [{:length, 8}, {:length, 14}, {:min, 0}, {:length, 10}],
       column_spacing: 1,
       style: Theme.style(:base)
@@ -185,12 +188,12 @@ defmodule Beamcore.TUI.Components.Dashboard do
     end
   end
 
-  defp activity_row(event) do
+  defp activity_row(event, unicode?) do
     [
       %Span{content: fmt_time(event.timestamp_ms), style: Theme.style(:subtle)},
       %Span{content: truncate(event.name, 14), style: Theme.style(:muted)},
       %Span{content: truncate(activity_detail(event), 60), style: Theme.style(:base)},
-      status_cell(event.status)
+      status_cell(event.status, unicode?)
     ]
   end
 
@@ -198,16 +201,25 @@ defmodule Beamcore.TUI.Components.Dashboard do
   defp activity_detail(%{label: label}) when is_binary(label), do: label
   defp activity_detail(_event), do: ""
 
-  defp status_cell(status) do
-    {glyph, style} = status_display(status)
+  defp status_cell(status, unicode?) do
+    {glyph, style} = status_display(status, unicode?)
     %Span{content: "#{glyph} #{status}", style: style}
   end
 
-  defp status_display(status) when status in [:done, :completed], do: {"✓", Theme.style(:done)}
-  defp status_display(status) when status in [:error, :blocked], do: {"✗", Theme.style(:error)}
-  defp status_display(:running), do: {"◐", Theme.style(:running)}
-  defp status_display(:queued), do: {"·", Theme.style(:queued)}
-  defp status_display(_status), do: {"·", Theme.style(:muted)}
+  defp status_display(status, unicode?) when status in [:done, :completed],
+    do: {Glyphs.status(status, unicode?), Theme.style(:done)}
+
+  defp status_display(status, unicode?) when status in [:error, :blocked],
+    do: {Glyphs.status(status, unicode?), Theme.style(:error)}
+
+  defp status_display(:running, unicode?),
+    do: {Glyphs.status(:running, unicode?), Theme.style(:running)}
+
+  defp status_display(:queued, unicode?),
+    do: {Glyphs.status(:queued, unicode?), Theme.style(:queued)}
+
+  defp status_display(status, unicode?),
+    do: {Glyphs.status(status, unicode?), Theme.style(:muted)}
 
   defp fmt_time(ms) when is_integer(ms) do
     ms |> DateTime.from_unix!(:millisecond) |> Calendar.strftime("%H:%M:%S")
@@ -230,17 +242,17 @@ defmodule Beamcore.TUI.Components.Dashboard do
       style: Theme.style(:muted)
     }
 
-    %{Mesh.canvas(snapshot) | block: panel_block("Mesh", [caption])}
+    %{Mesh.canvas(snapshot) | block: panel_block("Mesh", [caption], false, system.unicode?)}
   end
 
   # Eeva's runtime status ("local" or "attached ▸ node") in its own box, so it
   # reads as a first-class panel rather than a stray line above the status bar.
-  defp eeva_widgets(rect) do
+  defp eeva_widgets(unicode?, rect) do
     panel = %Paragraph{
       text: Attach.lines(),
       style: Theme.style(:base),
       wrap: false,
-      block: panel_block("Eeva Runtime", [])
+      block: panel_block("Eeva Runtime", [], false, unicode?)
     }
 
     [{panel, rect}]
@@ -274,12 +286,12 @@ defmodule Beamcore.TUI.Components.Dashboard do
     end
   end
 
-  defp panel_block(title, extra_titles, active? \\ false) do
+  defp panel_block(title, extra_titles, active?, unicode?) do
     %Block{
-      title: "◆ " <> title,
+      title: "#{Glyphs.diamond(unicode?)} #{title}",
       titles: extra_titles,
       borders: [:all],
-      border_type: :rounded,
+      border_type: Glyphs.border_type(unicode?),
       border_style: if(active?, do: Theme.style(:accent), else: Theme.style(:border)),
       title_style: Theme.style(:accent),
       padding: {1, 1, 0, 0}
