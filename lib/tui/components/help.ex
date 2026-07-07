@@ -13,6 +13,10 @@ defmodule Beamcore.TUI.Components.Help do
     /api use <name>  Switch active API provider
     /api add <args>  Add or update an API provider config
     /api delete <n>  Delete an API provider config
+    /memory list     List memory counts
+    /memory search   Search memory
+    /memory forget   Delete memory by key
+    /memory clear    Clear memory
     /env             Show redacted environment
     /theme           Switch UI themes
     /attach <name>   Attach Eeva to a project node (live runtime)

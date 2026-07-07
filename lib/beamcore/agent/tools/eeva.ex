@@ -29,6 +29,21 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   def name, do: "eeva"
 
+  @doc """
+  Returns the effective Eeva execution limits after user configuration.
+  """
+  def limits do
+    %{
+      timeout_ms: limit(:timeout_ms, @default_timeout_ms),
+      max_memory_bytes: limit(:max_memory_bytes, @default_max_memory_bytes),
+      max_reductions: limit(:max_reductions, @default_max_reductions),
+      max_output_bytes: limit(:max_output_bytes, @default_max_output_bytes),
+      max_result_bytes: limit(:max_result_bytes, @default_max_result_bytes),
+      max_code_bytes: limit(:max_code_bytes, @default_max_code_bytes),
+      max_ast_nodes: limit(:max_ast_nodes, @default_max_ast_nodes)
+    }
+  end
+
   def spec do
     %{
       type: "function",

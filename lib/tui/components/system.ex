@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.Components.System do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Providers
-  alias Beamcore.TUI.Components.System.{Attach, Mesh, Section, Stats}
+  alias Beamcore.TUI.Components.System.{Attach, EevaLimits, Mesh, Section, Stats}
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
@@ -67,12 +67,14 @@ defmodule Beamcore.TUI.Components.System do
     mesh_lines = Mesh.render(system.mesh_snapshot || Mesh.local_snapshot(), width)
     mesh_section = Section.section("Mesh", mesh_lines, width)
     attach_section = Section.section("Eeva Runtime", Attach.lines(), width, icon: "▸")
+    limits_section = Section.section("Eeva Limits", EevaLimits.lines(), width, icon: "◦")
 
     header ++
       stats_section ++
       provider_section ++
       hints ++
       attach_section ++
+      limits_section ++
       mesh_section
   end
 
