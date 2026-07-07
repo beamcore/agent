@@ -2,7 +2,7 @@
 
 defmodule Beamcore.Agent.Tools.Eeva do
   @moduledoc """
-  The single model-facing execution tool in BeamCore.
+  The Grid's execution engine. Accepts Elixir code, runs it under OTP supervision, returns results.
 
   Eeva accepts ordinary Elixir code, starts an OTP-supervised execution worker,
   captures stdout and the returned value. It intentionally does not expose
@@ -50,7 +50,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description: """
-        Execute arbitrary Elixir code. This universal tool can inspect and edit files, run direct system commands such as git or mix, parse data, and interact with Beamcore.Memory.
+        Execute Elixir code on the Grid. Inspect and edit files, run system commands, parse data, access Beamcore.Memory. Direct execution -- no tool chaining required.
         ALWAYS use `~S` sigil when writing to a file to avoid interpolation and escape processing.
         """,
         parameters: %{
@@ -74,7 +74,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
     try do
       cond do
         not is_binary(code) or String.trim(code) == "" ->
-          encode_error("No code provided", "invalid_request")
+          encode_error("No input received. Provide code to execute.", "invalid_request")
 
         true ->
           code = normalize_code(code)
@@ -84,20 +84,20 @@ defmodule Beamcore.Agent.Tools.Eeva do
     rescue
       error ->
         encode_error(
-          "Unexpected Eeva failure: #{Exception.message(error)}",
+          "Unexpected system fault: #{Exception.message(error)}",
           "internal_error"
         )
     catch
       kind, reason ->
         encode_error(
-          "Unexpected Eeva #{kind}: #{inspect(reason)}",
+          "Unexpected system fault (#{kind}): #{inspect(reason)}",
           "internal_error"
         )
     end
   end
 
   def execute(_params),
-    do: encode_error("Parameters must be an object", "invalid_request")
+    do: encode_error("Invalid input format. Parameters must be a map.", "invalid_request")
 
   @doc false
   def system_cmd(command, args, opts \\ [])
@@ -233,7 +233,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       "stderr" => "",
       "result" => result.result,
       "ast_nodes" => prepared.node_count,
-      "summary" => append_truncation("Eeva completed successfully.", dropped)
+      "summary" => append_truncation("Directive executed. Function complete.", dropped)
     }
     |> Jason.encode!()
   end
@@ -247,7 +247,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
     summary =
       append_truncation(
-        recoverable_summary("Eeva program raised #{error_message}."),
+        recoverable_summary("Execution fault: #{error_message}"),
         dropped
       )
 
@@ -278,7 +278,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
          prepared
        ) do
     {out, dropped} = truncate_output(stdout)
-    summary = append_truncation(recoverable_summary("Eeva program raised #{message}."), dropped)
+    summary = append_truncation(recoverable_summary("Execution fault: #{message}"), dropped)
 
     emit_failure(message)
 
@@ -369,16 +369,16 @@ defmodule Beamcore.Agent.Tools.Eeva do
     do: summary <> " Output was truncated (#{dropped} omitted)."
 
   defp execution_error_summary(:timeout, timeout),
-    do: "Eeva exceeded the #{timeout}ms execution timeout."
+    do: "Cycle terminated: exceeded #{timeout}ms execution limit."
 
   defp execution_error_summary(:memory_limit, bytes),
-    do: "Eeva exceeded the memory budget at #{bytes} bytes."
+    do: "Memory overflow: #{bytes} bytes exceeded allocated grid sector."
 
   defp execution_error_summary(:reduction_limit, reductions),
-    do: "Eeva exceeded the reduction budget at #{reductions} reductions."
+    do: "Reduction limit reached: #{reductions} cycles exhausted."
 
   defp execution_error_summary(kind, reason),
-    do: "Eeva execution failed (#{kind}): #{inspect(reason)}"
+    do: "Execution fault (#{kind}): #{inspect(reason)}"
 
   defp encode_error(message, classification) do
     emit_failure(message, classification)
@@ -426,7 +426,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
              type: :execution_stopped,
              source: :eeva,
              reason: reason_for_classification(classification, summary),
-             summary: "Eeva stopped: #{summary}",
+             summary: "Execution halted: #{summary}",
              details: %{classification: classification},
              recoverable?: true
            }}
@@ -531,17 +531,17 @@ defmodule Beamcore.Agent.Tools.Eeva do
   defp add_common_hint(message, _error, _fmt), do: message
 
   defp recoverable_summary(message) do
-    "Tool call failed, but the session is still active. #{message} " <>
+    "Directive incomplete -- session remains active. #{message} " <>
       recoverable_next_step()
   end
 
   defp recoverable_next_step,
-    do: "Inspect the error, adjust the approach, and retry or choose another path."
+    do: "Analyze the fault. Recalibrate. Re-execute or choose an alternate path."
 
   defp preview_code(code) when byte_size(code) <= @max_preview_bytes, do: code
 
   defp preview_code(code) do
-    binary_part(code, 0, @max_preview_bytes) <> "\n# ... preview truncated"
+    binary_part(code, 0, @max_preview_bytes) <> "\n# ... output truncated"
   end
 
   defp limit(name, default) do

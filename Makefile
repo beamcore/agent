@@ -94,6 +94,11 @@ else
 		'#!/bin/sh' \
 		'set -eu' \
 		'BEAMCORE_APP="$${BEAMCORE_INSTALL_DIR:-$(INSTALL_DIR)}"' \
+		'COOKIE_FILE="$$HOME/.erlang.cookie"' \
+		'if [ -f "$$COOKIE_FILE" ]; then' \
+		'  RELEASE_COOKIE="$$(cat "$$COOKIE_FILE")"' \
+		'  export RELEASE_COOKIE' \
+		'fi' \
 		'AGENT_BIN="$$BEAMCORE_APP/bin/beamcore"' \
 		'' \
 		'if [ ! -x "$$AGENT_BIN" ]; then' \
@@ -105,11 +110,8 @@ else
 		'  exec "$$AGENT_BIN" eval "Application.ensure_all_started(:beamcore); Beamcore.Agent.chat()"' \
 		'fi' \
 		'exec "$$AGENT_BIN" "$$@"' > "$(LAUNCHER)"; \
-	chmod +x "$(LAUNCHER)"; \
+	chmod +x "$(LAUNCHER)";
 	echo "✓ Installed"
-	@echo ""
-	@$(MAKE) --no-print-directory init
-	@$(MAKE) --no-print-directory config-status
 endif
 
 ## uninstall: Remove installed app and launcher (preserves config)
