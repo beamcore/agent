@@ -6,7 +6,7 @@ defmodule Beamcore.TUI.Theme do
   use their signature RGB palette. Switch at runtime with `set_theme/1`
   or via the `/theme` command.
 
-  30 themes available:
+  31 themes available:
     :default      — terminal defaults
     :arctic       — ice blue/white
     :ayu          — clean modern
@@ -35,6 +35,7 @@ defmodule Beamcore.TUI.Theme do
     :solarized    — balanced
     :sunset       — warm orange/pink
     :tokyo_night  — cool purple
+    :tron         — neon grid
     :volcanic     — red/orange on dark
     :zenburn      — low contrast
   """
@@ -70,6 +71,7 @@ defmodule Beamcore.TUI.Theme do
     solarized: Beamcore.TUI.Themes.Solarized,
     sunset: Beamcore.TUI.Themes.Sunset,
     tokyo_night: Beamcore.TUI.Themes.TokyoNight,
+    tron: Beamcore.TUI.Themes.Tron,
     volcanic: Beamcore.TUI.Themes.Volcanic,
     zenburn: Beamcore.TUI.Themes.Zenburn
   }

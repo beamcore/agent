@@ -28,8 +28,8 @@ defmodule Beamcore.TUI.Components.Providers do
   def mark_dirty(p), do: %{p | render_dirty?: true}
   def clear_dirty(p), do: %{p | render_dirty?: false}
 
-  def render_items(p, height \\ nil) when is_struct(p, __MODULE__),
-    do: render_list_items(p, height)
+  def render_items(p, height \\ nil, width \\ nil) when is_struct(p, __MODULE__),
+    do: render_list_items(p, height, width)
 
   def handle_event(%ExRatatui.Event.Mouse{}, p), do: {:noreply, p}
 
@@ -69,10 +69,17 @@ defmodule Beamcore.TUI.Components.Providers do
 
   defp paste_event?(_), do: false
 
-  defp render_list_items(p, height) do
+  defp render_list_items(p, height, width) do
     if p.adding?,
       do:
-        Form.render(p.form, Theme.style(:muted), Theme.style(:accent), Theme.style(:base), height),
+        Form.render(
+          p.form,
+          Theme.style(:muted),
+          Theme.style(:accent),
+          Theme.style(:base),
+          height,
+          width
+        ),
       else: table_header() ++ render_rows(p)
   end
 

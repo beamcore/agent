@@ -129,11 +129,13 @@ defmodule Beamcore.TUI do
     area = %Rect{x: 0, y: 0, width: width, height: height}
     h1 = Layout.chat_viewport_height(area, state.f1_state.screen_type)
     h2 = Layout.chat_viewport_height(area, state.f2_state.screen_type)
+    h3 = max(height - 1, 1)
 
     %{
       state
       | f1_state: State.set_chat_viewport_height(state.f1_state, h1),
-        f2_state: State.set_chat_viewport_height(state.f2_state, h2)
+        f2_state: State.set_chat_viewport_height(state.f2_state, h2),
+        f3_state: Beamcore.TUI.Components.System.set_viewport_height(state.f3_state, h3)
     }
   end
 

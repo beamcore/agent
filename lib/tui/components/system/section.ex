@@ -16,10 +16,11 @@ defmodule Beamcore.TUI.Components.System.Section do
     border = Theme.style(:subtle)
     accent = Theme.style(:accent)
 
-    inner_w = max(width - String.length(pad) - 2, 20)
+    inner_w = max(width - String.length(pad) - 2, 1)
     title_str = if icon, do: " " <> icon <> " " <> title <> " ", else: " " <> title <> " "
+    title_str = truncate(title_str, inner_w)
     title_len = String.length(title_str)
-    dash_count = max(inner_w - title_len - 1, 2)
+    dash_count = max(inner_w - title_len, 0)
     top = "┌" <> title_str <> String.duplicate("─", dash_count) <> "┐"
     bot = "└" <> String.duplicate("─", inner_w) <> "┘"
 
@@ -57,5 +58,9 @@ defmodule Beamcore.TUI.Components.System.Section do
 
   defp line_char_len(%Line{spans: spans}) do
     spans |> Enum.map(fn s -> String.length(s.content || "") end) |> Enum.sum()
+  end
+
+  defp truncate(text, max_len) do
+    if String.length(text) <= max_len, do: text, else: String.slice(text, 0, max_len)
   end
 end
