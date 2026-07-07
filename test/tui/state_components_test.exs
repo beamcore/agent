@@ -1,7 +1,9 @@
 defmodule Beamcore.TUI.StateComponentsTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Beamcore.TUI.Events
+  alias Beamcore.TUI.Components.Help
+  alias Beamcore.TUI.Components.System
   alias Beamcore.TUI.State
 
   test "internal event buffer keeps compact recent execution notices" do
@@ -88,5 +90,47 @@ defmodule Beamcore.TUI.StateComponentsTest do
 
     thinking = Events.handle_runtime_event({:status, :thinking}, state)
     assert thinking.wait_status == nil
+  end
+
+  test "help popup documents memory commands" do
+    widget = Help.widget()
+    assert widget.content.text =~ "/memory list"
+    assert widget.content.text =~ "/memory search"
+    assert widget.content.text =~ "/memory forget"
+    assert widget.content.text =~ "/memory clear"
+  end
+
+  test "system screen shows effective Eeva limits" do
+    text =
+      System.new(:agent)
+      |> System.render_text(100)
+      |> Enum.flat_map(& &1.spans)
+      |> Enum.map_join(& &1.content)
+
+    assert text =~ "Eeva Limits"
+    assert text =~ "timeout"
+    assert text =~ "180s"
+    assert text =~ "memory"
+    assert text =~ "256MiB"
+    assert text =~ "reductions"
+    assert text =~ "40M"
+    assert text =~ "output"
+    assert text =~ "250KiB"
+    assert text =~ "result"
+    assert text =~ "125KiB"
+  end
+
+  test "Eeva limits expose runtime config overrides" do
+    previous = Beamcore.Config.get(:eeva_timeout_ms)
+    Beamcore.Config.put(:eeva_timeout_ms, "1234")
+
+    try do
+      assert Beamcore.Agent.Tools.Eeva.limits().timeout_ms == 1234
+    after
+      case previous do
+        nil -> Beamcore.Config.delete(:eeva_timeout_ms)
+        value -> Beamcore.Config.put(:eeva_timeout_ms, value)
+      end
+    end
   end
 end

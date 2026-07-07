@@ -34,6 +34,34 @@ Or using the Makefile:
 make install
 ```
 
+### Verify release checksums
+
+GitHub releases include a `SHA256SUMS` file next to the packaged builds. After
+downloading a release asset, verify that asset before unpacking:
+
+```sh
+grep "beamcore-.*linux-amd64.tar.gz" SHA256SUMS | sha256sum -c -
+```
+
+On macOS:
+
+```sh
+grep "beamcore-.*darwin-arm64.tar.gz" SHA256SUMS | shasum -a 256 -c -
+```
+
+### Supported platforms
+
+| Platform | Status |
+|----------|--------|
+| macOS Apple Silicon | Supported by CI release builds |
+| Linux amd64 | Supported by CI release builds |
+| macOS Intel | Expected to work; build from source |
+| Linux arm64 | Expected to work; build from source |
+
+Known-good terminals should be recorded as they are manually verified. The TUI
+is intended to work in modern terminal emulators such as GNOME Terminal, iTerm2,
+Alacritty, Kitty, and the VS Code integrated terminal.
+
 ## Usage
 
 Start the interactive TUI:
