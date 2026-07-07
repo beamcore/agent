@@ -2,7 +2,7 @@ defmodule Beamcore.TUI.Components.System do
   @moduledoc false
 
   alias Beamcore.TUI.Components.Providers
-  alias Beamcore.TUI.Components.System.{Attach, EevaLimits, Mesh, Section, Stats}
+  alias Beamcore.TUI.Components.System.{Attach, EevaLimits, MCP, Mesh, Section, Stats}
   alias Beamcore.TUI.Theme
   alias ExRatatui.Text.{Line, Span}
   alias ExRatatui.Widgets.Paragraph
@@ -11,6 +11,7 @@ defmodule Beamcore.TUI.Components.System do
             configure_for: :agent,
             providers: nil,
             mesh_snapshot: nil,
+            mcp_snapshot: nil,
             stats_snapshot: nil,
             mesh_refresh_ref: nil,
             mesh_updated_at_ms: nil,
@@ -22,6 +23,7 @@ defmodule Beamcore.TUI.Components.System do
       configure_for: configure_for,
       providers: Providers.new(configure_for),
       mesh_snapshot: Mesh.local_snapshot(),
+      mcp_snapshot: MCP.snapshot(),
       stats_snapshot: Stats.snapshot()
     }
   end
@@ -62,6 +64,7 @@ defmodule Beamcore.TUI.Components.System do
     stats_section = Stats.render(system.stats_snapshot || %{}, width)
     provider_lines = Providers.render_items(system.providers, nil, width)
     provider_section = Section.section("Providers", provider_lines, width)
+    mcp_section = Section.section("MCP", MCP.lines(system.mcp_snapshot || MCP.snapshot()), width)
     mesh_lines = Mesh.render(system.mesh_snapshot || Mesh.local_snapshot(), width)
     mesh_section = Section.section("Mesh", mesh_lines, width)
     attach_section = Section.section("Eeva Runtime", Attach.lines(), width, icon: "▸")
@@ -70,6 +73,7 @@ defmodule Beamcore.TUI.Components.System do
     header ++
       stats_section ++
       provider_section ++
+      mcp_section ++
       hints ++
       attach_section ++
       limits_section ++
@@ -99,6 +103,9 @@ defmodule Beamcore.TUI.Components.System do
 
       %ExRatatui.Event.Key{code: "down"} ->
         handle_vertical_arrow(event, system, 1)
+
+      %ExRatatui.Event.Key{code: "m"} ->
+        {:noreply, %{system | mcp_snapshot: MCP.toggle(system.mcp_snapshot || MCP.snapshot())}}
 
       %ExRatatui.Event.Key{code: code} when code in ["page_up", "pageup", "pgup"] ->
         {:noreply, scroll_page(system, -page_size(system))}
@@ -194,7 +201,7 @@ defmodule Beamcore.TUI.Components.System do
     muted = Theme.style(:muted)
     rail = neon_rail(width)
     title = fit_text("  BEAMCORE CONTROL GRID", width)
-    telemetry = fit_text("  F3 // providers // runtime // mesh", width)
+    telemetry = fit_text("  F3 // providers // mcp // runtime // mesh", width)
 
     [
       %Line{spans: [%Span{content: ""}]},
