@@ -33,7 +33,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     |> ensure_focus_visible()
   end
 
-  def render(form, muted, accent, input_style, visible_rows \\ nil) do
+  def render(form, muted, accent, input_style, visible_rows \\ nil, width \\ nil) do
     form =
       form
       |> Auth.auto_detect_mode()
@@ -41,7 +41,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
       |> ensure_focus_valid()
       |> ensure_focus_visible()
 
-    Renderer.render(form, muted, accent, input_style, visible_rows)
+    Renderer.render(form, muted, accent, input_style, visible_rows, width)
   end
 
   def visible_fields(form), do: Fields.visible_fields(form)

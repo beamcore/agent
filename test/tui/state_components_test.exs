@@ -103,7 +103,7 @@ defmodule Beamcore.TUI.StateComponentsTest do
   test "system screen shows effective Eeva limits" do
     text =
       System.new(:agent)
-      |> System.render_text(100)
+      |> System.render_text(100, 80)
       |> Enum.flat_map(& &1.spans)
       |> Enum.map_join(& &1.content)
 

@@ -2,6 +2,7 @@ defmodule Beamcore.TUI.LifecycleTest do
   use ExUnit.Case, async: false
 
   alias Beamcore.TUI
+  alias Beamcore.TUI.Components.Providers
   alias Beamcore.TUI.Components.System, as: TuiSystem
   alias Beamcore.TUI.Smoke
   alias Beamcore.TUI.TerminalOptions
@@ -82,6 +83,108 @@ defmodule Beamcore.TUI.LifecycleTest do
     assert rect.height == 1
   end
 
+  test "F3 system header renders as a bounded control grid" do
+    lines = TuiSystem.render_text(TuiSystem.new(:agent), 32, 24)
+    text = lines |> Enum.flat_map(& &1.spans) |> Enum.map_join("", & &1.content)
+
+    assert text =~ "BEAMCORE CONTROL GRID"
+    assert text =~ "F3 // providers // runtime"
+    assert Enum.all?(Enum.take(lines, 5), fn line -> rendered_line_length(line) <= 32 end)
+  end
+
+  test "F3 render stays bounded in a narrow terminal" do
+    lines = TuiSystem.render_text(TuiSystem.new(:agent), 24, 12)
+
+    assert length(lines) <= 12
+    assert Enum.all?(lines, fn line -> rendered_line_length(line) <= 24 end)
+  end
+
+  test "F3 provider form stays bounded in a narrow terminal" do
+    system = TuiSystem.new(:agent)
+
+    {:noreply, system} =
+      TuiSystem.handle_event(
+        %ExRatatui.Event.Key{code: "a", kind: "press", modifiers: []},
+        system
+      )
+
+    lines = TuiSystem.render_text(system, 24, 12)
+
+    assert length(lines) <= 12
+    assert Enum.all?(lines, fn line -> rendered_line_length(line) <= 24 end)
+  end
+
+  test "F3 supports arrow key scrolling when provider selection is at an edge" do
+    system =
+      :agent
+      |> TuiSystem.new()
+      |> Map.put(:providers, %Providers{providers: [], active_provider: nil})
+      |> TuiSystem.set_viewport_height(8)
+
+    state = %Beamcore.TUI.MultiScreenState{
+      active_screen: :f3,
+      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f3_state: system
+    }
+
+    {:noreply, scrolled} =
+      TUI.handle_event(%ExRatatui.Event.Key{code: "down", kind: "press", modifiers: []}, state)
+
+    assert scrolled.f3_state.scroll_offset == 1
+
+    {:noreply, top} =
+      TUI.handle_event(%ExRatatui.Event.Key{code: "up", kind: "press", modifiers: []}, scrolled)
+
+    assert top.f3_state.scroll_offset == 0
+  end
+
+  test "F3 supports page key scrolling" do
+    system =
+      :agent
+      |> TuiSystem.new()
+      |> TuiSystem.set_viewport_height(8)
+
+    state = %Beamcore.TUI.MultiScreenState{
+      active_screen: :f3,
+      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f3_state: system
+    }
+
+    {:noreply, scrolled} =
+      TUI.handle_event(
+        %ExRatatui.Event.Key{code: "page_down", kind: "press", modifiers: []},
+        state
+      )
+
+    assert scrolled.f3_state.scroll_offset > 0
+
+    {:noreply, top} =
+      TUI.handle_event(%ExRatatui.Event.Key{code: "home", kind: "press", modifiers: []}, scrolled)
+
+    assert top.f3_state.scroll_offset == 0
+  end
+
+  test "F3 ignores mouse wheel scrolling" do
+    system =
+      :agent
+      |> TuiSystem.new()
+      |> TuiSystem.set_viewport_height(8)
+
+    state = %Beamcore.TUI.MultiScreenState{
+      active_screen: :f3,
+      f1_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f2_state: Beamcore.TUI.State.new(nil, ExRatatui.textarea_new()),
+      f3_state: system
+    }
+
+    {:noreply, scrolled} =
+      TUI.handle_event(%ExRatatui.Event.Mouse{kind: "scroll_down", x: 0, y: 0}, state)
+
+    assert scrolled.f3_state.scroll_offset == 0
+  end
+
   test "F3 render uses cached stats and mesh snapshots" do
     system = %{
       TuiSystem.new(:agent)
@@ -98,7 +201,7 @@ defmodule Beamcore.TUI.LifecycleTest do
 
     text =
       system
-      |> TuiSystem.render_text(100, 24)
+      |> TuiSystem.render_text(100, 80)
       |> Enum.flat_map(& &1.spans)
       |> Enum.map_join("", & &1.content)
 
@@ -190,4 +293,10 @@ defmodule Beamcore.TUI.LifecycleTest do
 
   defp restore_tui_terminal(nil), do: Application.delete_env(:beamcore, :tui_terminal)
   defp restore_tui_terminal(value), do: Application.put_env(:beamcore, :tui_terminal, value)
+
+  defp rendered_line_length(line) do
+    line.spans
+    |> Enum.map(&String.length(&1.content || ""))
+    |> Enum.sum()
+  end
 end

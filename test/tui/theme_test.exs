@@ -31,6 +31,17 @@ defmodule Beamcore.TUI.ThemeTest do
     assert Theme.current_theme() == :catppuccin
   end
 
+  test "tron theme is available and uses neon grid colors" do
+    assert :tron in Theme.list_themes()
+
+    Theme.set_theme(:tron)
+
+    assert Theme.current_theme() == :tron
+    assert Theme.style(:accent).fg == {:rgb, 0, 229, 255}
+    assert Theme.style(:status_hot).fg == {:rgb, 255, 142, 35}
+    assert Theme.style(:panel).bg == {:rgb, 3, 18, 31}
+  end
+
   test "default theme uses terminal defaults" do
     Theme.set_theme(:default)
     base = Theme.style(:base)

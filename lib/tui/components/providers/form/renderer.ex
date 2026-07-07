@@ -4,10 +4,12 @@ defmodule Beamcore.TUI.Components.Providers.Form.Renderer do
   alias Beamcore.TUI.Components.Providers.Form.{Auth, Fields}
   alias ExRatatui.Text.{Line, Span}
 
-  @field_width 54
+  @default_field_width 54
+  @min_field_width 12
 
-  def render(form, muted, accent, input_style, visible_rows \\ nil) do
+  def render(form, muted, accent, input_style, visible_rows \\ nil, width \\ nil) do
     mode_label = Auth.strategy_label(form.mode)
+    field_width = field_width(width)
 
     mode_style =
       if form.mode in [:oauth2_client_credentials, :google_adc], do: accent, else: muted
@@ -15,7 +17,7 @@ defmodule Beamcore.TUI.Components.Providers.Form.Renderer do
     rows =
       form
       |> Fields.visible_fields()
-      |> Enum.flat_map(&field_rows(&1, form, muted, accent, input_style))
+      |> Enum.flat_map(&field_rows(&1, form, muted, accent, input_style, field_width))
 
     error_line =
       if form.error do
@@ -62,7 +64,7 @@ defmodule Beamcore.TUI.Components.Providers.Form.Renderer do
     end
   end
 
-  defp field_rows(field, form, muted, accent, input_style) do
+  defp field_rows(field, form, muted, accent, input_style, field_width) do
     id = field.id
     value = field_value(form, id)
     active? = form.field == id
@@ -70,17 +72,17 @@ defmodule Beamcore.TUI.Components.Providers.Form.Renderer do
     label_style = if active?, do: accent, else: muted
     input_style = if active?, do: accent, else: input_style
     required = if Fields.required?(field, form.mode), do: " *", else: ""
-    display = truncate_display(value <> cursor, @field_width)
-    padded = String.pad_trailing(display, @field_width)
+    display = truncate_display(value <> cursor, field_width)
+    padded = String.pad_trailing(display, field_width)
 
     [
       %Line{spans: [%Span{content: "  #{field.label}#{required}", style: label_style}]},
       %Line{
-        spans: [%Span{content: "  ┌#{String.duplicate("─", @field_width + 2)}┐", style: muted}]
+        spans: [%Span{content: "  ┌#{String.duplicate("─", field_width + 2)}┐", style: muted}]
       },
       %Line{spans: [%Span{content: "  │ #{padded} │", style: input_style}]},
       %Line{
-        spans: [%Span{content: "  └#{String.duplicate("─", @field_width + 2)}┘", style: muted}]
+        spans: [%Span{content: "  └#{String.duplicate("─", field_width + 2)}┘", style: muted}]
       }
     ]
   end
@@ -100,6 +102,15 @@ defmodule Beamcore.TUI.Components.Providers.Form.Renderer do
   defp truncate_display(text, max_len) do
     if String.length(text) <= max_len, do: text, else: String.slice(text, 0, max_len - 1) <> "…"
   end
+
+  defp field_width(width) when is_integer(width) do
+    width
+    |> Kernel.-(8)
+    |> max(@min_field_width)
+    |> min(@default_field_width)
+  end
+
+  defp field_width(_width), do: @default_field_width
 
   defp scroll_lines(lines, offset, visible_rows) do
     if length(lines) > visible_rows do

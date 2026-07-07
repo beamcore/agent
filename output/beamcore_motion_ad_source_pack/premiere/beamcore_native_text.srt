@@ -1,0 +1,42 @@
+1
+00:00:00,000 --> 00:00:02,000
+Your coding agent is leaking context.
+
+2
+00:00:02,000 --> 00:00:05,000
+Beamcore keeps the hot path hot.
+
+3
+00:00:05,000 --> 00:00:09,000
+One tool: Eeva executes Elixir.
+No wrapper zoo. No tool-call noise.
+
+4
+00:00:09,000 --> 00:00:13,000
+10 tool calls → 1 runtime step
+
+5
+00:00:13,000 --> 00:00:17,000
+99% CACHE HIT
+Spend tokens on code, not noise.
+project claim — replace with benchmark if needed
+
+6
+00:00:17,000 --> 00:00:21,000
+Every instance is a distributed BEAM node.
+Agents discover peers automatically.
+
+7
+00:00:21,000 --> 00:00:24,000
+Attach to a live app runtime.
+Inspect processes, modules and state in place.
+
+8
+00:00:24,000 --> 00:00:27,000
+Memory. Providers. Sub-agents. Messaging gateway.
+
+9
+00:00:27,000 --> 00:00:30,000
+Beamcore
+Open-source terminal coding agent
+github.com/beamcore/agent

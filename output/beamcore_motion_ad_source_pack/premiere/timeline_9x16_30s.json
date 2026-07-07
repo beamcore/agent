@@ -1,0 +1,146 @@
+{
+  "project": "Beamcore Agent Motion Ad",
+  "sequence": {
+    "name": "BEAMCORE_AD_9x16_30s",
+    "resolution": "1080x1920",
+    "fps": 30,
+    "duration_seconds": 30
+  },
+  "source_footage": {
+    "primary": "Use user original IMG_0900.MOV in Premiere",
+    "detected_duration_seconds": 46.671667,
+    "detected_resolution": "3840x2160",
+    "detected_fps": "~59.97",
+    "pack_stills": "footage/bike_pov_still_*.jpg"
+  },
+  "tracks": {
+    "V1": "bike POV footage",
+    "V2": "transparent PNG overlays",
+    "V3": "feature cards",
+    "V4": "native Premiere text",
+    "A1": "original audio low/muted",
+    "A2": "sfx"
+  },
+  "timeline": [
+    {
+      "time": "00:00-00:02",
+      "text": [
+        "Your coding agent is leaking context."
+      ],
+      "assets": [
+        "overlay_speed_lines_transparent_1080p.png"
+      ],
+      "sfx": [
+        "whoosh_short.wav"
+      ]
+    },
+    {
+      "time": "00:02-00:05",
+      "text": [
+        "Beamcore keeps the hot path hot."
+      ],
+      "assets": [
+        "beamcore_wordmark_transparent.png"
+      ],
+      "sfx": [
+        "node_click.wav"
+      ]
+    },
+    {
+      "time": "00:05-00:09",
+      "text": [
+        "One tool: Eeva executes Elixir.",
+        "No wrapper zoo. No tool-call noise."
+      ],
+      "assets": [
+        "overlay_terminal_eeva_transparent_1080p.png"
+      ],
+      "sfx": [
+        "cache_ping.wav"
+      ]
+    },
+    {
+      "time": "00:09-00:13",
+      "text": [
+        "10 tool calls → 1 runtime step"
+      ],
+      "assets": [
+        "feature_one_tool_lower_third_1080p.png"
+      ],
+      "sfx": [
+        "whoosh_short.wav"
+      ]
+    },
+    {
+      "time": "00:13-00:17",
+      "text": [
+        "99% CACHE HIT",
+        "Spend tokens on code, not noise."
+      ],
+      "assets": [
+        "overlay_cache_hit_99_transparent_1080p.png"
+      ],
+      "sfx": [
+        "bass_hit.wav",
+        "cache_ping.wav"
+      ]
+    },
+    {
+      "time": "00:17-00:21",
+      "text": [
+        "Every instance is a distributed BEAM node.",
+        "Agents discover peers automatically."
+      ],
+      "assets": [
+        "overlay_mesh_nodes_transparent_1080p.png"
+      ],
+      "sfx": [
+        "node_click.wav"
+      ]
+    },
+    {
+      "time": "00:21-00:24",
+      "text": [
+        "Attach to a live app runtime.",
+        "Inspect processes, modules and state in place."
+      ],
+      "assets": [
+        "feature_runtime_attach_lower_third_1080p.png"
+      ],
+      "sfx": [
+        "whoosh_short.wav"
+      ]
+    },
+    {
+      "time": "00:24-00:27",
+      "text": [
+        "Memory. Providers. Sub-agents. Messaging gateway."
+      ],
+      "assets": [
+        "card_memory.png",
+        "card_providers.png",
+        "card_mesh.png",
+        "card_gateway.png"
+      ],
+      "sfx": [
+        "cache_ping.wav"
+      ]
+    },
+    {
+      "time": "00:27-00:30",
+      "text": [
+        "Beamcore",
+        "Open-source terminal coding agent",
+        "github.com/beamcore/agent"
+      ],
+      "assets": [
+        "overlay_cta_transparent_1080p.png"
+      ],
+      "sfx": [
+        "bass_hit.wav"
+      ]
+    }
+  ],
+  "note": "99% cache-hit is a user-supplied campaign claim, not a README quote.",
+  "layout_note": "Use poster_9x16 as reference; crop road footage center and keep text inside 90px safe margins."
+}
