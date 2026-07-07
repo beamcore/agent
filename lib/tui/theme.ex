@@ -115,14 +115,26 @@ defmodule Beamcore.TUI.Theme do
   @doc """
   A filled "chip" style derived from the current theme's accent color.
 
-  The accent foreground becomes the chip background with black, bold text —
-  the same technique the sibling ex_ratatui TUIs use for active tabs and key
-  hints, but derived per-theme so no theme file needs its own chip token.
+  The accent foreground becomes the chip background with bold text — the same
+  technique the sibling ex_ratatui TUIs use for active tabs and key hints, but
+  derived per-theme so no theme file needs its own chip token. The text color
+  flips to white on dark accents (e.g. GitHub, Solarized) so the pill stays
+  legible across every theme rather than assuming a light accent.
   """
   @spec chip_style() :: Style.t()
   def chip_style do
-    %Style{bg: style(:accent).fg, fg: :black, modifiers: [:bold]}
+    accent = style(:accent).fg
+    %Style{bg: accent, fg: readable_on(accent), modifiers: [:bold]}
   end
+
+  # Pick black or white text for a background by its YIQ brightness (threshold
+  # 128 on a 0–255 scale). Non-RGB accents — named terminal colors like `:cyan`
+  # — are bright by convention, so they keep black text.
+  defp readable_on({:rgb, r, g, b}) do
+    if r * 299 + g * 587 + b * 114 >= 128_000, do: :black, else: :white
+  end
+
+  defp readable_on(_named_or_nil), do: :black
 
   @doc "A key hint rendered as a padded `chip_style/0` span, e.g. `\" ^C \"`."
   @spec key_pill(String.t()) :: Span.t()

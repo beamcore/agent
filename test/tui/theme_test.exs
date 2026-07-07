@@ -65,6 +65,23 @@ defmodule Beamcore.TUI.ThemeTest do
     assert Theme.chip_style().bg == Theme.style(:accent).fg
   end
 
+  test "chip text flips to white on dark-accent themes for legibility" do
+    Theme.set_theme(:github)
+    assert Theme.chip_style().fg == :white
+
+    Theme.set_theme(:solarized)
+    assert Theme.chip_style().fg == :white
+  end
+
+  test "chip text stays black on bright-accent themes" do
+    Theme.set_theme(:matrix)
+    assert Theme.chip_style().fg == :black
+
+    # A named terminal accent (default theme's :cyan) keeps black text.
+    Theme.set_theme(:default)
+    assert Theme.chip_style().fg == :black
+  end
+
   test "key_pill wraps a label in a padded chip span" do
     Theme.set_theme(:default)
     pill = Theme.key_pill("^C")
