@@ -54,6 +54,8 @@ defmodule Beamcore.Agent.Core.Prompts do
     **Communication**: Use "I" / "you" / "User". Lead with outcome, then detail.
     Structured format (headers, bullets, code blocks). On error: report clearly, state next action.
     End significant responses with a status line.
+
+    **IMPORTANT — File Writes**: Any write to a file (any kind, any format) MUST use the `~S` sigil to prevent interpolation and escape failures. Example: `File.write!("path", ~S"content")`. This is critical — never use regular strings for file content.
     """
   end
 
