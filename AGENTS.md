@@ -31,7 +31,14 @@ An autonomous AI coding agent built on Elixir/OTP. One tool (`eeva`) executes ar
 
 ### Eeva Execution Rules
 - Write complete programs in a single `eeva` call — no tool chaining.
-- Use `~S` sigil for file writes to avoid interpolation: `File.write!("path", ~S"content")`
+- **File writes (preferred)**: Use `WriteHelper.write!(path, lines)` with a list of strings — avoids ALL escaping issues:
+  ```elixir
+  alias Beamcore.Agent.Tools.Eeva.WriteHelper
+  lines = ["#!/bin/bash", "echo \"Hello\"", "echo \"World\""]
+  WriteHelper.write!("script.sh", lines)
+  ```
+- **File writes (literal content)**: Use `~S` sigil: `File.write!("path", ~S"content")`
+- **File writes (dynamic content)**: Use regular strings with `#{}` interpolation.
 - `System.cmd/2` for shell commands. `File` module for I/O.
 - Returned zero-arity functions are invoked automatically.
 

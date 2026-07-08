@@ -51,7 +51,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
         name: name(),
         description: """
         Execute Elixir code on the Grid. Inspect and edit files, run system commands, parse data, access Beamcore.Memory. Direct execution -- no tool chaining required.
-        ALWAYS use `~S` sigil when writing to a file to avoid interpolation and escape processing.
+        For file writes: prefer `WriteHelper.write!(path, lines)` with a list of strings to avoid all escaping issues. Use `~S` sigil for literal content, regular strings for dynamic interpolation.
         """,
         parameters: %{
           type: "object",

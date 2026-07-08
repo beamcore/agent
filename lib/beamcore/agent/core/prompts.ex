@@ -55,7 +55,27 @@ defmodule Beamcore.Agent.Core.Prompts do
     Structured format (headers, bullets, code blocks). On error: report clearly, state next action.
     End significant responses with a status line.
 
-    **IMPORTANT — File Writes**: Any write to a file (any kind, any format) MUST use the `~S` sigil to prevent interpolation and escape failures. Example: `File.write!("path", ~S"content")`. This is critical — never use regular strings for file content.
+    **IMPORTANT — File Writes**:
+
+    **Preferred: line-list pattern.** Build content as a list of strings, then write:
+      alias Beamcore.Agent.Tools.Eeva.WriteHelper
+      lines = ["line one", "line two", "line three"]
+      WriteHelper.write!("path", lines)
+    This avoids ALL escaping issues — each line is a separate string literal.
+
+    **For literal content (templates, code, configs):** Use `~S` sigil to prevent interpolation:
+      File.write!("path", ~S"content with \\n and #{} preserved literally")
+
+    **For dynamic content (needs Elixir interpolation):** Use regular strings with `\#{}`:
+      name = "world"
+      File.write!("greeting.txt", "Hello, \#{name}!")
+
+    **For mixed content:** Build parts separately, then join:
+      header = ~S"# Config\nversion = 1\n"
+      dynamic_part = "generated_at: \#{DateTime.utc_now()}"
+      File.write!("config.txt", header <> dynamic_part)
+
+    **NEVER** put literal `\\n`, `\\t`, or `\\\\` in a regular string intended for file content — use either `~S` sigil or the line-list pattern instead.
     """
   end
 
