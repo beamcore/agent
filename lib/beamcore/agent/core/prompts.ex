@@ -4,6 +4,9 @@ defmodule Beamcore.Agent.Core.Prompts do
   and feedback/loop correction templates across the Beamcore Agent.
   """
 
+  # ~10k tokens ≈ 40k characters (conservative estimate of ~4 chars/token)
+  @agents_md_max_chars 40_000
+
   @default_tools [
     "eeva: Universal Elixir runtime. Write complete Elixir programs that call ANY module directly (Beamcore.Memory, Beamcore.Agent.SubAgent, Beamcore.Helpers, File, System, etc.). No tool chaining -- one program does it all."
   ]
@@ -131,12 +134,40 @@ defmodule Beamcore.Agent.Core.Prompts do
   defp format_workspace_reference([]), do: ""
 
   defp format_workspace_reference(files) do
-    refs =
-      Enum.map_join(files, "\n", fn {filename, content} ->
-        lines = content |> String.split("\n") |> length()
-        "  - #{filename} (#{lines} lines) -- read if needed"
-      end)
+    {agents_md, others} =
+      Enum.split_with(files, fn {filename, _} -> filename == "AGENTS.md" end)
 
-    "\n**Workspace instruction files**:\n#{refs}\n"
+    agents_section =
+      case agents_md do
+        [{_filename, content}] ->
+          truncated =
+            if String.length(content) > @agents_md_max_chars do
+              String.slice(content, 0, @agents_md_max_chars) <> "\n... [truncated at ~10k tokens]"
+            else
+              content
+            end
+
+          "\n**AGENTS.md** (workspace instructions -- follow these):\n\n#{truncated}\n"
+
+        [] ->
+          ""
+      end
+
+    others_section =
+      case others do
+        [] ->
+          ""
+
+        _ ->
+          refs =
+            Enum.map_join(others, "\n", fn {filename, content} ->
+              lines = content |> String.split("\n") |> length()
+              "  - #{filename} (#{lines} lines) -- read if needed"
+            end)
+
+          "\n**Other workspace files**:\n#{refs}\n"
+      end
+
+    agents_section <> others_section
   end
 end
