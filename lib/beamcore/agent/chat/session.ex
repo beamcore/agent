@@ -13,6 +13,7 @@ defmodule Beamcore.Agent.Chat.Session do
     :total_prompt_tokens,
     :total_completion_tokens,
     :total_tokens,
+    :total_cached_tokens,
     :last_prompt_tokens,
     :compaction_count,
     :workspace_root,
@@ -90,6 +91,7 @@ defmodule Beamcore.Agent.Chat.Session do
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
       total_tokens: 0,
+      total_cached_tokens: 0,
       last_prompt_tokens: 0,
       compaction_count: 0,
       workspace_root: workspace_root,
@@ -189,6 +191,7 @@ defmodule Beamcore.Agent.Chat.Session do
         total_completion_tokens:
           session.total_completion_tokens + (usage["completion_tokens"] || 0),
         total_tokens: session.total_tokens + (usage["total_tokens"] || 0),
+        total_cached_tokens: session.total_cached_tokens + (usage["cached_tokens"] || 0),
         last_prompt_tokens: usage["prompt_tokens"] || 0
     }
   end
@@ -201,6 +204,7 @@ defmodule Beamcore.Agent.Chat.Session do
       prompt_tokens: session.total_prompt_tokens,
       completion_tokens: session.total_completion_tokens,
       total_tokens: session.total_tokens,
+      cached_tokens: session.total_cached_tokens || 0,
       last_prompt_tokens: session.last_prompt_tokens || 0
     }
   end

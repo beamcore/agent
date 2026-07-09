@@ -61,7 +61,8 @@ defmodule Beamcore.Provider.Usage do
     %{
       "prompt_tokens" => usage.input_tokens || 0,
       "completion_tokens" => usage.output_tokens || 0,
-      "total_tokens" => usage.total_tokens || 0
+      "total_tokens" => usage.total_tokens || 0,
+      "cached_tokens" => usage.cached_tokens || 0
     }
   end
 
