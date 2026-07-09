@@ -175,7 +175,15 @@ defmodule Beamcore.TUI.State do
 
   defp auto_scroll_on_new_message(state), do: Scroll.auto_scroll_on_new_message(state)
 
-  def usage(nil), do: %{last_prompt_tokens: 0, total_tokens: 0}
+  def usage(nil),
+    do: %{
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+      cached_tokens: 0,
+      last_prompt_tokens: 0
+    }
+
   def usage(session), do: Session.usage(session)
 
   def model(nil), do: Beamcore.Agent.Chat.API.default_model()

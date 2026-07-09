@@ -58,10 +58,10 @@ else
 	@echo "==> Building Beamcore release from source"; \
 	if [ "$(VERBOSE)" = "1" ]; then \
 		set -eu; \
-		mix deps.get && mix compile && MIX_ENV=prod mix release --overwrite; \
+		EX_RATATUI_BUILD=1 mix deps.get && MIX_ENV=prod EX_RATATUI_BUILD=1 mix release --overwrite; \
 	else \
 		log_file=$$(mktemp "$${TMPDIR:-/tmp}/beamcore-release.XXXXXX"); \
-		if mix deps.get > "$$log_file" 2>&1 && mix compile >> "$$log_file" 2>&1 && MIX_ENV=prod mix release --overwrite >> "$$log_file" 2>&1; then \
+		if EX_RATATUI_BUILD=1 mix deps.get > "$$log_file" 2>&1 && MIX_ENV=prod EX_RATATUI_BUILD=1 mix release --overwrite >> "$$log_file" 2>&1; then \
 			rm -f "$$log_file"; \
 		else \
 			echo "Release build failed. Build log:"; \
@@ -79,17 +79,32 @@ else
 	if [ -z "$(INSTALL_DIR)" ] || [ "$(INSTALL_DIR)" = "/" ]; then \
 		echo "error: INSTALL_DIR is empty or root — refusing to proceed"; exit 1; \
 	fi; \
-	if [ -d "$(INSTALL_DIR)" ]; then \
+	parent_dir=$$(dirname "$(INSTALL_DIR)"); \
+	mkdir -p "$$parent_dir"; \
+	staging="$$parent_dir/staging.$$$$"; \
+	rm -rf "$$staging"; \
+	mkdir -p "$$staging"; \
+	if cp -a $(RELEASE_DIR)/. "$$staging/"; then \
 		backup="$(INSTALL_DIR).backup.$$$$"; \
-		mv "$(INSTALL_DIR)" "$$backup"; \
+		rm -rf "$$backup"; \
+		if [ -d "$(INSTALL_DIR)" ]; then \
+			mv "$(INSTALL_DIR)" "$$backup"; \
+		fi; \
+		if mv "$$staging" "$(INSTALL_DIR)"; then \
+			rm -rf "$$backup"; \
+		else \
+			rm -rf "$(INSTALL_DIR)"; \
+			if [ -d "$$backup" ]; then mv "$$backup" "$(INSTALL_DIR)"; fi; \
+			echo "error: installation failed to move staging — previous install restored" >&2; \
+			exit 1; \
+		fi; \
+	else \
+		rm -rf "$$staging"; \
+		echo "error: failed to copy release files to staging" >&2; \
+		exit 1; \
 	fi; \
-	mkdir -p "$(INSTALL_DIR)" && \
-	cp -a $(RELEASE_DIR)/. "$(INSTALL_DIR)/" && \
-	rm -rf "$${backup:-}" || { \
-		[ -n "$${backup:-}" ] && [ -d "$${backup:-}" ] && mv "$$backup" "$(INSTALL_DIR)"; \
-		echo "error: installation failed — previous install restored"; exit 1; \
-	}; \
 	mkdir -p "$(BIN_DIR)"; \
+	launcher_tmp="$(LAUNCHER).tmp.$$$$"; \
 	printf '%s\n' \
 		'#!/bin/sh' \
 		'set -eu' \
@@ -109,8 +124,9 @@ else
 		'if [ "$$#" -eq 0 ]; then' \
 		'  exec "$$AGENT_BIN" eval "Application.ensure_all_started(:beamcore); Beamcore.Agent.chat()"' \
 		'fi' \
-		'exec "$$AGENT_BIN" "$$@"' > "$(LAUNCHER)"; \
-	chmod +x "$(LAUNCHER)";
+		'exec "$$AGENT_BIN" "$$@"' > "$$launcher_tmp"; \
+	chmod +x "$$launcher_tmp"; \
+	mv "$$launcher_tmp" "$(LAUNCHER)";
 	echo "✓ Installed"
 endif
 
@@ -138,7 +154,7 @@ compile:
 
 ## release: Build a prod release
 release: deps compile
-	MIX_ENV=prod mix release --overwrite
+	MIX_ENV=prod EX_RATATUI_BUILD=1 mix release --overwrite
 
 ## test: Run ExUnit tests
 test:
