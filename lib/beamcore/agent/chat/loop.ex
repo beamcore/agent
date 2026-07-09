@@ -6,6 +6,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   alias Beamcore.Agent.Chat.{
     API,
     ModeSettings,
+    ModelPayload,
     Session
   }
 
@@ -214,11 +215,13 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp prepare_api_messages(session, messages) do
+    metadata = model_metadata(session)
+
     prepared =
       messages
       |> Session.prepare_for_api()
+      |> ModelPayload.limit(metadata)
 
-    metadata = model_metadata(session)
     estimate = Beamcore.Agent.Chat.Budget.estimate_tokens(prepared)
 
     {:ok, prepared, estimate, metadata}
