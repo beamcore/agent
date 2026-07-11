@@ -71,7 +71,7 @@ defmodule Beamcore.Agent.MixProject do
       {:nostrum, "~> 0.10.4", runtime: false},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:postgrex, "~> 0.22.2"},
-      {:myxql, "~> 0.8.0"},
+      {:myxql, "~> 0.9.0"},
       {:mongodb_driver, "~> 1.6"}
     ]
   end
