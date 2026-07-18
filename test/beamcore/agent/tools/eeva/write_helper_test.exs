@@ -129,6 +129,43 @@ defmodule Beamcore.Agent.Tools.Eeva.WriteHelperTest do
     end
   end
 
+  describe "exact edits" do
+    test "replaces a unique anchor with literal payload content", %{dir: dir} do
+      path = Path.join(dir, "module.ex")
+      original = "defmodule Demo do\n  def old, do: :old\nend\n"
+      interpolation = "#" <> "{literal}"
+      replacement = "  def value, do: \"#{interpolation}\"\\\\path"
+      File.write!(path, original)
+
+      assert :ok = WriteHelper.replace!(path, "  def old, do: :old", replacement)
+      assert File.read!(path) == String.replace(original, "  def old, do: :old", replacement)
+    end
+
+    test "validates every anchor before writing", %{dir: dir} do
+      path = Path.join(dir, "atomic.txt")
+      original = "one\ntwo\n"
+      File.write!(path, original)
+
+      assert_raise ArgumentError, ~r/edit anchor was not found/, fn ->
+        WriteHelper.edit!(path, [{"one", "changed"}, {"missing", "never written"}])
+      end
+
+      assert File.read!(path) == original
+    end
+
+    test "rejects an ambiguous anchor without changing the file", %{dir: dir} do
+      path = Path.join(dir, "ambiguous.txt")
+      original = "same\nsame\n"
+      File.write!(path, original)
+
+      assert_raise ArgumentError, ~r/matched 2 times/, fn ->
+        WriteHelper.replace!(path, "same", "changed")
+      end
+
+      assert File.read!(path) == original
+    end
+  end
+
   describe "escaping scenarios that trip up LLMs" do
     test "bash script with shebang and echo", %{dir: dir} do
       path = Path.join(dir, "script.sh")

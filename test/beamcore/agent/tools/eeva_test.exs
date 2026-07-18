@@ -30,19 +30,60 @@ defmodule Beamcore.Agent.Tools.EevaTest do
     %{root: root}
   end
 
-  test "spec exposes one ordinary Elixir program parameter" do
+  test "spec exposes code with an optional literal payload channel" do
     spec = Eeva.spec()
     assert spec.type == "function"
     assert spec.function.name == "eeva"
     assert spec.function.parameters.required == ["code"]
     assert spec.function.description =~ "Execute Elixir code"
+    assert spec.function.description =~ "payloads"
     assert spec.function.parameters.properties.code.description =~ "System.cmd"
+    assert spec.function.parameters.properties.payloads.additionalProperties == %{type: "string"}
   end
 
   test "rejects missing code" do
     result = Eeva.execute(%{}) |> Jason.decode!()
     refute result["ok"]
     assert result["summary"] =~ "No input received"
+  end
+
+  test "large literal payload is available without becoming Elixir source", %{root: root} do
+    interpolation = "#" <> "{literal}"
+
+    content =
+      "defmodule Generated do\n" <>
+        String.duplicate("  def value, do: \"#{interpolation}\"\\\\path\n", 6_000) <>
+        "end\n"
+
+    result =
+      Eeva.execute(%{
+        "code" =>
+          "Beamcore.Agent.Tools.Eeva.WriteHelper.write!(\"generated.ex\", eeva_payloads[\"content\"])",
+        "payloads" => %{"content" => content}
+      })
+      |> Jason.decode!()
+
+    assert result["ok"]
+    assert File.read!(Path.join(root, "generated.ex")) == content
+  end
+
+  test "payload values must be strings" do
+    result =
+      Eeva.execute(%{"code" => ":ok", "payloads" => %{"content" => ["not", "text"]}})
+      |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["classification"] == "invalid_request"
+    assert result["summary"] =~ "map of string names to string values"
+  end
+
+  test "oversized code points to payloads instead of sigil retries" do
+    result = Eeva.execute(%{"code" => String.duplicate("1;", 70_000)}) |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["classification"] == "execution_guard"
+    assert result["summary"] =~ "Do not retry with a different Elixir string or sigil"
+    assert result["summary"] =~ "WriteHelper.edit!"
   end
 
   test "executes calculations and anonymous recursion" do

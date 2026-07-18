@@ -114,6 +114,6 @@ defmodule Beamcore.Agent.SubAgent do
   end
 
   defp default_system_prompt do
-    "You are a sub-agent. Complete the task concisely and return the result. Be direct and efficient. When using tools, make minimal calls and return findings immediately."
+    Beamcore.Agent.Core.Prompts.sub_agent("worker")
   end
 end

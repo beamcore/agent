@@ -16,6 +16,7 @@ defmodule Beamcore.TUI.Components.System.EevaLimits do
       line("output", format_bytes(limits.max_output_bytes)),
       line("result", format_bytes(limits.max_result_bytes)),
       line("code", format_bytes(limits.max_code_bytes)),
+      line("payload", format_bytes(limits.max_payload_bytes)),
       line("ast", format_count(limits.max_ast_nodes))
     ]
   end
