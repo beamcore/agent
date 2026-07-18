@@ -48,7 +48,7 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     tools = Dispatcher.tool_specs()
     messages = session.messages ++ [user_message]
-    messages = inject_runtime_message(messages, tools)
+    messages = ensure_runtime_message(messages, tools)
 
     process_messages(session, messages, pid, 0, opts)
   end
@@ -356,23 +356,31 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp has_tool_calls?(_message), do: false
 
-  defp inject_runtime_message(messages, tools) do
+  @doc false
+  def ensure_runtime_message(messages, tools) do
     runtime_message = %{
       role: "system",
       content: runtime_summary(tools)
     }
 
-    case messages do
-      [system, context | rest] when is_map(system) and is_map(context) ->
-        [system, context, runtime_message | rest]
+    {system_messages, conversation} =
+      Enum.split_with(messages, &(message_role(&1) == "system"))
 
-      [system | rest] when is_map(system) ->
-        [system, runtime_message | rest]
+    stable_system = Enum.reject(system_messages, &runtime_message?/1)
 
-      other ->
-        [runtime_message | other]
+    case stable_system do
+      [primary | rest] -> [primary, runtime_message | rest] ++ conversation
+      [] -> [runtime_message | conversation]
     end
   end
+
+  defp runtime_message?(message) do
+    message_role(message) == "system" and
+      String.starts_with?(to_string(message_content(message)), "Exposed tools:")
+  end
+
+  defp message_role(message), do: message[:role] || message["role"]
+  defp message_content(message), do: message[:content] || message["content"] || ""
 
   defp runtime_summary(tools) do
     tool_names =

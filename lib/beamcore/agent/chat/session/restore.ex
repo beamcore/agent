@@ -50,6 +50,7 @@ defmodule Beamcore.Agent.Chat.Session.Restore do
       total_prompt_tokens: 0,
       total_completion_tokens: 0,
       total_tokens: 0,
+      total_cached_tokens: 0,
       last_prompt_tokens: 0,
       screen_type: :agent
     }

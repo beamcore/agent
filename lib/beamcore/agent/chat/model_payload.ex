@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.Chat.ModelPayload do
   alias Beamcore.Agent.Chat.Budget
 
   @fallback_context_window 32_000
-  @budget_ratio 0.70
+  @budget_ratio 0.75
   @recent_messages 6
   @max_message_content_chars 32_000
   @max_tool_content_chars 20_000

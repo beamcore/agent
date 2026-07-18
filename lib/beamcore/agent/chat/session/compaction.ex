@@ -6,17 +6,18 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
   session rollovers with summarization. Designed for long-running (24/7)
   sessions that must never lose the user's original intent.
 
-  Anti-thrashing: stops auto-compacting after 3 consecutive auto-compactions
-  without user interaction, to prevent infinite loops when a single file or
-  tool output refills context immediately.
+  Compaction runs only at the start of a user turn. Tool-loop recursion skips it,
+  so long-lived sessions can compact repeatedly without compacting twice during
+  one turn.
   """
 
-  alias Beamcore.Agent.Chat.Session.MessageCleaner
+  alias Beamcore.Agent.Chat.{ModelPayload, Session.MessageCleaner}
+  alias Beamcore.Agent.Core.Prompts
+  alias Beamcore.Provider.{ModelMetadata, Selection}
 
   @keep_recent 6
   @auto_compact_ratio 0.75
   @max_summary_chars 8_000
-  @max_consecutive_auto 3
 
   @doc """
   Clean the in-memory history kept after a turn (structural fixes only, no truncation).
@@ -44,14 +45,6 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
 
     cond do
       is_nil(context_window) or context_window <= 0 ->
-        {session, messages}
-
-      session.compaction_count >= @max_consecutive_auto ->
-        Beamcore.AppLog.warn("Auto-compaction stopped: thrashing detected",
-          compaction_count: session.compaction_count,
-          context_window: context_window
-        )
-
         {session, messages}
 
       true ->
@@ -92,10 +85,10 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
 
       case summarize_messages(session, system_msgs, older) do
         {:ok, summary, new_session} ->
-          combined_system = build_compact_system(session, summary, new_session.compaction_count)
+          checkpoint = checkpoint_messages(summary, new_session.compaction_count)
 
           rollover_messages =
-            MessageCleaner.clean([combined_system] ++ recent)
+            MessageCleaner.clean(system_msgs ++ checkpoint ++ recent)
 
           final = %{new_session | messages: rollover_messages}
           Beamcore.Agent.Chat.Session.rewrite_log(final)
@@ -109,7 +102,7 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
   defp summarize_messages(session, system_msgs, older) do
     summary_prompt = %{
       role: "user",
-      content: Beamcore.Agent.Core.Prompts.compaction_summary_request()
+      content: Prompts.compaction_summary_request()
     }
 
     system_msg = List.first(system_msgs)
@@ -121,7 +114,9 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
         older ++ [summary_prompt]
       end
 
-    primary = Beamcore.Provider.Selection.primary(session.roles)
+    primary = Selection.primary(session.roles)
+    metadata = ModelMetadata.resolve(to_string(primary.provider), primary.model)
+    messages_for_summary = ModelPayload.limit(messages_for_summary, metadata)
 
     case Beamcore.Agent.Chat.API.execute(
            session.client,
@@ -173,29 +168,16 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
     Beamcore.Agent.Chat.Session.rewrite_log(final)
   end
 
-  defp build_compact_system(session, summary, compaction_count) do
-    compact_role =
-      case session.screen_type do
-        :chat ->
-          "You are Beamcore.Chat. Continue from the context below."
-
-        _ ->
-          root = session.workspace_root || "."
-
-          "You are Beamcore.Agent, a local coding agent. Workspace: `#{root}`.\n" <>
-            "Tools: eeva (Elixir runtime). Memory: Beamcore.Memory (remember/recall/list/forget).\n" <>
-            "Continue the task from the context below."
-      end
-
+  defp checkpoint_messages(summary, compaction_count) do
     marker =
       if compaction_count > 1,
         do: "[Compacted #{compaction_count}x]",
         else: "[Compacted]"
 
-    %{
-      role: "system",
-      content: "#{compact_role}\n#{marker}\n#{summary}"
-    }
+    [
+      %{role: "user", content: "#{marker}\nSession checkpoint:\n#{summary}"},
+      %{role: "assistant", content: "Checkpoint loaded. Continuing from this state."}
+    ]
   end
 
   defp split_system(messages) do
