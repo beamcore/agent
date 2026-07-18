@@ -3,6 +3,13 @@ defmodule Beamcore.Agent.Chat.ModelPayloadTest do
 
   alias Beamcore.Agent.Chat.{Budget, ModelPayload}
 
+  test "uses one conservative context fallback when provider metadata is unknown" do
+    assert ModelPayload.effective_context_window(%{context_window: nil}) == 32_000
+    assert ModelPayload.effective_context_window(%{}) == 32_000
+    assert ModelPayload.effective_context_window(nil) == 32_000
+    assert ModelPayload.effective_context_window(%{context_window: 128_000}) == 128_000
+  end
+
   test "limits long tool result fields while keeping valid JSON" do
     content =
       Jason.encode!(%{

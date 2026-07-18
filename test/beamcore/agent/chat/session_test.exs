@@ -464,7 +464,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       %{client: client, session: session}
     end
 
-    test "does nothing when context_window is nil", %{session: session} do
+    test "uses the conservative fallback when context_window is nil", %{session: session} do
       messages = session.messages ++ [%{role: "user", content: "hello"}]
       metadata = %{context_window: nil}
 
@@ -472,6 +472,39 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       assert result_session == session
       assert result_messages == messages
+    end
+
+    test "compacts an oversized session when context_window is nil", %{session: session} do
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:ok,
+         %{
+           "choices" => [
+             %{"message" => %{"role" => "assistant", "content" => "fallback checkpoint"}}
+           ]
+         }}
+      end)
+
+      on_exit(fn -> Process.delete(:mock_completions_create) end)
+
+      messages =
+        session.messages ++
+          Enum.flat_map(1..12, fn i ->
+            [
+              %{role: "user", content: "request #{i} " <> String.duplicate("x", 5_000)},
+              %{role: "assistant", content: "result #{i} " <> String.duplicate("y", 5_000)}
+            ]
+          end)
+
+      {result_session, result_messages} =
+        Session.maybe_compact(session, messages, %{context_window: nil}, 0)
+
+      assert result_session.compaction_count == 1
+      assert result_messages == result_session.messages
+
+      assert Enum.any?(result_messages, fn message ->
+               content = message[:content] || message["content"] || ""
+               String.contains?(content, "fallback checkpoint")
+             end)
     end
 
     test "does nothing when estimate is below threshold", %{session: session} do

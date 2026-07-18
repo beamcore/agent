@@ -41,28 +41,21 @@ defmodule Beamcore.Agent.Chat.Session.Compaction do
   end
 
   def maybe_compact(session, messages, metadata, _depth) do
-    context_window = Map.get(metadata, :context_window) || Map.get(metadata, "context_window")
+    context_window = ModelPayload.effective_context_window(metadata)
+    estimate = Beamcore.Agent.Chat.Budget.estimate_tokens(messages)
+    threshold = trunc(context_window * @auto_compact_ratio)
 
-    cond do
-      is_nil(context_window) or context_window <= 0 ->
-        {session, messages}
+    if estimate > threshold do
+      Beamcore.AppLog.info("Auto-compaction triggered",
+        estimated_tokens: estimate,
+        threshold: threshold,
+        context_window: context_window
+      )
 
-      true ->
-        estimate = Beamcore.Agent.Chat.Budget.estimate_tokens(messages)
-        threshold = trunc(context_window * @auto_compact_ratio)
-
-        if estimate > threshold do
-          Beamcore.AppLog.info("Auto-compaction triggered",
-            estimated_tokens: estimate,
-            threshold: threshold,
-            context_window: context_window
-          )
-
-          compacted = summarize_and_rollover(session, messages, nil)
-          {compacted, compacted.messages}
-        else
-          {session, messages}
-        end
+      compacted = summarize_and_rollover(session, messages, nil)
+      {compacted, compacted.messages}
+    else
+      {session, messages}
     end
   end
 
