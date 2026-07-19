@@ -32,7 +32,7 @@ defmodule Beamcore.Agent.SubAgent do
 
   defp execute(task, opts) do
     selection = build_selection(opts)
-    temperature = Keyword.get(opts, :temperature, 0.7)
+    temperature = Keyword.get(opts, :temperature)
     tools_requested = Keyword.get(opts, :tools, true)
     system_prompt = Keyword.get(opts, :system, default_system_prompt())
 

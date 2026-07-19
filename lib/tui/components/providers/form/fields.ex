@@ -4,7 +4,7 @@ defmodule Beamcore.TUI.Components.Providers.Form.Fields do
   @fields [
     %{id: :name, label: "name", required?: true},
     %{id: :key, label: "api key"},
-    %{id: :url, label: "base url"},
+    %{id: :url, label: "base url", required?: true},
     %{id: :model, label: "model"},
     %{id: :auth_strategy, label: "auth strategy"},
     %{id: :token_url, label: "token url"},

@@ -113,6 +113,21 @@ defmodule Beamcore.TUI.KeyboardInputTest do
     assert value(updated) == "hello"
   end
 
+  test "left and right arrows move the main chat input cursor" do
+    updated =
+      Enum.reduce(~w(a b c), state(), fn char, acc ->
+        {:noreply, acc} = Events.handle_event(key(char), acc)
+        acc
+      end)
+
+    {:noreply, updated} = Events.handle_event(key("left"), updated)
+    {:noreply, updated} = Events.handle_event(key("X"), updated)
+    {:noreply, updated} = Events.handle_event(key("right"), updated)
+    {:noreply, updated} = Events.handle_event(key("Y"), updated)
+
+    assert value(updated) == "abXcY"
+  end
+
   test "enter inserts a newline" do
     {:noreply, updated} = Events.handle_event(key("enter"), state())
     assert value(updated) == "\n"

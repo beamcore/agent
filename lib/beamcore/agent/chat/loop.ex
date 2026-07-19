@@ -11,6 +11,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   }
 
   alias Beamcore.Agent.Tools.Dispatcher
+  alias Beamcore.Provider.Registry
 
   @repeated_tool_failure_limit 3
 
@@ -23,13 +24,26 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp ensure_client(
-         %{roles: %{primary: %{provider: _provider, model: _model}}} = session,
+         %{client: client} = session,
          _opts
-       ),
+       )
+       when not is_nil(client),
        do: {:ok, session}
 
+  defp ensure_client(%{roles: %{primary: %{provider: provider}}} = session, opts)
+       when is_binary(provider) do
+    case Registry.validate_selection(provider) do
+      {:ok, _provider} ->
+        {:ok, session}
+
+      {:error, _reason} ->
+        emit(opts, {:error, Registry.missing_config_message(provider)})
+        {:error, session}
+    end
+  end
+
   defp ensure_client(%{client: nil} = session, opts) do
-    message = Beamcore.Provider.Registry.missing_config_message()
+    message = Registry.missing_config_message()
     emit(opts, {:error, message})
     {:error, session}
   end
@@ -58,12 +72,6 @@ defmodule Beamcore.Agent.Chat.Loop do
   defp process_messages(session, messages, pid, depth, opts, failure_guard) do
     tools = Dispatcher.tool_specs()
     settings = mode_settings(session)
-
-    opts =
-      case session.screen_type do
-        :agent -> Keyword.put_new(opts, :temperature, 0.2)
-        _ -> opts
-      end
 
     {:ok, _api_messages, _estimate, metadata} =
       prepare_api_messages(session, messages)

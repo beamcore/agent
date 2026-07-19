@@ -54,6 +54,38 @@ defmodule Beamcore.Agent.Chat.LoopTest do
     assert runtime_message_count(cleaned) == 1
   end
 
+  test "does not force a temperature on provider requests" do
+    Process.put(:mock_completions_create, fn _client, params ->
+      refute Map.has_key?(params, :temperature)
+      assistant_response("provider default used")
+    end)
+
+    session = Session.new(Beamcore.Provider.Registry.client())
+    result = Loop.send_message(session, "describe the project", self())
+
+    assert List.last(result.messages)["content"] == "provider default used"
+  end
+
+  test "rejects an unconfigured session when sending instead of adding a stale warning" do
+    Process.put(:mock_completions_create, fn _client, _params ->
+      flunk("provider API must not be called for an unknown provider")
+    end)
+
+    session =
+      Beamcore.Provider.Registry.client()
+      |> Session.new()
+      |> Session.set_primary_provider("missing-provider", "missing-model")
+
+    result = Loop.send_message(session, "hello", self(), event_handler: &record_event/1)
+
+    assert result == session
+
+    assert Enum.any?(Process.get(:loop_events, []), fn
+             {:error, message} -> message =~ "Unknown provider 'missing-provider'"
+             _ -> false
+           end)
+  end
+
   test "stops only when an identical failure continues after automatic recovery" do
     Process.put(:mock_completions_create, fn _client, _params ->
       call = Process.get(:loop_completions_calls, 0) + 1
