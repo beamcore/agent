@@ -6,6 +6,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   @default_visible_rows 12
 
   defstruct field: :name,
+            cursor: 0,
             name: "",
             key: "",
             url: "",
@@ -64,26 +65,35 @@ defmodule Beamcore.TUI.Components.Providers.Form do
 
     form
     |> Auth.cycle(direction)
+    |> move_cursor_to_end()
     |> ensure_focus_visible()
   end
+
+  def handle_key("left", _mods, form), do: move_cursor(form, -1)
+  def handle_key("right", _mods, form), do: move_cursor(form, 1)
+  def handle_key("home", _mods, form), do: %{ensure_focus_valid(form) | cursor: 0}
+  def handle_key("end", _mods, form), do: move_cursor_to_end(form)
 
   def handle_key("enter", _mods, form) do
     form = Auth.auto_detect_mode(form)
 
     cond do
-      form.name == "" ->
+      blank?(form.name) ->
         focus_field(%{form | error: "name required"}, :name)
 
-      form.mode in [:bearer, :api_key] and form.key == "" ->
+      blank?(form.url) ->
+        focus_field(%{form | error: "base url required"}, :url)
+
+      form.mode in [:bearer, :api_key] and blank?(form.key) ->
         focus_field(%{form | error: "key required"}, :key)
 
-      form.mode == :oauth2_client_credentials and form.token_url == "" ->
+      form.mode == :oauth2_client_credentials and blank?(form.token_url) ->
         focus_field(%{form | error: "token url required for OAuth2"}, :token_url)
 
-      form.mode == :oauth2_client_credentials and form.key == "" and form.client_id == "" ->
+      form.mode == :oauth2_client_credentials and blank?(form.key) and blank?(form.client_id) ->
         focus_field(%{form | error: "client id required for OAuth2"}, :client_id)
 
-      form.mode == :oauth2_client_credentials and form.key == "" and form.client_secret == "" ->
+      form.mode == :oauth2_client_credentials and blank?(form.key) and blank?(form.client_secret) ->
         focus_field(%{form | error: "client secret required for OAuth2"}, :client_secret)
 
       true ->
@@ -93,7 +103,7 @@ defmodule Beamcore.TUI.Components.Providers.Form do
 
   def handle_key("esc", _mods, form), do: {:cancel, form}
 
-  def handle_key("delete", _mods, form), do: handle_backspace(form)
+  def handle_key("delete", _mods, form), do: handle_delete(form)
 
   def handle_key(key, _mods, form) do
     char = if String.length(key) == 1, do: key, else: ""
@@ -111,9 +121,29 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     form = ensure_focus_valid(form)
     field = Fields.field_atom(form.field)
     current = Map.get(form, field)
-    new_val = if String.length(current) > 0, do: String.slice(current, 0..-2//1), else: current
+    cursor = clamped_cursor(form, current)
 
-    %{Map.put(form, field, new_val) | error: nil}
+    {new_val, cursor} =
+      if cursor > 0 do
+        {remove_at(current, cursor - 1), cursor - 1}
+      else
+        {current, cursor}
+      end
+
+    %{Map.put(form, field, new_val) | error: nil, cursor: cursor}
+    |> Auth.auto_detect_mode()
+    |> ensure_focus_valid()
+    |> ensure_focus_visible()
+  end
+
+  defp handle_delete(form) do
+    form = ensure_focus_valid(form)
+    field = Fields.field_atom(form.field)
+    current = Map.get(form, field)
+    cursor = clamped_cursor(form, current)
+    new_val = if cursor < String.length(current), do: remove_at(current, cursor), else: current
+
+    %{Map.put(form, field, new_val) | error: nil, cursor: cursor}
     |> Auth.auto_detect_mode()
     |> ensure_focus_valid()
     |> ensure_focus_visible()
@@ -141,11 +171,15 @@ defmodule Beamcore.TUI.Components.Providers.Form do
         true -> current <> text
       end
 
-    %{form | auth_strategy: value, error: nil}
+    %{form | auth_strategy: value, error: nil, cursor: String.length(value)}
   end
 
   defp update_field_text(form, field, text) do
-    %{Map.update!(form, field, &(&1 <> text)) | error: nil}
+    current = Map.fetch!(form, field)
+    cursor = clamped_cursor(form, current)
+    value = insert_at(current, cursor, text)
+
+    %{Map.put(form, field, value) | error: nil, cursor: cursor + String.length(text)}
   end
 
   defp next_field(form, opts) do
@@ -157,7 +191,12 @@ defmodule Beamcore.TUI.Components.Providers.Form do
     form =
       if form.field == :name and next == :key do
         auto = auto_fill(form.name)
-        %{form | url: form.url || auto.url, model: form.model || auto.model}
+
+        %{
+          form
+          | url: if(blank?(form.url), do: auto.url, else: form.url),
+            model: if(blank?(form.model), do: auto.model, else: form.model)
+        }
       else
         form
       end
@@ -185,7 +224,9 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   defp focus_field(form, nil), do: form
 
   defp focus_field(form, field) do
-    %{form | field: field}
+    value = Map.get(form, Fields.field_atom(field), "")
+
+    %{form | field: field, cursor: String.length(value)}
     |> ensure_focus_visible()
   end
 
@@ -251,6 +292,34 @@ defmodule Beamcore.TUI.Components.Providers.Form do
   rescue
     _ -> %{url: "", model: ""}
   end
+
+  defp move_cursor(form, amount) do
+    form = ensure_focus_valid(form)
+    value = Map.get(form, Fields.field_atom(form.field), "")
+
+    %{
+      form
+      | cursor: (clamped_cursor(form, value) + amount) |> max(0) |> min(String.length(value))
+    }
+  end
+
+  defp move_cursor_to_end(form) do
+    form = ensure_focus_valid(form)
+    value = Map.get(form, Fields.field_atom(form.field), "")
+    %{form | cursor: String.length(value)}
+  end
+
+  defp clamped_cursor(form, value), do: form.cursor |> max(0) |> min(String.length(value))
+
+  defp insert_at(value, cursor, text) do
+    String.slice(value, 0, cursor) <> text <> String.slice(value, cursor..-1//1)
+  end
+
+  defp remove_at(value, index) do
+    String.slice(value, 0, index) <> String.slice(value, (index + 1)..-1//1)
+  end
+
+  defp blank?(value), do: not is_binary(value) or String.trim(value) == ""
 
   defp shift?(nil), do: false
   defp shift?(mods), do: "shift" in mods

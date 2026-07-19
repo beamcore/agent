@@ -115,6 +115,81 @@ defmodule Beamcore.TUI.ProviderFormTest do
     assert form.name == ""
   end
 
+  test "left and right arrows edit at the provider input cursor" do
+    form = Form.new() |> Form.insert_text("abcd")
+    form = Form.handle_key("left", [], form)
+    form = Form.handle_key("left", [], form)
+    form = Form.insert_text(form, "X")
+
+    assert form.name == "abXcd"
+    assert form.cursor == 3
+
+    form = Form.handle_backspace(form)
+    assert form.name == "abcd"
+    assert form.cursor == 2
+
+    form = Form.handle_key("delete", [], form)
+    assert form.name == "abd"
+    assert form.cursor == 2
+
+    form = Form.handle_key("right", [], form)
+    form = Form.insert_text(form, "!")
+    assert form.name == "abd!"
+  end
+
+  test "known provider navigation fills blank url and model" do
+    form = Form.new() |> Form.insert_text("openai")
+    form = Form.handle_key("down", [], form)
+
+    assert form.field == :key
+    assert form.url == "https://api.openai.com/v1"
+    assert form.model == "gpt-4o"
+  end
+
+  test "open provider form receives printable keys before F3 shortcuts" do
+    system = TuiSystem.new(:agent)
+    mcp_enabled? = system.mcp_snapshot.enabled?
+    {:noreply, system} = TuiSystem.handle_event(key("a"), system)
+
+    printable = Enum.map_join(?a..?z, &<<&1>>) <> "0123456789-._:/@"
+
+    system =
+      printable
+      |> String.graphemes()
+      |> Enum.reduce(system, fn char, current ->
+        {:noreply, updated} = TuiSystem.handle_event(key(char), current)
+        updated
+      end)
+
+    assert system.providers.form.name == printable
+    assert system.mcp_snapshot.enabled? == mcp_enabled?
+  end
+
+  test "repeated enter cannot save a provider without a base url" do
+    form = %{Form.new() | name: "custom", key: "secret"}
+    providers = %Providers{adding?: true, form: form}
+
+    providers = Providers.handle_key("enter", [], providers)
+    assert providers.form.error == "base url required"
+    assert providers.form.field == :url
+    assert providers.save_ref == nil
+
+    providers = Providers.handle_key("enter", [], providers)
+    assert providers.form.error == "base url required"
+    assert providers.form.field == :url
+    assert providers.save_ref == nil
+    assert providers.adding?
+  end
+
+  test "provider base url containing only whitespace is rejected" do
+    form = %{Form.new() | name: "custom", key: "secret", url: "   "}
+
+    rejected = Form.handle_key("enter", [], form)
+
+    assert rejected.error == "base url required"
+    assert rejected.field == :url
+  end
+
   test "advanced auth fields are hidden until an advanced strategy is selected" do
     form = Form.new()
 

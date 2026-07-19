@@ -10,7 +10,7 @@ defmodule Beamcore.Agent.Chat.ModelPayload do
   alias Beamcore.Agent.Chat.Budget
 
   @fallback_context_window 32_000
-  @budget_ratio 0.70
+  @budget_ratio 0.75
   @recent_messages 6
   @max_message_content_chars 32_000
   @max_tool_content_chars 20_000
@@ -18,6 +18,20 @@ defmodule Beamcore.Agent.Chat.ModelPayload do
   @max_tool_argument_chars 16_000
   @compact_content_chars 1_200
   @compact_argument_chars 800
+
+  @doc false
+  def effective_context_window(metadata) do
+    context_window =
+      if is_map(metadata) do
+        Map.get(metadata, :context_window) || Map.get(metadata, "context_window")
+      end
+
+    if is_integer(context_window) and context_window > 0 do
+      context_window
+    else
+      @fallback_context_window
+    end
+  end
 
   def limit(messages, metadata \\ %{}) when is_list(messages) do
     token_budget = token_budget(metadata)
@@ -254,20 +268,7 @@ defmodule Beamcore.Agent.Chat.ModelPayload do
   defp bounded_text(value, _max_chars, _label), do: value
 
   defp token_budget(metadata) do
-    context_window =
-      cond do
-        is_map(metadata) ->
-          Map.get(metadata, :context_window) || Map.get(metadata, "context_window")
-
-        true ->
-          nil
-      end
-
-    if is_integer(context_window) and context_window > 0 do
-      context_window
-    else
-      @fallback_context_window
-    end
+    effective_context_window(metadata)
   end
 
   defp role(message), do: message[:role] || message["role"]

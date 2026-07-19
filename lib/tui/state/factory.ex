@@ -10,21 +10,7 @@ defmodule Beamcore.TUI.State.Factory do
 
     memory_total = compute_memory_total()
     screen_type = Keyword.get(opts, :screen_type, :agent)
-
-    provider_ready? = primary_provider_ready?(screen_type)
-
-    base_messages =
-      if client || provider_ready?,
-        do: [],
-        else: [
-          %{
-            role: :system,
-            content:
-              "Beamcore is not configured for the selected primary provider. Use /api list or /api add to configure one."
-          }
-        ]
-
-    messages = base_messages ++ Beamcore.Remote.attach_hint_messages()
+    messages = Beamcore.Remote.attach_hint_messages()
 
     session = Session.new(client, opts)
 
@@ -56,15 +42,6 @@ defmodule Beamcore.TUI.State.Factory do
     case Keyword.fetch(opts, :client) do
       {:ok, client} -> client
       :error -> nil
-    end
-  end
-
-  defp primary_provider_ready?(screen_type) do
-    settings = Beamcore.Agent.Chat.ModeSettings.resolve(screen_type)
-
-    case Beamcore.Provider.Registry.validate_selection(settings.provider) do
-      {:ok, _provider} -> true
-      _ -> false
     end
   end
 

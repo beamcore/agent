@@ -187,11 +187,11 @@ defmodule Beamcore.Agent.Chat.Session do
   def update_usage(session, usage) do
     %{
       session
-      | total_prompt_tokens: session.total_prompt_tokens + (usage["prompt_tokens"] || 0),
+      | total_prompt_tokens: (session.total_prompt_tokens || 0) + (usage["prompt_tokens"] || 0),
         total_completion_tokens:
-          session.total_completion_tokens + (usage["completion_tokens"] || 0),
-        total_tokens: session.total_tokens + (usage["total_tokens"] || 0),
-        total_cached_tokens: session.total_cached_tokens + (usage["cached_tokens"] || 0),
+          (session.total_completion_tokens || 0) + (usage["completion_tokens"] || 0),
+        total_tokens: (session.total_tokens || 0) + (usage["total_tokens"] || 0),
+        total_cached_tokens: (session.total_cached_tokens || 0) + (usage["cached_tokens"] || 0),
         last_prompt_tokens: usage["prompt_tokens"] || 0
     }
   end

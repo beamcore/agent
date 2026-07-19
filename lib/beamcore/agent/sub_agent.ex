@@ -1,7 +1,8 @@
 defmodule Beamcore.Agent.SubAgent do
   @moduledoc "Simple interface for spawning sub-agents to offload work to cheaper/faster models."
 
-  alias Beamcore.Agent.Chat.API
+  alias Beamcore.Agent.Chat.{API, ModelPayload}
+  alias Beamcore.Provider.ModelMetadata
 
   @default_timeout 600_000
   @max_tool_depth 150
@@ -31,7 +32,7 @@ defmodule Beamcore.Agent.SubAgent do
 
   defp execute(task, opts) do
     selection = build_selection(opts)
-    temperature = Keyword.get(opts, :temperature, 0.7)
+    temperature = Keyword.get(opts, :temperature)
     tools_requested = Keyword.get(opts, :tools, true)
     system_prompt = Keyword.get(opts, :system, default_system_prompt())
 
@@ -49,7 +50,7 @@ defmodule Beamcore.Agent.SubAgent do
     if depth > @max_tool_depth do
       {:error, :max_depth_exceeded}
     else
-      case API.execute(nil, messages, tools,
+      case API.execute(nil, prepare_messages(selection, messages), tools,
              selection: selection,
              temperature: temperature
            ) do
@@ -85,6 +86,12 @@ defmodule Beamcore.Agent.SubAgent do
   defp message_from_calls(tool_calls),
     do: %{role: "assistant", content: nil, tool_calls: tool_calls}
 
+  @doc false
+  def prepare_messages(selection, messages) do
+    metadata = ModelMetadata.resolve(to_string(selection.provider), selection.model)
+    ModelPayload.limit(messages, metadata)
+  end
+
   defp execute_tool_calls(tool_calls) do
     Enum.map(tool_calls, fn call ->
       args = Jason.decode!(call["function"]["arguments"])
@@ -114,6 +121,6 @@ defmodule Beamcore.Agent.SubAgent do
   end
 
   defp default_system_prompt do
-    "You are a sub-agent. Complete the task concisely and return the result. Be direct and efficient. When using tools, make minimal calls and return findings immediately."
+    Beamcore.Agent.Core.Prompts.sub_agent("worker")
   end
 end

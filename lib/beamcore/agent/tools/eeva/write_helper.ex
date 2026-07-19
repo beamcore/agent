@@ -8,12 +8,13 @@ defmodule Beamcore.Agent.Tools.Eeva.WriteHelper do
   - `~S` sigil prevents interpolation but the model may forget or misuse it
   - Regular strings corrupt embedded backslashes (`\n`, `\t`, `\\`) and `#{}` interpolation
 
-  This module provides `write!/2,3` as a drop-in replacement for `File.write!/2,3`
-  that accepts content as a **list of lines** in addition to a binary string.
+  This module provides ordinary writes plus exact, anchored edits. Anchored edits
+  avoid copying an existing large file into model-authored source code and refuse
+  to write when the expected context is missing or ambiguous.
 
   ## Usage patterns
 
-  The preferred model pattern is to build content as a list of lines, then write:
+  Small line-oriented content can be written as a list of lines:
 
       lines = [
         "#!/bin/bash",
@@ -22,8 +23,10 @@ defmodule Beamcore.Agent.Tools.Eeva.WriteHelper do
       ]
       WriteHelper.write!("script.sh", lines)
 
-  This avoids all escaping issues — each line is a separate string literal,
-  and the helper joins them with newlines.
+  The helper joins the lines with newlines. For large or quote-heavy model output,
+  prefer Eeva's `payloads` channel so the content is not parsed as Elixir source:
+
+      WriteHelper.write!("path.txt", eeva_payloads["content"])
 
   For binary content (heredocs, pre-built strings), `write!/2` delegates
   directly to `File.write!/2`:
@@ -83,6 +86,57 @@ defmodule Beamcore.Agent.Tools.Eeva.WriteHelper do
     with :ok <- ensure_dir(path) do
       File.write(path, to_string(content), opts)
     end
+  end
+
+  @doc """
+  Apply a sequence of exact replacements and write only after all anchors match.
+
+  Every edit is `{old, replacement}`. Each `old` value must occur exactly once
+  in the content produced by the preceding edit. This makes stale or ambiguous
+  model context fail without partially modifying the file.
+
+  Large replacement text can be supplied through Eeva's literal payload channel:
+
+      WriteHelper.edit!("lib/example.ex", [
+        {"  def old, do: :old", eeva_payloads["replacement"]}
+      ])
+  """
+  @spec edit!(Path.t(), [{binary(), binary() | [String.t()]}]) :: :ok
+  def edit!(path, edits) when is_list(edits) do
+    original = File.read!(path)
+    updated = Enum.reduce(edits, original, &apply_edit!/2)
+    File.write!(path, updated)
+  end
+
+  @doc "Apply one exact replacement. See `edit!/2`."
+  @spec replace!(Path.t(), binary(), binary() | [String.t()]) :: :ok
+  def replace!(path, old, replacement), do: edit!(path, [{old, replacement}])
+
+  defp apply_edit!({old, replacement}, content) when is_binary(old) and old != "" do
+    matches = :binary.matches(content, old)
+
+    case matches do
+      [_one] ->
+        :binary.replace(content, old, content_to_binary(replacement))
+
+      [] ->
+        raise ArgumentError, "edit anchor was not found; file was not changed"
+
+      many ->
+        raise ArgumentError, "edit anchor matched #{length(many)} times; file was not changed"
+    end
+  end
+
+  defp apply_edit!(_edit, _content) do
+    raise ArgumentError, "each edit must be a {non_empty_anchor, replacement} tuple"
+  end
+
+  defp content_to_binary(content) when is_binary(content), do: content
+  defp content_to_binary(content) when is_list(content), do: Enum.join(content, "\n")
+
+  defp content_to_binary(content) do
+    raise ArgumentError,
+          "edit replacement must be a string or list of strings, got: #{inspect(content)}"
   end
 
   defp ensure_dir(path) do

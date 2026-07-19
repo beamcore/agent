@@ -30,15 +30,17 @@ An autonomous AI coding agent built on Elixir/OTP. One tool (`eeva`) executes ar
 - **`Tui.*`** — Ratatui-based terminal UI (chat, themes, input handling).
 
 ### Eeva Execution Rules
-- Write complete programs in a single `eeva` call — no tool chaining.
-- **File writes (preferred)**: Use `WriteHelper.write!(path, lines)` with a list of strings — avoids ALL escaping issues:
+- Keep each `eeva` program focused. Large tasks may use multiple verified calls.
+- Put large or quote-heavy literal text in the tool's `payloads` map. In Eeva code it is available unchanged as `eeva_payloads["name"]`; do not wrap payload values in `~S`.
+- Edit existing files by unique anchor so unchanged content is not repeated:
   ```elixir
   alias Beamcore.Agent.Tools.Eeva.WriteHelper
-  lines = ["#!/bin/bash", "echo \"Hello\"", "echo \"World\""]
-  WriteHelper.write!("script.sh", lines)
+  WriteHelper.edit!("lib/example.ex", [
+    {"  def old, do: :old", eeva_payloads["replacement"]}
+  ])
   ```
-- **File writes (literal content)**: Use `~S` sigil: `File.write!("path", ~S"content")`
-- **File writes (dynamic content)**: Use regular strings with `#{}` interpolation.
+- Create a large new file with `WriteHelper.write!("path", eeva_payloads["content"])`.
+- `WriteHelper.edit!/2` validates every anchor before writing, so stale or ambiguous edits do not partially change a file.
 - `System.cmd/2` for shell commands. `File` module for I/O.
 - Returned zero-arity functions are invoked automatically.
 

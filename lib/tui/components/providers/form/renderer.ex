@@ -68,11 +68,15 @@ defmodule Beamcore.TUI.Components.Providers.Form.Renderer do
     id = field.id
     value = field_value(form, id)
     active? = form.field == id
-    cursor = if active?, do: "█", else: ""
     label_style = if active?, do: accent, else: muted
     input_style = if active?, do: accent, else: input_style
     required = if Fields.required?(field, form.mode), do: " *", else: ""
-    display = truncate_display(value <> cursor, field_width)
+
+    display =
+      if active?,
+        do: cursor_display(value, form.cursor, field_width),
+        else: truncate_display(value, field_width)
+
     padded = String.pad_trailing(display, field_width)
 
     [
@@ -101,6 +105,13 @@ defmodule Beamcore.TUI.Components.Providers.Form.Renderer do
 
   defp truncate_display(text, max_len) do
     if String.length(text) <= max_len, do: text, else: String.slice(text, 0, max_len - 1) <> "…"
+  end
+
+  defp cursor_display(value, cursor, max_len) do
+    cursor = cursor |> max(0) |> min(String.length(value))
+    value = String.slice(value, 0, cursor) <> "█" <> String.slice(value, cursor..-1//1)
+    start = max(cursor - max_len + 1, 0)
+    String.slice(value, start, max_len)
   end
 
   defp field_width(width) when is_integer(width) do

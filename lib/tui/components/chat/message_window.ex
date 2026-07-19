@@ -3,7 +3,7 @@ defmodule Beamcore.TUI.Components.Chat.MessageWindow do
 
   @chat_overscan_lines 24
   @max_scan_messages 200
-  @collapsed_height 4
+  @collapsed_height 2
 
   def visible_message_window(messages, wrap_width, viewport_height, distance_from_bottom) do
     {indexed, bottom_spacer, offset} =

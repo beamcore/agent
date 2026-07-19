@@ -21,6 +21,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
   @default_max_output_bytes 256_000
   @default_max_result_bytes 128_000
   @default_max_code_bytes 128_000
+  @default_max_payload_bytes 2 * 1024 * 1024
   @default_max_ast_nodes 24_000
   @max_preview_bytes 16_000
   @max_failure_message_chars 240
@@ -40,6 +41,7 @@ defmodule Beamcore.Agent.Tools.Eeva do
       max_output_bytes: limit(:max_output_bytes, @default_max_output_bytes),
       max_result_bytes: limit(:max_result_bytes, @default_max_result_bytes),
       max_code_bytes: limit(:max_code_bytes, @default_max_code_bytes),
+      max_payload_bytes: limit(:max_payload_bytes, @default_max_payload_bytes),
       max_ast_nodes: limit(:max_ast_nodes, @default_max_ast_nodes)
     }
   end
@@ -50,8 +52,8 @@ defmodule Beamcore.Agent.Tools.Eeva do
       function: %{
         name: name(),
         description: """
-        Execute Elixir code on the Grid. Inspect and edit files, run system commands, parse data, access Beamcore.Memory. Direct execution -- no tool chaining required.
-        For file writes: prefer `WriteHelper.write!(path, lines)` with a list of strings to avoid all escaping issues. Use `~S` sigil for literal content, regular strings for dynamic interpolation.
+        Execute Elixir code on the Grid. Inspect and edit files, run system commands, parse data, access Beamcore.Memory.
+        Put large or quote-heavy literal text in `payloads`, then read it from the `eeva_payloads` map in code. For existing files, prefer exact `WriteHelper.edit!/2` replacements over rewriting the whole file.
         """,
         parameters: %{
           type: "object",
@@ -60,6 +62,12 @@ defmodule Beamcore.Agent.Tools.Eeva do
               type: "string",
               description:
                 "Elixir source code to evaluate. You are not limited to simple commands; write any multi-expression program to achieve your goals. Examples: File.read!(\"README.md\"), System.cmd(\"git\", [\"status\"]). A returned zero-arity function is invoked automatically."
+            },
+            payloads: %{
+              type: "object",
+              description:
+                "Optional literal text blobs. Values are exposed unchanged to the Elixir program as eeva_payloads[\"name\"]. Use this for generated code, patches, templates, or other large text so it is not embedded in an Elixir string.",
+              additionalProperties: %{type: "string"}
             }
           },
           required: ["code"]
@@ -78,8 +86,15 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
         true ->
           code = normalize_code(code)
-          emit_preview(preview_code(code))
-          prepare_and_execute(code)
+
+          case normalize_payloads(Map.get(params, "payloads") || Map.get(params, :payloads)) do
+            {:ok, payloads} ->
+              emit_preview(preview_code(code))
+              prepare_and_execute(code, payloads)
+
+            {:error, message} ->
+              encode_error(message, "invalid_request")
+          end
       end
     rescue
       error ->
@@ -167,31 +182,79 @@ defmodule Beamcore.Agent.Tools.Eeva do
 
   defp fence_line?(_), do: false
 
-  defp prepare_and_execute(code) do
+  defp prepare_and_execute(code, payloads) do
     case Sandbox.prepare(code,
            max_code_bytes: limit(:max_code_bytes, @default_max_code_bytes),
            max_ast_nodes: limit(:max_ast_nodes, @default_max_ast_nodes)
          ) do
       {:ok, prepared} ->
-        execute_prepared(code, prepared)
+        execute_prepared(code, prepared, payloads)
 
       {:error, reason} ->
-        encode_error(reason, "execution_guard")
+        encode_error(execution_guard_message(reason), "execution_guard")
     end
   end
 
-  defp execute_prepared(code, prepared) do
+  defp execution_guard_message("Eeva code exceeds" <> _rest = message) do
+    message <>
+      " Do not retry with a different Elixir string or sigil. Move literal text into payloads and use eeva_payloads with WriteHelper.edit!/2 or write!/2."
+  end
+
+  defp execution_guard_message(message), do: message
+
+  defp execute_prepared(code, prepared, payloads) do
+    quoted = bind_payloads(prepared.quoted, payloads)
+
     result =
       case Session.target() do
         :local ->
-          run(prepared.quoted, self(), PathInput.workspace_root())
+          run(quoted, self(), PathInput.workspace_root())
 
         {:attached, node} ->
-          Remote.run(node, prepared.quoted, remote_limits())
+          Remote.run(node, quoted, remote_limits())
       end
 
     format_result(result, code, prepared)
   end
+
+  defp bind_payloads(quoted, payloads) when map_size(payloads) == 0, do: quoted
+
+  defp bind_payloads(quoted, payloads) do
+    quote generated: true do
+      var!(eeva_payloads) = unquote(Macro.escape(payloads))
+      unquote(quoted)
+    end
+  end
+
+  defp normalize_payloads(nil), do: {:ok, %{}}
+
+  defp normalize_payloads(payloads) when is_map(payloads) do
+    result =
+      Enum.reduce_while(payloads, {:ok, %{}, 0}, fn
+        {key, value}, {:ok, acc, bytes} when is_binary(value) ->
+          key = to_string(key)
+          total = bytes + byte_size(key) + byte_size(value)
+
+          if total <= limit(:max_payload_bytes, @default_max_payload_bytes) do
+            {:cont, {:ok, Map.put(acc, key, value), total}}
+          else
+            {:halt,
+             {:error,
+              "Eeva payloads exceed the #{limit(:max_payload_bytes, @default_max_payload_bytes)}-byte limit. Split the edit into focused calls and keep unchanged file content out of payloads."}}
+          end
+
+        _entry, _acc ->
+          {:halt, {:error, "Eeva payloads must be a map of string names to string values."}}
+      end)
+
+    case result do
+      {:ok, normalized, _bytes} -> {:ok, normalized}
+      {:error, _message} = error -> error
+    end
+  end
+
+  defp normalize_payloads(_payloads),
+    do: {:error, "Eeva payloads must be a map of string names to string values."}
 
   defp remote_limits do
     %{

@@ -11,6 +11,9 @@ defmodule Beamcore.Agent.Chat.Loop do
   }
 
   alias Beamcore.Agent.Tools.Dispatcher
+  alias Beamcore.Provider.Registry
+
+  @repeated_tool_failure_limit 3
 
   def send_message(session, content, pid, opts \\ []) do
     with {:ok, session} <- ensure_client(session, opts) do
@@ -21,13 +24,26 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp ensure_client(
-         %{roles: %{primary: %{provider: _provider, model: _model}}} = session,
+         %{client: client} = session,
          _opts
-       ),
+       )
+       when not is_nil(client),
        do: {:ok, session}
 
+  defp ensure_client(%{roles: %{primary: %{provider: provider}}} = session, opts)
+       when is_binary(provider) do
+    case Registry.validate_selection(provider) do
+      {:ok, _provider} ->
+        {:ok, session}
+
+      {:error, _reason} ->
+        emit(opts, {:error, Registry.missing_config_message(provider)})
+        {:error, session}
+    end
+  end
+
   defp ensure_client(%{client: nil} = session, opts) do
-    message = Beamcore.Provider.Registry.missing_config_message()
+    message = Registry.missing_config_message()
     emit(opts, {:error, message})
     {:error, session}
   end
@@ -48,20 +64,14 @@ defmodule Beamcore.Agent.Chat.Loop do
 
     tools = Dispatcher.tool_specs()
     messages = session.messages ++ [user_message]
-    messages = inject_runtime_message(messages, tools)
+    messages = ensure_runtime_message(messages, tools)
 
-    process_messages(session, messages, pid, 0, opts)
+    process_messages(session, messages, pid, 0, opts, nil)
   end
 
-  defp process_messages(session, messages, pid, depth, opts) do
+  defp process_messages(session, messages, pid, depth, opts, failure_guard) do
     tools = Dispatcher.tool_specs()
     settings = mode_settings(session)
-
-    opts =
-      case session.screen_type do
-        :agent -> Keyword.put_new(opts, :temperature, 0.2)
-        _ -> opts
-      end
 
     {:ok, _api_messages, _estimate, metadata} =
       prepare_api_messages(session, messages)
@@ -100,7 +110,8 @@ defmodule Beamcore.Agent.Chat.Loop do
       opts: opts,
       settings: settings,
       call_elapsed: call_elapsed,
-      depth: depth
+      depth: depth,
+      failure_guard: failure_guard
     })
   end
 
@@ -110,7 +121,8 @@ defmodule Beamcore.Agent.Chat.Loop do
       opts: opts,
       settings: settings,
       call_elapsed: call_elapsed,
-      depth: depth
+      depth: depth,
+      failure_guard: failure_guard
     } = ctx
 
     case api_result do
@@ -139,6 +151,11 @@ defmodule Beamcore.Agent.Chat.Loop do
         if has_tool_calls?(message) do
           tool_responses = execute_tools_parallel(message["tool_calls"], opts)
 
+          failure_decision =
+            advance_failure_guard(message["tool_calls"], tool_responses, failure_guard)
+
+          tool_responses = maybe_add_recovery_guidance(tool_responses, failure_decision)
+
           Enum.each(tool_responses, &Session.log(session, &1))
 
           # Emit intermediate session with accumulated messages so TUI state
@@ -147,13 +164,36 @@ defmodule Beamcore.Agent.Chat.Loop do
           all_messages = new_messages ++ tool_responses
           emit(opts, {:session, %{session | messages: all_messages}})
 
-          process_messages(
-            session,
-            all_messages,
-            pid,
-            depth + 1,
-            opts
-          )
+          case failure_decision do
+            {:continue, next_guard} ->
+              process_messages(
+                session,
+                all_messages,
+                pid,
+                depth + 1,
+                opts,
+                next_guard
+              )
+
+            {:recover, next_guard, tool_names} ->
+              Beamcore.AppLog.warn("Repeated tool failure recovery requested",
+                tools: Enum.join(tool_names, ", ")
+              )
+
+              emit(opts, {:status, :thinking})
+
+              process_messages(
+                session,
+                all_messages,
+                pid,
+                depth + 1,
+                opts,
+                next_guard
+              )
+
+            {:stop, tool_names} ->
+              stop_repeated_tool_failure(session, all_messages, tool_names, opts)
+          end
         else
           # Natural break — agent is done with tool calls, responding to user.
           session = %{session | messages: Session.compact_history(new_messages)}
@@ -356,23 +396,31 @@ defmodule Beamcore.Agent.Chat.Loop do
 
   defp has_tool_calls?(_message), do: false
 
-  defp inject_runtime_message(messages, tools) do
+  @doc false
+  def ensure_runtime_message(messages, tools) do
     runtime_message = %{
       role: "system",
       content: runtime_summary(tools)
     }
 
-    case messages do
-      [system, context | rest] when is_map(system) and is_map(context) ->
-        [system, context, runtime_message | rest]
+    {system_messages, conversation} =
+      Enum.split_with(messages, &(message_role(&1) == "system"))
 
-      [system | rest] when is_map(system) ->
-        [system, runtime_message | rest]
+    stable_system = Enum.reject(system_messages, &runtime_message?/1)
 
-      other ->
-        [runtime_message | other]
+    case stable_system do
+      [primary | rest] -> [primary, runtime_message | rest] ++ conversation
+      [] -> [runtime_message | conversation]
     end
   end
+
+  defp runtime_message?(message) do
+    message_role(message) == "system" and
+      String.starts_with?(to_string(message_content(message)), "Exposed tools:")
+  end
+
+  defp message_role(message), do: message[:role] || message["role"]
+  defp message_content(message), do: message[:content] || message["content"] || ""
 
   defp runtime_summary(tools) do
     tool_names =
@@ -394,6 +442,118 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp decode_tool_args(_args), do: %{}
+
+  defp advance_failure_guard(tool_calls, tool_responses, previous) do
+    signatures =
+      tool_calls
+      |> Enum.zip(tool_responses)
+      |> Enum.map(fn {tool_call, response} -> failed_tool_signature(tool_call, response) end)
+
+    if signatures != [] and Enum.all?(signatures, & &1) do
+      fingerprint = signatures |> Enum.sort() |> :erlang.term_to_binary([:deterministic])
+
+      count =
+        case previous do
+          %{fingerprint: ^fingerprint, count: count} -> count + 1
+          _ -> 1
+        end
+
+      cond do
+        count > @repeated_tool_failure_limit and previous[:recovery_prompted] ->
+          names = signatures |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+          {:stop, names}
+
+        count >= @repeated_tool_failure_limit ->
+          names = signatures |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+          {:recover, %{fingerprint: fingerprint, count: count, recovery_prompted: true}, names}
+
+        true ->
+          {:continue, %{fingerprint: fingerprint, count: count}}
+      end
+    else
+      {:continue, nil}
+    end
+  end
+
+  defp maybe_add_recovery_guidance(tool_responses, {:recover, _guard, _tool_names}) do
+    Enum.map(tool_responses, &add_recovery_guidance/1)
+  end
+
+  defp maybe_add_recovery_guidance(tool_responses, _decision), do: tool_responses
+
+  defp add_recovery_guidance(response) do
+    content = response[:content] || response["content"]
+
+    guidance =
+      "Automatic recovery required: this exact call has failed " <>
+        "#{@repeated_tool_failure_limit} consecutive times. Continue autonomously without " <>
+        "asking the user to repeat the request. Retry only if the failure is transient; " <>
+        "otherwise change the arguments or approach."
+
+    updated_content =
+      case Jason.decode(content) do
+        {:ok, %{"ok" => false} = failure} ->
+          failure
+          |> Map.put("automatic_recovery", true)
+          |> Map.put("next_step", guidance)
+          |> Jason.encode!()
+
+        _ ->
+          to_string(content) <> "\n\n" <> guidance
+      end
+
+    cond do
+      Map.has_key?(response, :content) -> Map.put(response, :content, updated_content)
+      true -> Map.put(response, "content", updated_content)
+    end
+  end
+
+  defp failed_tool_signature(tool_call, response) do
+    with content when is_binary(content) <- response[:content] || response["content"],
+         {:ok, failure_class} <- tool_failure_class(content) do
+      function = tool_call["function"] || %{}
+      name = function["name"] || "unknown"
+      args = decode_tool_args(function["arguments"])
+      args_hash = :crypto.hash(:sha256, :erlang.term_to_binary(args, [:deterministic]))
+      {name, args_hash, failure_class}
+    else
+      _ -> nil
+    end
+  end
+
+  defp tool_failure_class(content) do
+    case Jason.decode(content) do
+      {:ok, %{"ok" => false} = failure} ->
+        classification = failure["classification"] || failure["exit_code"] || "tool_error"
+        {:ok, to_string(classification)}
+
+      _ ->
+        plain_tool_failure_class(content)
+    end
+  end
+
+  defp plain_tool_failure_class("Tool execution timed out" <> _), do: {:ok, "timeout"}
+  defp plain_tool_failure_class("Tool execution crashed" <> _), do: {:ok, "crash"}
+  defp plain_tool_failure_class("Tool call failed" <> _), do: {:ok, "dispatcher_error"}
+  defp plain_tool_failure_class("Function not implemented"), do: {:ok, "not_implemented"}
+  defp plain_tool_failure_class(_content), do: :not_a_failure
+
+  defp stop_repeated_tool_failure(session, messages, tool_names, opts) do
+    names = Enum.join(tool_names, ", ")
+
+    message =
+      "Automatic recovery could not break the repeated failed #{names} call loop. " <>
+        "The session is preserved; change the arguments or approach before retrying."
+
+    Beamcore.AppLog.warn("Repeated tool failure stopped", tools: names)
+    emit(opts, {:error, message})
+    emit(opts, {:status, :error})
+
+    session = %{session | messages: Session.compact_history(messages)}
+    emit(opts, {:session, session})
+    session
+  end
 
   # --- Parallel tool execution ---
 

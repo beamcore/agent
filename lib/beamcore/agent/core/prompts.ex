@@ -8,7 +8,7 @@ defmodule Beamcore.Agent.Core.Prompts do
   @agents_md_max_chars 40_000
 
   @default_tools [
-    "eeva: Universal Elixir runtime. Write complete Elixir programs that call ANY module directly (Beamcore.Memory, Beamcore.Agent.SubAgent, Beamcore.Helpers, File, System, etc.). No tool chaining -- one program does it all."
+    "eeva: Universal Elixir runtime. Write focused Elixir programs that call ANY module directly (Beamcore.Memory, Beamcore.Agent.SubAgent, Beamcore.Helpers, File, System, etc.)."
   ]
 
   @doc "Returns concise guidance for using the persistent BeamCore memory service from Eeva."
@@ -17,6 +17,21 @@ defmodule Beamcore.Agent.Core.Prompts do
     - Persistent memory is available through `Beamcore.Memory`.
     - Discover signatures with `Beamcore.Helpers.info(Beamcore.Memory, :functions)`.
     - Write with `remember/2` or `remember/3`; read with `recall/1` or `recall/2`; search with `search/1`; overview with `overview/0`.
+    """
+  end
+
+  @doc "Returns the shared large-file editing guidance used by tool-capable agents."
+  def file_edit_guidance do
+    """
+    **File Edits**:
+    - Keep Eeva code small. Do not copy an existing large file into a write call.
+    - Put generated or quote-heavy text in the tool's `payloads` map. It is available unchanged as `eeva_payloads["name"]`; it is data, so do not wrap it in `~S` or escape it as Elixir.
+    - Edit existing files with unique anchors:
+        alias Beamcore.Agent.Tools.Eeva.WriteHelper
+        WriteHelper.edit!("path", [{"unique old text", eeva_payloads["replacement"]}])
+      All anchors are checked before the file is written. Missing or duplicate anchors leave it unchanged.
+    - For a new file: `WriteHelper.write!("path", eeva_payloads["content"])`.
+    - Split very large work into focused, verifiable edits. Run formatting/tests after edits. Ordinary `File` and `System` APIs remain available when they are the better fit.
     """
   end
 
@@ -55,27 +70,7 @@ defmodule Beamcore.Agent.Core.Prompts do
     Structured format (headers, bullets, code blocks). On error: report clearly, state next action.
     End significant responses with a status line.
 
-    **IMPORTANT — File Writes**:
-
-    **Preferred: line-list pattern.** Build content as a list of strings, then write:
-      alias Beamcore.Agent.Tools.Eeva.WriteHelper
-      lines = ["line one", "line two", "line three"]
-      WriteHelper.write!("path", lines)
-    This avoids ALL escaping issues — each line is a separate string literal.
-
-    **For literal content (templates, code, configs):** Use `~S` sigil to prevent interpolation:
-      File.write!("path", ~S"content with \\n and #{} preserved literally")
-
-    **For dynamic content (needs Elixir interpolation):** Use regular strings with `\#{}`:
-      name = "world"
-      File.write!("greeting.txt", "Hello, \#{name}!")
-
-    **For mixed content:** Build parts separately, then join:
-      header = ~S"# Config\nversion = 1\n"
-      dynamic_part = "generated_at: \#{DateTime.utc_now()}"
-      File.write!("config.txt", header <> dynamic_part)
-
-    **NEVER** put literal `\\n`, `\\t`, or `\\\\` in a regular string intended for file content — use either `~S` sigil or the line-list pattern instead.
+    #{file_edit_guidance()}
     """
   end
 
@@ -148,6 +143,8 @@ defmodule Beamcore.Agent.Core.Prompts do
     You are a Beamcore.Agent sub-unit designated #{name}.
     Execute the delegated task. Use tools as needed. Maintain project integrity.
     Return a precise, concise result -- no elaboration beyond the directive scope.
+
+    #{file_edit_guidance()}
     """
   end
 

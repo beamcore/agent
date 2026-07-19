@@ -3,6 +3,13 @@ defmodule Beamcore.Agent.Chat.ModelPayloadTest do
 
   alias Beamcore.Agent.Chat.{Budget, ModelPayload}
 
+  test "uses one conservative context fallback when provider metadata is unknown" do
+    assert ModelPayload.effective_context_window(%{context_window: nil}) == 32_000
+    assert ModelPayload.effective_context_window(%{}) == 32_000
+    assert ModelPayload.effective_context_window(nil) == 32_000
+    assert ModelPayload.effective_context_window(%{context_window: 128_000}) == 128_000
+  end
+
   test "limits long tool result fields while keeping valid JSON" do
     content =
       Jason.encode!(%{
@@ -67,6 +74,38 @@ defmodule Beamcore.Agent.Chat.ModelPayloadTest do
     assert decoded_args["code"] =~ "File.write!"
     assert decoded_args["code"] =~ "truncated for model context"
     assert String.length(decoded_args["code"]) < String.length(full_code)
+  end
+
+  test "limits historical payload text without truncating compact Eeva code" do
+    code = "WriteHelper.write!(\"large.ex\", eeva_payloads[\"content\"])"
+    payload = String.duplicate("generated code\n", 5_000)
+
+    [limited] =
+      ModelPayload.limit(
+        [
+          %{
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              %{
+                "id" => "call_payload",
+                "type" => "function",
+                "function" => %{
+                  "name" => "eeva",
+                  "arguments" =>
+                    Jason.encode!(%{"code" => code, "payloads" => %{"content" => payload}})
+                }
+              }
+            ]
+          }
+        ],
+        %{context_window: 8_000}
+      )
+
+    args = limited.tool_calls |> hd() |> get_in(["function", "arguments"]) |> Jason.decode!()
+    assert args["code"] == code
+    assert args["payloads"]["content"] =~ "truncated for model context"
+    assert String.length(args["payloads"]["content"]) < String.length(payload)
   end
 
   test "keeps session freedom by returning a bounded copy instead of mutating the input" do

@@ -1,6 +1,7 @@
 defmodule Beamcore.Agent.Chat.SessionTest do
   use ExUnit.Case
-  alias Beamcore.Agent.Chat.Session
+  alias Beamcore.Agent.Chat.{Loop, Session}
+  alias Beamcore.Agent.Tools.Dispatcher
 
   setup do
     Beamcore.Config.put_provider("openai", %{
@@ -80,6 +81,31 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert updated_session.total_prompt_tokens == 1100
       assert updated_session.total_completion_tokens == 550
       assert updated_session.total_tokens == 1650
+    end
+
+    test "updates cached usage for a restored session with nil legacy counters", %{
+      session: session
+    } do
+      restored = %{
+        session
+        | total_prompt_tokens: nil,
+          total_completion_tokens: nil,
+          total_tokens: nil,
+          total_cached_tokens: nil
+      }
+
+      updated =
+        Session.update_usage(restored, %{
+          "prompt_tokens" => 100,
+          "completion_tokens" => 20,
+          "total_tokens" => 120,
+          "cached_tokens" => 99
+        })
+
+      assert updated.total_prompt_tokens == 100
+      assert updated.total_completion_tokens == 20
+      assert updated.total_tokens == 120
+      assert updated.total_cached_tokens == 99
     end
 
     test "replaces empty summary with default message" do
@@ -438,7 +464,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       %{client: client, session: session}
     end
 
-    test "does nothing when context_window is nil", %{session: session} do
+    test "uses the conservative fallback when context_window is nil", %{session: session} do
       messages = session.messages ++ [%{role: "user", content: "hello"}]
       metadata = %{context_window: nil}
 
@@ -446,6 +472,39 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       assert result_session == session
       assert result_messages == messages
+    end
+
+    test "compacts an oversized session when context_window is nil", %{session: session} do
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:ok,
+         %{
+           "choices" => [
+             %{"message" => %{"role" => "assistant", "content" => "fallback checkpoint"}}
+           ]
+         }}
+      end)
+
+      on_exit(fn -> Process.delete(:mock_completions_create) end)
+
+      messages =
+        session.messages ++
+          Enum.flat_map(1..12, fn i ->
+            [
+              %{role: "user", content: "request #{i} " <> String.duplicate("x", 5_000)},
+              %{role: "assistant", content: "result #{i} " <> String.duplicate("y", 5_000)}
+            ]
+          end)
+
+      {result_session, result_messages} =
+        Session.maybe_compact(session, messages, %{context_window: nil}, 0)
+
+      assert result_session.compaction_count == 1
+      assert result_messages == result_session.messages
+
+      assert Enum.any?(result_messages, fn message ->
+               content = message[:content] || message["content"] || ""
+               String.contains?(content, "fallback checkpoint")
+             end)
     end
 
     test "does nothing when estimate is below threshold", %{session: session} do
@@ -482,7 +541,7 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert result_messages == messages
     end
 
-    test "stops auto-compacting after anti-thrashing limit", %{session: session} do
+    test "continues compacting long-lived sessions after three checkpoints", %{session: session} do
       session = %{session | compaction_count: 3}
 
       messages =
@@ -498,8 +557,9 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       {result_session, result_messages} = Session.maybe_compact(session, messages, metadata, 0)
 
-      assert result_session == session
-      assert result_messages == messages
+      assert result_session.compaction_count == 4
+      assert result_messages == result_session.messages
+      refute result_messages == messages
     end
   end
 
@@ -558,15 +618,18 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.compaction_count == 1
       assert length(new_session.messages) > 0
 
-      system_msg = List.first(new_session.messages)
-      system_content = system_msg[:content] || system_msg["content"]
+      assert List.first(new_session.messages) == List.first(messages)
 
-      assert system_content =~ "USER GOAL"
-      assert system_content =~ "CLI tool"
-      assert system_content =~ "[Compacted]"
+      assert (List.first(new_session.messages)[:content] ||
+                List.first(new_session.messages)["content"]) =~ "eeva_payloads"
+
+      checkpoint = find_message(new_session.messages, "[Compacted]")
+      checkpoint_content = checkpoint[:content] || checkpoint["content"]
+      assert checkpoint_content =~ "USER GOAL"
+      assert checkpoint_content =~ "CLI tool"
 
       non_system = Enum.drop(new_session.messages, 1)
-      assert length(non_system) <= 6
+      assert length(non_system) <= 8
 
       last_msg = List.last(non_system)
       assert last_msg[:role] == "assistant" or last_msg["role"] == "assistant"
@@ -611,9 +674,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
 
       assert session3.compaction_count == 2
 
-      system_msg = List.first(session3.messages)
-      system_content = system_msg[:content] || system_msg["content"]
-      assert system_content =~ "Compacted 2x"
+      assert List.first(session3.messages) == List.first(session.messages)
+      assert find_message(session3.messages, "Compacted 2x")
     end
 
     test "summary validation: empty string gets default", %{session: session} do
@@ -644,9 +706,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       session = %{session | messages: messages}
       new_session = Session.summarize_and_rollover(session, messages, nil)
 
-      system_msg = List.first(new_session.messages)
-      system_content = system_msg[:content] || system_msg["content"]
-      assert system_content =~ "compacted"
+      assert List.first(new_session.messages) == List.first(messages)
+      assert find_message(new_session.messages, "Previous context was compacted")
     end
 
     test "summary validation: too long gets truncated", %{session: session} do
@@ -679,9 +740,8 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       session = %{session | messages: messages}
       new_session = Session.summarize_and_rollover(session, messages, nil)
 
-      system_msg = List.first(new_session.messages)
-      system_content = system_msg[:content] || system_msg["content"]
-      assert system_content =~ "[truncated]"
+      assert List.first(new_session.messages) == List.first(messages)
+      assert find_message(new_session.messages, "[truncated]")
     end
 
     test "resets token counters after compaction", %{session: session} do
@@ -718,6 +778,105 @@ defmodule Beamcore.Agent.Chat.SessionTest do
       assert new_session.total_prompt_tokens == 0
       assert new_session.total_completion_tokens == 0
     end
+
+    test "bounds large tool payloads before requesting a summary", %{session: session} do
+      parent = self()
+      payload = String.duplicate("generated code\n", 8_000)
+      code = "WriteHelper.write!(\"large.ex\", eeva_payloads[\"content\"])"
+
+      Process.put(:mock_completions_create, fn _client, params ->
+        send(parent, {:summary_params, params})
+
+        {:ok,
+         %{
+           "choices" => [
+             %{"message" => %{"role" => "assistant", "content" => "bounded summary"}}
+           ]
+         }}
+      end)
+
+      on_exit(fn -> Process.delete(:mock_completions_create) end)
+
+      tool_call = %{
+        "id" => "large_call",
+        "type" => "function",
+        "function" => %{
+          "name" => "eeva",
+          "arguments" => Jason.encode!(%{"code" => code, "payloads" => %{"content" => payload}})
+        }
+      }
+
+      older = [
+        %{role: "user", content: "generate a file"},
+        %{role: "assistant", content: nil, tool_calls: [tool_call]},
+        %{role: "tool", tool_call_id: "large_call", content: Jason.encode!(%{"ok" => true})}
+      ]
+
+      recent =
+        Enum.flat_map(1..4, fn i ->
+          [%{role: "user", content: "step #{i}"}, %{role: "assistant", content: "done #{i}"}]
+        end)
+
+      messages = session.messages ++ older ++ recent
+      Session.summarize_and_rollover(%{session | messages: messages}, messages, nil)
+
+      assert_received {:summary_params, params}
+
+      sent_call =
+        params.messages
+        |> Enum.find_value(fn message ->
+          message
+          |> Map.get(:tool_calls, Map.get(message, "tool_calls"))
+          |> case do
+            [call | _] -> call
+            _ -> nil
+          end
+        end)
+
+      args = sent_call |> get_in(["function", "arguments"]) |> Jason.decode!()
+      assert args["code"] == code
+      assert args["payloads"]["content"] =~ "truncated for model context"
+    end
+
+    test "keeps the compacted prefix stable on the following turn", %{session: session} do
+      Process.put(:mock_completions_create, fn _client, _params ->
+        {:ok,
+         %{
+           "choices" => [
+             %{"message" => %{"role" => "assistant", "content" => "stable checkpoint"}}
+           ]
+         }}
+      end)
+
+      on_exit(fn -> Process.delete(:mock_completions_create) end)
+
+      tools = Dispatcher.tool_specs()
+      stable_prefix = Loop.ensure_runtime_message(session.messages, tools)
+
+      conversation =
+        Enum.flat_map(1..10, fn i ->
+          [%{role: "user", content: "step #{i}"}, %{role: "assistant", content: "done #{i}"}]
+        end)
+
+      messages = stable_prefix ++ conversation
+      compacted = Session.summarize_and_rollover(%{session | messages: messages}, messages, nil)
+
+      next_turn =
+        Loop.ensure_runtime_message(
+          compacted.messages ++ [%{role: "user", content: "next step"}],
+          tools
+        )
+
+      assert Enum.take(compacted.messages, 2) == stable_prefix
+      assert Enum.take(next_turn, length(compacted.messages)) == compacted.messages
+    end
+  end
+
+  defp find_message(messages, text) do
+    Enum.find(messages, fn message ->
+      content = message[:content] || message["content"] || ""
+      String.contains?(content, text)
+    end)
   end
 
   defp validate_summary(summary, default_summary) do

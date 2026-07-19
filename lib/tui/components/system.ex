@@ -96,6 +96,11 @@ defmodule Beamcore.TUI.Components.System do
     %{system | viewport_height: max(height, 1)}
   end
 
+  def handle_event(event, %{providers: %{adding?: true}} = system) do
+    {:noreply, updated} = Providers.handle_event(event, system.providers)
+    {:noreply, put_providers(system, updated)}
+  end
+
   def handle_event(event, system) do
     case event do
       %ExRatatui.Event.Key{code: "up"} ->

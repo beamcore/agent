@@ -2,7 +2,11 @@ defmodule Beamcore.TUI.CollapseTest do
   use ExUnit.Case, async: true
 
   alias Beamcore.TUI.Events.Keyboard
+  alias Beamcore.TUI.Components.Chat.Bubbles.CodeBlock.Eeva
+  alias Beamcore.TUI.Components.Chat.MessageWindow
   alias Beamcore.TUI.State
+  alias ExRatatui.Text.Line
+  alias ExRatatui.Widgets.Paragraph
 
   @code_content String.duplicate("IO.puts(\"hello\")\n", 20)
 
@@ -26,6 +30,29 @@ defmodule Beamcore.TUI.CollapseTest do
       toggled = State.toggle_code_block(state, 0, 0)
       toggled_back = State.toggle_code_block(toggled, 0, 0)
       refute member?(toggled_back.collapsed_blocks, 0)
+    end
+  end
+
+  describe "collapsed eeva rendering" do
+    test "hides the complete source block" do
+      source = "IO.puts(\"secret\")\nFile.read!(\"private.txt\")"
+
+      assert [
+               {%Paragraph{text: [%Line{spans: spans}]}, 1},
+               {%Paragraph{}, 1}
+             ] = Eeva.render(source, 80, MapSet.new([0]))
+
+      header = spans |> Enum.map_join(& &1.content)
+      assert header == "  [+] 2 lines hidden (Ctrl+E)"
+      refute header =~ "secret"
+      refute inspect(spans) =~ "private.txt"
+    end
+
+    test "height estimate matches the collapsed renderer" do
+      message = %{role: :eeva_preview, content: @code_content}
+      collapsed = %{0 => MapSet.new([0])}
+
+      assert MessageWindow.estimated_message_height(message, 80, collapsed, 0) == 2
     end
   end
 
