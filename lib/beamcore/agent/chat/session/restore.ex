@@ -6,8 +6,6 @@ defmodule Beamcore.Agent.Chat.Session.Restore do
   or a metadata header. Reconstructs a Session struct ready for the TUI.
   """
 
-  @session_dir Path.join([System.user_home!(), ".agent", "sessions"])
-
   @doc """
   Builds a session from the log file for the given session name.
 
@@ -15,7 +13,9 @@ defmodule Beamcore.Agent.Chat.Session.Restore do
   The log file path is preserved so new messages append to the same file.
   """
   def build(session_name) do
-    path = Path.join(@session_dir, "#{session_name}.json")
+    ensure_migrated()
+    dir = session_dir()
+    path = Path.join(dir, "#{session_name}.json")
 
     unless File.exists?(path) do
       raise "Session '#{session_name}' not found at #{path}"
@@ -62,20 +62,42 @@ defmodule Beamcore.Agent.Chat.Session.Restore do
   Returns a list of `{name, mtime, size}` tuples.
   """
   def list do
-    unless File.dir?(@session_dir) do
+    ensure_migrated()
+    dir = session_dir()
+
+    unless File.dir?(dir) do
       []
     else
-      @session_dir
+      dir
       |> File.ls!()
       |> Enum.filter(&String.ends_with?(&1, ".json"))
       |> Enum.reject(&String.contains?(&1, ".state.json"))
       |> Enum.reject(&String.contains?(&1, ".checkpoints.json"))
       |> Enum.map(fn file ->
         name = String.replace_suffix(file, ".json", "")
-        stat = File.stat!(Path.join(@session_dir, file))
+        stat = File.stat!(Path.join(dir, file))
         {name, stat.mtime, stat.size}
       end)
       |> Enum.sort_by(fn {_, mtime, _} -> mtime end, :desc)
+    end
+  end
+
+  @legacy_session_dir Path.join([System.user_home!(), ".agent", "sessions"])
+
+  @doc false
+  def session_dir do
+    Path.join([System.user_home!(), ".beamcore", "sessions"])
+  end
+
+  defp ensure_migrated do
+    old_dir = @legacy_session_dir
+    new_dir = session_dir()
+
+    if old_dir != new_dir and File.dir?(old_dir) and not File.dir?(new_dir) do
+      case File.rename(old_dir, new_dir) do
+        :ok -> :ok
+        {:error, _} -> :ok
+      end
     end
   end
 

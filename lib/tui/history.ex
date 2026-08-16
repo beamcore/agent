@@ -1,14 +1,33 @@
 defmodule Beamcore.TUI.History do
   @moduledoc """
-  Manages persistent TUI user input message history stored in ~/.agent/history.json.
+  Manages persistent TUI user input message history stored in ~/.beamcore/history.json.
   """
 
-  @history_file Path.expand("~/.agent/history.json")
+  @legacy_history_file Path.expand("~/.agent/history.json")
 
   @doc """
   Returns the path to the history file.
   """
-  def history_path, do: Application.get_env(:beamcore, :history_path, @history_file)
+  def history_path do
+    path = Application.get_env(:beamcore, :history_path, default_history_path())
+    migrate_from_legacy(path)
+    path
+  end
+
+  defp default_history_path do
+    Path.join([System.user_home!(), ".beamcore", "history.json"])
+  end
+
+  defp migrate_from_legacy(new_path) do
+    old_path = @legacy_history_file
+
+    if old_path != new_path and File.exists?(old_path) and not File.exists?(new_path) do
+      case File.rename(old_path, new_path) do
+        :ok -> :ok
+        {:error, _} -> :ok
+      end
+    end
+  end
 
   @doc """
   Loads the history entries from the history file.

@@ -38,7 +38,8 @@ defmodule Beamcore.Agent.Chat.Session do
   """
   def new(client, opts \\ []) do
     session_id = Keyword.get(opts, :session_id, generate_name())
-    log_dir = Path.join([System.user_home!(), ".agent", "sessions"])
+    log_dir = session_dir()
+    migrate_from_legacy_dir(log_dir)
     File.mkdir_p!(log_dir)
     log_file = Path.join(log_dir, "#{session_id}.json")
 
@@ -227,4 +228,24 @@ defmodule Beamcore.Agent.Chat.Session do
   defdelegate trim_and_clean_messages(messages, limit),
     to: MessageCleaner,
     as: :trim_and_clean
+
+  # --- Data directory ---
+
+  @legacy_session_dir Path.join([System.user_home!(), ".agent", "sessions"])
+
+  @doc false
+  def session_dir do
+    Path.join([System.user_home!(), ".beamcore", "sessions"])
+  end
+
+  defp migrate_from_legacy_dir(new_dir) do
+    old_dir = @legacy_session_dir
+
+    if old_dir != new_dir and File.dir?(old_dir) and not File.dir?(new_dir) do
+      case File.rename(old_dir, new_dir) do
+        :ok -> :ok
+        {:error, _} -> :ok
+      end
+    end
+  end
 end

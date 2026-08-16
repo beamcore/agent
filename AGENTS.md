@@ -48,7 +48,7 @@ An autonomous AI coding agent built on Elixir/OTP. One tool (`eeva`) executes ar
 - Language: Elixir `~> 1.12`. Format with `mix format`.
 - Tests: ExUnit in `test/`, support in `test/support/`.
 - Config: `config/config.exs`, runtime overrides via `~/.beamcore/config.dets`.
-- Session logs: `~/.agent/sessions/*.json` (JSONL, one object per line).
+- Session logs: `~/.beamcore/sessions/*.json` (JSONL, one object per line).
 - Memory persists at `~/.beamcore/memory.dets`.
 
 ## Mesh / Remote
