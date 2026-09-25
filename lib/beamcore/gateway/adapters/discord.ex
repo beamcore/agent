@@ -23,7 +23,8 @@ defmodule Beamcore.Gateway.Adapters.Discord do
     end
   end
 
-  def handle_event(_), do: :ignore
+  # `use Nostrum.Consumer` injects a trailing `handle_event/1` catch-all via
+  # `@before_compile`, so unmatched gateway events are already ignored here.
 
   # -- Message routing ---------------------------------------------------------
 

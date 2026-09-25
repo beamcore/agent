@@ -346,7 +346,6 @@ defmodule Beamcore.TUI do
     case MessageRouter.route_tick(state) do
       {:noreply, next_state} -> {:noreply, maybe_schedule_tick(next_state)}
       {:noreply, next_state, opts} -> {:noreply, maybe_schedule_tick(next_state), opts}
-      other -> other
     end
   end
 

@@ -3,6 +3,12 @@ defmodule Beamcore.Provider.RegistryTest do
 
   alias Beamcore.Provider.{Capabilities, Error, Registry}
 
+  defmodule FakeDiscovery do
+    @moduledoc false
+
+    def list_models(_base_url), do: {:ok, ["model-1", "model-2"]}
+  end
+
   setup do
     path =
       Path.join(
@@ -106,6 +112,67 @@ defmodule Beamcore.Provider.RegistryTest do
              Registry.validate_selection("openai")
 
     assert {:error, %Error{kind: :invalid_config}} = Registry.validate_selection("ollama")
+  end
+
+  test "custom providers can declare a model discovery module as an atom" do
+    assert :ok =
+             Beamcore.Config.put_provider("discovery-atom", %{
+               api_key: "secret",
+               base_url: "https://discovery.example/v1",
+               default_model: "model-a",
+               discovery: FakeDiscovery
+             })
+
+    assert %{discovery: FakeDiscovery} = Registry.get("discovery-atom")
+  end
+
+  test "discovery module names are accepted as binaries and normalized to atoms" do
+    assert :ok =
+             Beamcore.Config.put_provider("discovery-binary", %{
+               "discovery" => "Elixir.Beamcore.Provider.RegistryTest.FakeDiscovery",
+               api_key: "secret",
+               base_url: "https://discovery.example/v1",
+               default_model: "model-a"
+             })
+
+    assert %{discovery: FakeDiscovery} = Registry.get("discovery-binary")
+  end
+
+  test "unknown discovery module names resolve to nil" do
+    assert :ok =
+             Beamcore.Config.put_provider("discovery-unknown", %{
+               "discovery" => "Elixir.Beamcore.Provider.RegistryTest.DoesNotExist",
+               api_key: "secret",
+               base_url: "https://discovery.example/v1",
+               default_model: "model-a"
+             })
+
+    assert %{discovery: nil} = Registry.get("discovery-unknown")
+  end
+
+  test "providers without discovery fall back to the configured default model" do
+    assert :ok =
+             Beamcore.Config.put_provider("no-discovery", %{
+               api_key: "secret",
+               base_url: "https://discovery.example/v1",
+               default_model: "model-a"
+             })
+
+    assert %{discovery: nil} = Registry.get("no-discovery")
+
+    assert [%Beamcore.Provider.Model{id: "model-a"}] = Registry.models("no-discovery")
+  end
+
+  test "models/1 lists the discovered models when a discovery module is configured" do
+    assert :ok =
+             Beamcore.Config.put_provider("with-discovery", %{
+               api_key: "secret",
+               base_url: "https://discovery.example/v1",
+               default_model: "model-a",
+               discovery: FakeDiscovery
+             })
+
+    assert Enum.map(Registry.models("with-discovery"), & &1.id) == ["model-1", "model-2"]
   end
 
   defp restore_config_path(nil), do: Application.delete_env(:beamcore, :config_dets_path)

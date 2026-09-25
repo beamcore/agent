@@ -97,8 +97,11 @@ defmodule Beamcore.RemoteRunnerTest do
   end
 
   describe "contract" do
-    test "version is a positive integer" do
-      assert is_integer(RemoteRunner.version()) and RemoteRunner.version() > 0
+    test "version is pinned so contract changes are deliberate" do
+      # Bumping `@version` invalidates runners already injected onto peer nodes,
+      # so the value is asserted here rather than range-checked. Update this in
+      # the same commit as `@version` to make the bump explicit.
+      assert RemoteRunner.version() == 1
     end
 
     test "the module is self-contained (no other Beamcore.* modules referenced)" do

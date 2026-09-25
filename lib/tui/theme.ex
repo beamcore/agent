@@ -77,6 +77,7 @@ defmodule Beamcore.TUI.Theme do
   }
 
   @default_theme :default
+  @default_theme_module Beamcore.TUI.Themes.Default
 
   @spec list_themes() :: [atom()]
   def list_themes, do: Map.keys(@themes)
@@ -113,8 +114,10 @@ defmodule Beamcore.TUI.Theme do
   def border(:error), do: style(:error)
   def border(_status), do: style(:border)
 
+  # Always returns a module: `Map.get/3` on a widened map type can yield `nil`,
+  # so the fallback is a literal module rather than another map lookup.
   defp current_theme_module do
-    Map.get(@themes, current_theme(), Map.get(@themes, @default_theme))
+    Map.get(@themes, current_theme(), @default_theme_module)
   end
 
   defp load_persisted_theme do

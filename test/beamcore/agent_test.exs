@@ -31,7 +31,6 @@ defmodule Beamcore.AgentTest do
   test "openai client configuration" do
     # Verify the OpenAI client can be created
     client = Beamcore.Provider.Registry.client()
-    assert client != nil
-    assert is_map(client) or is_struct(client)
+    assert is_struct(client), "expected a client struct, got: #{inspect(client)}"
   end
 end

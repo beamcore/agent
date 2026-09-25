@@ -167,11 +167,6 @@ defmodule Beamcore.TUI.Smoke do
     %{state | text: ExRatatui.textarea_get_value(state.textarea), events: state.events + 1}
   end
 
-  defp handle_textarea_or_text(%ExRatatui.Event.Key{code: code}, %{mode: :textarea} = state, _fun) do
-    ExRatatui.textarea_handle_key(state.textarea, code)
-    %{state | text: ExRatatui.textarea_get_value(state.textarea), events: state.events + 1}
-  end
-
   defp handle_textarea_or_text(_event, state, fun) do
     %{state | text: fun.(state.text), events: state.events + 1}
   end

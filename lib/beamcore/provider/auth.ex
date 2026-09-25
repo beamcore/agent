@@ -237,14 +237,8 @@ defmodule Beamcore.Provider.Auth do
           error(:unavailable, "Google ADC token request failed: #{inspect(reason)}.")
       end
     else
-      {:error, %Error{} = error} ->
-        {:error, error}
-
-      {:error, message} when is_binary(message) ->
+      {:error, message} ->
         error(:missing_config, message)
-
-      {:error, reason} ->
-        error(:invalid_config, "Google ADC configuration failed: #{inspect(reason)}.")
     end
   end
 

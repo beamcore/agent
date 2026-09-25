@@ -77,21 +77,17 @@ defmodule Beamcore.TUI.Components.StatusBar do
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{
         content: "F1 Agent",
-        style: if(active == :agent, do: Theme.style(:status_hot), else: Theme.style(:status))
+        style: highlight(active, :agent)
       },
       %Span{content: "  ", style: Theme.style(:status)},
       %Span{
         content: "F2 Chat",
-        style: if(active == :chat, do: Theme.style(:status_hot), else: Theme.style(:status))
+        style: highlight(active, :chat)
       },
       %Span{content: "  ", style: Theme.style(:status)},
       %Span{
         content: "F3 System",
-        style:
-          if(active == :system,
-            do: Theme.style(:status_hot),
-            else: Theme.style(:status)
-          )
+        style: highlight(active, :system)
       },
       %Span{content: " · ", style: Theme.style(:status)},
       %Span{content: padding, style: Theme.style(:status)},
@@ -113,6 +109,14 @@ defmodule Beamcore.TUI.Components.StatusBar do
       end
 
     widget(state, width)
+  end
+
+  # The dedicated `%{screen_type: :system}` clause above owns the system screen,
+  # so `active` is never `:system` here — the mapping keeps the intent explicit.
+  defp highlight(active, screen_type) do
+    if active == screen_type,
+      do: Theme.style(:status_hot),
+      else: Theme.style(:status)
   end
 
   # Always show all symbols. Stable layout — no jumps.

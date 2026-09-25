@@ -18,7 +18,8 @@ defmodule Beamcore.Provider.Registry do
       auth: :bearer,
       default_model: "gpt-4o",
       requires_api_key?: true,
-      local?: false
+      local?: false,
+      discovery: nil
     },
     "deepseek" => %{
       id: :deepseek,
@@ -27,7 +28,8 @@ defmodule Beamcore.Provider.Registry do
       auth: :bearer,
       default_model: "deepseek-chat",
       requires_api_key?: true,
-      local?: false
+      local?: false,
+      discovery: nil
     }
   }
 
@@ -78,7 +80,11 @@ defmodule Beamcore.Provider.Registry do
         base_url: Map.get(merged, "base_url") || Map.get(merged, :base_url),
         default_model: model,
         capabilities: capabilities(name, model),
-        discovery: Map.get(default, :discovery),
+        discovery:
+          discovery_module(
+            Map.get(merged, "discovery") || Map.get(merged, :discovery) ||
+              Map.get(default, :discovery)
+          ),
         reachable?: :unknown
       }
     end)
@@ -296,7 +302,8 @@ defmodule Beamcore.Provider.Registry do
       auth: auth,
       default_model: nil,
       requires_api_key?: strategy in [:bearer, :api_key],
-      local?: false
+      local?: false,
+      discovery: nil
     }
   end
 
@@ -308,7 +315,8 @@ defmodule Beamcore.Provider.Registry do
       auth: :bearer,
       default_model: nil,
       requires_api_key?: true,
-      local?: false
+      local?: false,
+      discovery: nil
     }
   end
 
@@ -335,6 +343,19 @@ defmodule Beamcore.Provider.Registry do
       "api_key" => Map.get(config, "api_key")
     })
   end
+
+  # `discovery` is an optional module exposing `list_models/1` (see
+  # `Beamcore.Provider.Health.discover_models/1`). Provider config may name it as
+  # an atom or as a binary module name, so normalize before use.
+  defp discovery_module(module) when is_atom(module) and not is_nil(module), do: module
+
+  defp discovery_module(name) when is_binary(name) do
+    String.to_existing_atom(String.trim(name))
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp discovery_module(_other), do: nil
 
   defp configured?(_name, _config, %{requires_api_key?: false}), do: true
 

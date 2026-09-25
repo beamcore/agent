@@ -152,8 +152,6 @@ defmodule Beamcore.Agent.Chat.Session.Restore do
     Map.new(map, fn {k, v} -> {to_string(k), v} end)
   end
 
-  defp ensure_string_keys(other), do: other
-
   defp resolve_mode_settings(%{provider: p, model: m}) when is_binary(p) and is_binary(m) do
     %Beamcore.Agent.Chat.ModeSettings{
       mode: :agent,

@@ -219,7 +219,8 @@ defmodule Beamcore.Config do
       "credential_file",
       "google_application_credentials",
       "cacertfile",
-      "ssl_verify"
+      "ssl_verify",
+      "discovery"
     ]
 
     config
