@@ -14,24 +14,20 @@ recompile its own modules at runtime.
 
 ## Installation
 
+### One-line install (recommended)
+
+```sh
+curl -fsSL https://beamcore.dev/install.sh | sh
+```
+
+No root required. Pre-built binary — no Elixir or Erlang needed. Works on Linux and macOS.
+
 ### From source (requires Elixir 1.12+ and Erlang/OTP 25+)
 
 ```sh
 git clone https://github.com/beamcore/agent.git
 cd agent
-make deps
-```
-
-### From release (no Elixir required)
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/beamcore/agent/main/install.sh | sh
-```
-
-Or using the Makefile:
-
-```sh
-make install
+make install-dev
 ```
 
 ### Verify release checksums
