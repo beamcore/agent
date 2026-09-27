@@ -394,6 +394,11 @@ defmodule Beamcore.TUI do
   defp mark_active_dirty(%{render_dirty?: _} = screen), do: State.mark_dirty(screen)
   defp mark_active_dirty(screen), do: screen
 
+  # Resize events arrive in bursts while the user drags the terminal edge.
+  # Apply the new geometry immediately and coalesce redraws: one draw fires
+  # once the burst has settled. Since ex_ratatui 0.13.1 clips widget areas
+  # to the buffer at render time, an out-of-date draw can no longer panic
+  # the NIF — this debounce is purely to avoid redundant redraws.
   defp schedule_resize_redraw(state, width, height) do
     if is_reference(state.resize_redraw_ref), do: Process.cancel_timer(state.resize_redraw_ref)
 

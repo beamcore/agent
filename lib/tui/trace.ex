@@ -6,14 +6,9 @@ defmodule Beamcore.TUI.Trace do
   def enabled?, do: System.get_env("BEAMCORE_TUI_TRACE") in ["1", "true", "TRUE", "yes"]
 
   def message_type(%ExRatatui.Event.Key{}), do: :key
+  def message_type(%ExRatatui.Event.Paste{}), do: :paste
   def message_type(%ExRatatui.Event.Resize{}), do: :resize
-
-  def message_type(event) when is_map(event) do
-    cond do
-      paste_event?(event) -> :paste
-      true -> :event
-    end
-  end
+  def message_type(event) when is_map(event), do: :event
 
   def message_type({:tick, _ref}), do: :tick
   def message_type(:load_file_finder_cache), do: :file_finder_load_request
@@ -57,18 +52,5 @@ defmodule Beamcore.TUI.Trace do
       {:message_queue_len, len} -> len
       _ -> nil
     end
-  end
-
-  defp paste_event?(event) do
-    struct_name =
-      event
-      |> Map.get(:__struct__)
-      |> case do
-        nil -> ""
-        module -> Atom.to_string(module)
-      end
-
-    String.ends_with?(struct_name, ".Paste") or Map.has_key?(event, :content) or
-      Map.has_key?(event, "content")
   end
 end

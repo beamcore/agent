@@ -58,10 +58,10 @@ else
 	@echo "==> Building Beamcore release from source"; \
 	if [ "$(VERBOSE)" = "1" ]; then \
 		set -eu; \
-		EX_RATATUI_BUILD=1 mix deps.get && MIX_ENV=prod EX_RATATUI_BUILD=1 mix release --overwrite; \
+		mix deps.get && MIX_ENV=prod mix release --overwrite; \
 	else \
 		log_file=$$(mktemp "$${TMPDIR:-/tmp}/beamcore-release.XXXXXX"); \
-		if EX_RATATUI_BUILD=1 mix deps.get > "$$log_file" 2>&1 && MIX_ENV=prod EX_RATATUI_BUILD=1 mix release --overwrite >> "$$log_file" 2>&1; then \
+		if mix deps.get > "$$log_file" 2>&1 && MIX_ENV=prod mix release --overwrite >> "$$log_file" 2>&1; then \
 			rm -f "$$log_file"; \
 		else \
 			echo "Release build failed. Build log:"; \
@@ -150,15 +150,15 @@ deps:
 
 ## compile: Compile the project
 compile:
-	EX_RATATUI_BUILD=1 mix compile
+	mix compile
 
 ## release: Build a prod release
 release: deps compile
-	MIX_ENV=prod EX_RATATUI_BUILD=1 mix release --overwrite
+	MIX_ENV=prod mix release --overwrite
 
 ## test: Run ExUnit tests
 test:
-	EX_RATATUI_BUILD=1 mix test
+	mix test
 
 ## format: Format source code
 format:

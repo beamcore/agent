@@ -51,46 +51,20 @@ defmodule Beamcore.TUI.Events do
     end
   end
 
-  def handle_event(event, state, _opts) when is_map(event) do
-    cond do
-      paste_event?(event) and Map.has_key?(state, :textarea) ->
-        content =
-          Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
+  def handle_event(%Event.Paste{} = event, %{screen_type: :system} = state, _opts) do
+    Beamcore.TUI.Components.System.handle_event(event, state)
+  end
 
-        state = TextInput.insert_content(state, content)
-        state = %{state | history_index: nil} |> State.mark_dirty()
-        state = TextInput.handle_file_finder_key(nil, [], state)
+  def handle_event(%Event.Paste{content: content}, state, _opts)
+      when is_map_key(state, :textarea) do
+    state = TextInput.insert_content(state, content)
+    state = %{state | history_index: nil} |> State.mark_dirty()
+    state = TextInput.handle_file_finder_key(nil, [], state)
 
-        {:noreply, Commands.refresh_commands(state)}
-
-      paste_event?(event) and state.__struct__ == Beamcore.TUI.Components.System ->
-        Beamcore.TUI.Components.System.handle_event(event, state)
-
-      true ->
-        {:noreply, state}
-    end
+    {:noreply, Commands.refresh_commands(state)}
   end
 
   def handle_event(_event, state, _opts), do: {:noreply, state}
-
-  defp paste_event?(event) when is_map(event) do
-    struct_name =
-      event
-      |> Map.get(:__struct__)
-      |> case do
-        nil -> ""
-        module -> Atom.to_string(module)
-      end
-
-    has_content? =
-      is_binary(Map.get(event, :content)) or is_binary(Map.get(event, "content")) or
-        is_binary(Map.get(event, :text))
-
-    has_content? and
-      (String.ends_with?(struct_name, ".Paste") or
-         Map.get(event, :type) in [:paste, "paste"] or
-         Map.get(event, "type") in [:paste, "paste"])
-  end
 
   defp insert_newline(state) do
     state

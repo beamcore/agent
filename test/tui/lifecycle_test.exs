@@ -19,9 +19,10 @@ defmodule Beamcore.TUI.LifecycleTest do
     refute app_source =~ "Beamcore.TUI.DynamicSupervisor"
   end
 
-  test "local terminal defaults defer to ExRatatui" do
-    assert TerminalOptions.defaults() == []
-    assert TerminalOptions.apply([]) == []
+  test "local terminal defaults capture the mouse for chat scrolling" do
+    assert TerminalOptions.defaults() == [mouse_capture: true]
+    assert TerminalOptions.apply([]) == [mouse_capture: true]
+    assert TerminalOptions.apply(mouse_capture: false) == [mouse_capture: false]
   end
 
   test "minimal smoke screen uses the same local terminal startup strategy" do

@@ -8,6 +8,9 @@ on:
 
 env:
   MIX_ENV: test
+  # Use the precompiled ex_ratatui NIF — CI runners have no Rust toolchain
+  # (config/config.exs source-builds it by default in dev/test).
+  EX_RATATUI_BUILD: "0"
   ELIXIR_VERSION: "1.18"
   OTP_VERSION: "28"
   ERL_CRASH_DUMP: "/dev/null"

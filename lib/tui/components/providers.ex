@@ -33,41 +33,24 @@ defmodule Beamcore.TUI.Components.Providers do
 
   def handle_event(%ExRatatui.Event.Mouse{}, p), do: {:noreply, p}
 
-  def handle_event(event, p) do
-    cond do
-      paste_event?(event) ->
-        content =
-          Map.get(event, :content) || Map.get(event, "content") || Map.get(event, :text) || ""
+  def handle_event(%ExRatatui.Event.Paste{content: content}, p),
+    do: {:noreply, insert_text(p, content) |> mark_dirty()}
 
-        {:noreply, insert_text(p, content) |> mark_dirty()}
+  def handle_event(%ExRatatui.Event.Key{} = event, p) do
+    if KeyEvents.actionable?(event) do
+      %ExRatatui.Event.Key{code: code, modifiers: mods} = event
 
-      match?(%ExRatatui.Event.Key{}, event) ->
-        %ExRatatui.Event.Key{code: code, modifiers: mods} = event
-
-        if KeyEvents.actionable?(event) do
-          if code == "backspace" do
-            {:noreply, handle_backspace(p) |> mark_dirty()}
-          else
-            {:noreply, handle_key(code, mods, p) |> mark_dirty()}
-          end
-        else
-          {:noreply, p}
-        end
-
-      true ->
-        {:noreply, p}
+      if code == "backspace" do
+        {:noreply, handle_backspace(p) |> mark_dirty()}
+      else
+        {:noreply, handle_key(code, mods, p) |> mark_dirty()}
+      end
+    else
+      {:noreply, p}
     end
   end
 
-  defp paste_event?(event) when is_map(event) do
-    struct_name = Map.get(event, :__struct__)
-    name = if struct_name, do: Module.split(struct_name) |> List.last(), else: ""
-
-    String.contains?(name, "Paste") or Map.has_key?(event, :content) or
-      Map.has_key?(event, "content")
-  end
-
-  defp paste_event?(_), do: false
+  def handle_event(_event, p), do: {:noreply, p}
 
   defp render_list_items(p, height, width) do
     if p.adding?,

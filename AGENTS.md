@@ -7,13 +7,15 @@ An autonomous AI coding agent built on Elixir/OTP. One tool (`eeva`) executes ar
 | Action | Command |
 |--------|---------|
 | Compile | `mix compile` |
-| Test | `EX_RATATUI_BUILD=1 mix test` |
+| Test | `mix test` |
 | Format check | `mix format --check-formatted` |
 | Single test | `mix test test/path/to_test.exs:LINE` |
-| Release build | `MIX_ENV=prod EX_RATATUI_BUILD=1 mix release --overwrite` |
+| Release build | `MIX_ENV=prod mix release --overwrite` |
 | Dev install | `make install-dev` |
 
-**Always set `EX_RATATUI_BUILD=1`** when compiling — ex_ratatui is a NIF that requires it.
+**ex_ratatui source-builds its NIF in dev/test by default** (see `config/config.exs`);
+set `EX_RATATUI_BUILD=0` to download the precompiled artifact instead (CI does this —
+its runners have no Rust toolchain). Prod releases always use the upstream precompiled NIF.
 
 ## Architecture
 
