@@ -2,6 +2,13 @@ defmodule Beamcore.Agent.SubAgentTest do
   use ExUnit.Case, async: true
 
   alias Beamcore.Agent.SubAgent
+  alias Beamcore.Agent.Tools.Dispatcher
+
+  test "get_tools filters by tool name" do
+    assert SubAgent.get_tools(true) == Dispatcher.tool_specs()
+    assert Enum.map(SubAgent.get_tools(["eeva"]), & &1.function.name) == ["eeva"]
+    assert SubAgent.get_tools(["no_such_tool"]) == []
+  end
 
   test "limits historical payloads while preserving executable code" do
     code = "WriteHelper.write!(\"large.ex\", eeva_payloads[\"content\"])"

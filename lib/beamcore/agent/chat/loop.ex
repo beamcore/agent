@@ -14,6 +14,7 @@ defmodule Beamcore.Agent.Chat.Loop do
   alias Beamcore.Provider.Registry
 
   @repeated_tool_failure_limit 3
+  @max_tool_depth 50
 
   def send_message(session, content, pid, opts \\ []) do
     with {:ok, session} <- ensure_client(session, opts) do
@@ -70,6 +71,14 @@ defmodule Beamcore.Agent.Chat.Loop do
   end
 
   defp process_messages(session, messages, pid, depth, opts, failure_guard) do
+    if depth >= max_tool_depth(opts) do
+      stop_max_tool_depth(session, messages, depth, opts)
+    else
+      run_process_messages(session, messages, pid, depth, opts, failure_guard)
+    end
+  end
+
+  defp run_process_messages(session, messages, pid, depth, opts, failure_guard) do
     tools = Dispatcher.tool_specs()
     settings = mode_settings(session)
 
@@ -547,6 +556,27 @@ defmodule Beamcore.Agent.Chat.Loop do
         "The session is preserved; change the arguments or approach before retrying."
 
     Beamcore.AppLog.warn("Repeated tool failure stopped", tools: names)
+    emit(opts, {:error, message})
+    emit(opts, {:status, :error})
+
+    session = %{session | messages: Session.compact_history(messages)}
+    emit(opts, {:session, session})
+    session
+  end
+
+  defp max_tool_depth(opts) do
+    case Keyword.get(opts, :max_tool_depth, @max_tool_depth) do
+      limit when is_integer(limit) and limit >= 0 -> limit
+      _ -> @max_tool_depth
+    end
+  end
+
+  defp stop_max_tool_depth(session, messages, depth, opts) do
+    message =
+      "Maximum tool rounds (#{max_tool_depth(opts)}) reached after #{depth} rounds. " <>
+        "The session is preserved; summarize progress and ask the user how to proceed."
+
+    Beamcore.AppLog.warn("Maximum tool depth reached", depth: depth)
     emit(opts, {:error, message})
     emit(opts, {:status, :error})
 

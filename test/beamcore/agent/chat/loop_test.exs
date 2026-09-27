@@ -189,6 +189,30 @@ defmodule Beamcore.Agent.Chat.LoopTest do
     assert List.last(result.messages)["content"] == "finished"
   end
 
+  test "stops after reaching the maximum tool depth" do
+    Process.put(:mock_completions_create, fn _client, _params ->
+      call = Process.get(:loop_completions_calls, 0) + 1
+      Process.put(:loop_completions_calls, call)
+      tool_response("call_#{call}", %{"code" => "1 + 1"})
+    end)
+
+    session = Session.new(Beamcore.Provider.Registry.client())
+
+    result =
+      Loop.send_message(session, "keep working", self(),
+        event_handler: &record_event/1,
+        max_tool_depth: 2
+      )
+
+    assert Process.get(:loop_completions_calls) == 2
+    assert length(Enum.filter(result.messages, &message_role(&1, "tool"))) == 2
+
+    assert Enum.any?(Process.get(:loop_events, []), fn
+             {:error, message} -> message =~ "Maximum tool rounds (2)"
+             _ -> false
+           end)
+  end
+
   defp runtime_message_count(messages) do
     Enum.count(messages, fn message ->
       role = message[:role] || message["role"]

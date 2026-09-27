@@ -94,11 +94,22 @@ defmodule Beamcore.Agent.SubAgent do
 
   defp execute_tool_calls(tool_calls) do
     Enum.map(tool_calls, fn call ->
-      args = Jason.decode!(call["function"]["arguments"])
-      result = Beamcore.Agent.Tools.Eeva.execute(args)
-      %{role: "tool", tool_call_id: call["id"], content: result}
+      function = call["function"] || %{}
+      args = decode_tool_args(function["arguments"])
+      result = Beamcore.Agent.Tools.Dispatcher.execute(function["name"], args)
+
+      %{role: "tool", tool_call_id: call["id"], name: function["name"], content: result}
     end)
   end
+
+  defp decode_tool_args(args) when is_binary(args) do
+    case Jason.decode(args) do
+      {:ok, decoded} when is_map(decoded) -> decoded
+      _ -> %{}
+    end
+  end
+
+  defp decode_tool_args(_args), do: %{}
 
   defp build_selection(opts) do
     provider = Keyword.get(opts, :provider) || Beamcore.Config.active_provider()
@@ -113,12 +124,21 @@ defmodule Beamcore.Agent.SubAgent do
     end
   end
 
-  defp get_tools(true), do: Beamcore.Agent.Tools.Dispatcher.tool_specs()
+  @doc false
+  def get_tools(true), do: Beamcore.Agent.Tools.Dispatcher.tool_specs()
 
-  defp get_tools(tool_names) when is_list(tool_names) do
+  @doc false
+  def get_tools(tool_names) when is_list(tool_names) do
     all = Beamcore.Agent.Tools.Dispatcher.tool_specs()
-    Enum.filter(all, &(&1["function"]["name"] in tool_names))
+    Enum.filter(all, &(tool_spec_name(&1) in tool_names))
   end
+
+  @doc false
+  def get_tools(_), do: []
+
+  defp tool_spec_name(%{function: %{name: name}}), do: name
+  defp tool_spec_name(%{"function" => %{"name" => name}}), do: name
+  defp tool_spec_name(_), do: nil
 
   defp default_system_prompt do
     Beamcore.Agent.Core.Prompts.sub_agent("worker")

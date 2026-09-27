@@ -20,9 +20,13 @@ defmodule Beamcore.Agent.Tools.DispatcherTest do
     assert Enum.map(specs, & &1.function.name) == ["eeva"]
   end
 
-  test "unknown tool calls are rejected" do
-    assert Dispatcher.execute("modify_file", %{}) ==
-             "Function not implemented"
+  test "unknown tool calls are rejected with a structured error" do
+    result = Dispatcher.execute("modify_file", %{}) |> Jason.decode!()
+
+    refute result["ok"]
+    assert result["classification"] == "not_implemented"
+    assert result["tool"] == "modify_file"
+    assert result["summary"] =~ "Function not implemented"
   end
 
   test "eeva executes through the dispatcher" do
